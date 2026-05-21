@@ -7,6 +7,7 @@ const {
   getAllTickets,
   getTicketById,
   updateTicketStatus,
+  deleteTicket,
   createZendeskTicket,
   getZendeskTickets,
   getZendeskStats,
@@ -165,6 +166,13 @@ router.patch(
   updateTicketStatus
 );
 
+
+// DELETE /api/support-tickets/:id — delete ticket (admin / super_admin only)
+router.delete(
+  "/:id",
+  allowRoles("admin", "super_admin"),
+  deleteTicket
+);
 
 // GET /api/support-tickets/:id       — single ticket (owner or admin)
 router.get("/:id", getTicketById);

@@ -1121,6 +1121,7 @@ export function Pos() {
         setEmailModalOpen(false);
         setEmailInputValue('');
         setEmailInputError('');
+        window.dispatchEvent(new CustomEvent('invalidate-support-tickets'));
       } else {
         throw new Error(res.message || 'Failed to send invoice email.');
       }

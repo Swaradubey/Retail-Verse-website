@@ -470,191 +470,599 @@ const getClientCustomers = async (req, res) => {
 const getOverview = async (req, res) => {
   try {
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // 1. Total Revenue: Sum of all paid/completed orders
-    const paidMatch = {
-      $or: [
-        { paymentStatus: { $in: ["paid", "completed", "success"] } },
-        { "payment.status": { $in: ["paid", "completed", "success"] } },
-        { orderStatus: { $in: ["delivered", "completed"] } },
-        { status: { $in: ["delivered", "completed"] } }
-      ]
+    // Helper functions for date calculations
+    const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+    const addMonths = (d, n) => {
+      const x = new Date(d);
+      x.setMonth(x.getMonth() + n);
+      return x;
     };
-    const revAgg = await Order.aggregate([
-      { $match: paidMatch },
-      { $group: { _id: null, total: { $sum: { $ifNull: ["$totalPrice", { $ifNull: ["$totalAmount", { $ifNull: ["$grandTotal", { $ifNull: ["$amount", 0] }] }] }] } } } }
-    ]);
-    const totalRevenue = revAgg[0]?.total || 0;
-
-    // 2. Active Customers
-    const activeCustomers = (await Order.distinct("user", { user: { $ne: null } })).length;
-
-    // 3. New Customers this month
-    const newCustomers = await User.countDocuments({ 
-      role: { $in: ["user", "customer"] }, 
-      createdAt: { $gte: startOfMonth } 
-    });
-
-    // 4. Conversion Rate
-    const totalCustomers = await User.countDocuments({ role: { $in: ["user", "customer"] } });
-    const conversionRate = totalCustomers > 0 ? Math.min(100, (activeCustomers / totalCustomers) * 100) : 0;
-
-    // 5. Sales This Month
-    const monthOrdersMatch = {
-      $or: [
-        { createdAt: { $gte: startOfMonth } },
-        { orderDate: { $gte: startOfMonth } }
-      ]
+    const monthWindowContaining = (ref) => {
+      const start = startOfMonth(ref);
+      const end = addMonths(start, 1);
+      return { start, end };
     };
-    const monthOrdersAgg = await Order.aggregate([
-      { $match: monthOrdersMatch },
-      { $group: { 
-          _id: null, 
-          sales: { $sum: { $ifNull: ["$totalPrice", { $ifNull: ["$totalAmount", { $ifNull: ["$grandTotal", { $ifNull: ["$amount", 0] }] }] }] } },
-          count: { $sum: 1 }
+    const previousMonthWindow = (ref) => {
+      const thisStart = startOfMonth(ref);
+      const prevEnd = thisStart;
+      const prevStart = addMonths(thisStart, -1);
+      return { start: prevStart, end: prevEnd };
+    };
+
+    const cur = monthWindowContaining(now);
+    const prev = previousMonthWindow(now);
+
+    const trendFromChange = (pct) => {
+      if (pct == null || Number.isNaN(pct)) return "neutral";
+      if (pct > 0.05) return "up";
+      if (pct < -0.05) return "down";
+      return "neutral";
+    };
+
+    const pctChange = (current, previous) => {
+      if (previous == null || Number.isNaN(previous) || previous === 0) {
+        if (current == null || Number.isNaN(current) || current === 0) return 0;
+        return 100;
+      }
+      return ((current - previous) / previous) * 100;
+    };
+
+    // Robust status overrides and filtering helpers
+    const isOrderPaidOrSuccessful = (order) => {
+      const status = String(order.status || order.orderStatus || "").toLowerCase().trim();
+      const paymentStatus = String(order.paymentStatus || "").toLowerCase().trim();
+      const paymentMethod = String(order.paymentMethod || "").toLowerCase().trim();
+      const orderSource = String(order.orderSource || "").toLowerCase().trim();
+
+      if (
+        ["cancelled", "refunded", "failed"].includes(status) ||
+        ["refunded", "failed"].includes(paymentStatus)
+      ) {
+        return false;
+      }
+
+      if (orderSource === "pos" && paymentMethod === "cash") {
+        return true;
+      }
+
+      if (order.razorpayPaymentId && !["failed", "cancelled", "refunded"].includes(paymentStatus)) {
+        return true;
+      }
+
+      const successStatuses = ["paid", "completed", "success", "successful", "delivered"];
+      const successPaymentStatuses = ["paid", "completed", "success", "successful"];
+
+      if (successStatuses.includes(status) || successPaymentStatuses.includes(paymentStatus) || order.isPaid === true) {
+        if (status === "unpaid" || status === "pending" || paymentStatus === "unpaid" || paymentStatus === "pending") {
+          return false;
+        }
+        return true;
+      }
+
+      return false;
+    };
+
+    const isInvoicePaidOrSuccessful = (invoice) => {
+      const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
+      const orderStatus = String(invoice.orderStatus || "").toLowerCase().trim();
+
+      if (
+        ["cancelled", "refunded", "failed"].includes(paymentStatus) ||
+        ["cancelled", "refunded", "failed"].includes(orderStatus)
+      ) {
+        return false;
+      }
+
+      const successStatuses = ["paid", "completed", "success", "successful"];
+      return successStatuses.includes(paymentStatus) || successStatuses.includes(orderStatus);
+    };
+
+    const getDocDate = (doc) => {
+      if (doc.createdAt) {
+        const d = new Date(doc.createdAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (doc.orderDate) {
+        const d = new Date(doc.orderDate);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (doc.invoiceDate) {
+        const d = new Date(doc.invoiceDate);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    };
+
+    const isDateInWindow = (doc, start, end) => {
+      const docDate = getDocDate(doc);
+      if (!docDate) return false;
+      return docDate >= start && docDate < end;
+    };
+
+    // Calculate core revenue stats for a given time window
+    const calculateStatsForWindow = (start, end, allOrders, allInvoices) => {
+      const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
+      const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
+
+      let revenue = 0;
+      let paidOrdersCount = 0;
+      const paidOrderIdsSet = new Set();
+
+      for (const order of ordersInWindow) {
+        if (isOrderPaidOrSuccessful(order)) {
+          const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+          revenue += amt;
+          paidOrdersCount++;
+          if (order.orderId) {
+            paidOrderIdsSet.add(String(order.orderId).trim().toLowerCase());
+          }
         }
       }
-    ]);
-    const salesThisMonth = monthOrdersAgg[0]?.sales || 0;
-    const totalOrdersThisMonth = monthOrdersAgg[0]?.count || 0;
 
-    // 6. Loss This Month
-    const lossMatch = {
-      $and: [
-        {
-          $or: [
-            { createdAt: { $gte: startOfMonth } },
-            { orderDate: { $gte: startOfMonth } }
-          ]
-        },
-        {
-          $or: [
-            { orderStatus: { $in: ["cancelled", "refunded", "failed"] } },
-            { status: { $in: ["cancelled", "refunded", "failed"] } },
-            { paymentStatus: { $in: ["refunded", "failed"] } },
-            { "payment.status": { $in: ["refunded", "failed"] } }
-          ]
+      for (const invoice of invoicesInWindow) {
+        if (isInvoicePaidOrSuccessful(invoice)) {
+          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+          if (invOrderId && paidOrderIdsSet.has(invOrderId)) {
+            continue;
+          }
+          const amt = invoice.totalAmount || invoice.subtotal || 0;
+          revenue += amt;
+          paidOrdersCount++;
+          if (invOrderId) {
+            paidOrderIdsSet.add(invOrderId);
+          }
         }
-      ]
+      }
+
+      const orderCount = ordersInWindow.length;
+      const avgOrderValue = paidOrdersCount > 0 ? revenue / paidOrdersCount : 0;
+
+      return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet };
     };
-    const lossAgg = await Order.aggregate([
-      { $match: lossMatch },
-      { $group: { _id: null, total: { $sum: { $ifNull: ["$totalPrice", { $ifNull: ["$totalAmount", { $ifNull: ["$grandTotal", { $ifNull: ["$amount", 0] }] }] }] } } } }
-    ]);
-    const lossThisMonth = lossAgg[0]?.total || 0;
 
-    // 7. Profit This Month
-    const paidMonthMatch = {
-      $and: [
-        {
-          $or: [
-            { createdAt: { $gte: startOfMonth } },
-            { orderDate: { $gte: startOfMonth } }
-          ]
-        },
-        paidMatch
-      ]
+    // Calculate total loss (cancelled / refunded / failed orders) for the given window.
+    // allOrders must include cancelled/refunded/failed orders (do not pre-filter them out).
+    const calculateLossThisMonth = (start, end, allOrders) => {
+      const LOSS_STATUSES = ["cancelled", "refunded", "failed"];
+      let loss = 0;
+      let cancelledCount = 0;
+
+      for (const order of allOrders) {
+        const orderStatusStr = String(order.status || order.orderStatus || "").toLowerCase().trim();
+        const isCancelledStatus = LOSS_STATUSES.includes(orderStatusStr);
+
+        // Refunds first — use explicit refundAmount + refundedAt (avoid double-counting)
+        if (order.refundAmount > 0 && order.refundedAt) {
+          const refDate = new Date(order.refundedAt);
+          if (refDate >= start && refDate < end) {
+            loss += order.refundAmount;
+            cancelledCount++;
+            continue;
+          }
+        }
+
+        // Cancelled / failed — use cancelledAt if set, fall back to createdAt.
+        // Fallback covers orders cancelled via admin status PATCH without explicit cancelledAt.
+        if (isCancelledStatus) {
+          const cancelDate = order.cancelledAt
+            ? new Date(order.cancelledAt)
+            : order.createdAt
+            ? new Date(order.createdAt)
+            : null;
+          if (cancelDate && cancelDate >= start && cancelDate < end) {
+            const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+            loss += amt;
+            cancelledCount++;
+          }
+        }
+      }
+
+      console.log(`[SuperAdmin Loss] role=super_admin cancelledOrdersCounted=${cancelledCount} lossAmount=${Math.round(loss * 100) / 100} window=[${start.toISOString().slice(0, 10)} – ${end.toISOString().slice(0, 10)}]`);
+      return Math.round(loss * 100) / 100;
     };
-    const paidMonthAgg = await Order.aggregate([
-      { $match: paidMonthMatch },
-      { $group: { _id: null, total: { $sum: { $ifNull: ["$totalPrice", { $ifNull: ["$totalAmount", { $ifNull: ["$grandTotal", { $ifNull: ["$amount", 0] }] }] }] } } } }
-    ]);
-    const paidRevenueThisMonth = paidMonthAgg[0]?.total || 0;
-    const profitThisMonth = paidRevenueThisMonth - lossThisMonth;
 
-    // Live Customers: Count users active in the last 15 minutes
-    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60000);
-    const liveCustomers = await User.countDocuments({
-      lastActiveAt: { $gte: fifteenMinutesAgo }
-    });
+    // Determine target client scope for administrative queries
+    const explicitClientId = req.query?.clientId || req.body?.clientId || req.headers["x-client-id"];
+    let scopeQuery = {};
+    if (isValidObjectId(explicitClientId)) {
+      scopeQuery = { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) };
+    } else {
+      scopeQuery = { clientId: { $ne: null } }; // Global across all clients
+    }
 
-    // 8. Sales Analytics (last 7 days)
-    const salesAnalytics = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const nextD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i + 1);
-      const agg = await Order.aggregate([
-        { 
-          $match: { 
-            $or: [
-              { createdAt: { $gte: d, $lt: nextD } },
-              { orderDate: { $gte: d, $lt: nextD } }
-            ] 
-          } 
-        },
-        { $group: { _id: null, revenue: { $sum: { $ifNull: ["$totalPrice", { $ifNull: ["$totalAmount", { $ifNull: ["$grandTotal", { $ifNull: ["$amount", 0] }] }] }] } }, orders: { $sum: 1 } } }
-      ]);
-      salesAnalytics.push({
-        date: d.toISOString().slice(0, 10),
-        revenue: agg[0]?.revenue || 0,
-        orders: agg[0]?.orders || 0
+    // Load active registered customers and storefront users
+    const registeredClientCustomers = await User.find({
+      role: { $in: ["user", "customer"] },
+      ...scopeQuery
+    }).lean();
+
+    // Fetch orders from start of previous month.
+    // IMPORTANT: do NOT exclude cancelled/refunded/failed — calculateLossThisMonth needs them.
+    // isOrderPaidOrSuccessful() already excludes them from revenue calculations.
+    const allOrders = await Order.find({
+      ...scopeQuery,
+      isDeleted: { $ne: true },
+      deletedAt: { $exists: false },
+      status: { $nin: ["deleted"] },
+      orderStatus: { $nin: ["deleted"] },
+      $or: [
+        { createdAt: { $gte: prev.start } },
+        { orderDate: { $gte: prev.start } },
+        { paidAt: { $gte: prev.start } },
+        { cancelledAt: { $gte: prev.start } },
+        { refundedAt: { $gte: prev.start } }
+      ]
+    }).populate("user").lean();
+
+    const allInvoices = await Invoice.find({
+      ...scopeQuery,
+      $or: [
+        { createdAt: { $gte: prev.start } },
+        { invoiceDate: { $gte: prev.start } },
+        { paidAt: { $gte: prev.start } }
+      ]
+    }).lean();
+
+    // Compute month-over-month statistics
+    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders, allInvoices);
+    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders, allInvoices);
+
+    const salesThisMonth = curStats.revenue;
+    const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
+    const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
+
+    // Active customer metrics for trends (in-memory, highly performant and accurate)
+    const countActiveCustomersForWindow = (start, end, ordersList) => {
+      const activeKeys = new Set();
+      const EXCLUDED_ROLES = ["super_admin", "admin", "seo_manager", "counter_manager", "inventory_manager"];
+
+      for (const o of ordersList) {
+        const docDate = getDocDate(o);
+        if (!docDate || docDate < start || docDate >= end) continue;
+
+        if (o.user && EXCLUDED_ROLES.includes(o.user.role)) {
+          continue;
+        }
+
+        let key = "";
+        if (o.user) {
+          key = `uid:${o.user._id || o.user}`;
+        } else {
+          let email = o.customerEmail ? o.customerEmail.toLowerCase().trim() : "";
+          if (!email && o.shippingAddress?.email) {
+            email = o.shippingAddress.email.toLowerCase().trim();
+          }
+          if (email) {
+            key = `em:${email}`;
+          } else {
+            const name = o.customerName || o.shippingAddress?.fullName || "";
+            const phone = o.customerPhone || o.shippingAddress?.phone || "";
+            if (name || phone) {
+              key = `guest_${name.replace(/\s+/g, "_")}_${phone}`;
+            }
+          }
+        }
+
+        if (key) {
+          activeKeys.add(key);
+        }
+      }
+      return activeKeys.size;
+    };
+
+    const countNewCustomersForWindow = (start, end, usersList) => {
+      let count = 0;
+      for (const u of usersList) {
+        if (u.createdAt && u.createdAt >= start && u.createdAt < end) {
+          count++;
+        }
+      }
+      return count;
+    };
+
+    const activeCustCur = countActiveCustomersForWindow(cur.start, cur.end, allOrders);
+    const activeCustPrev = countActiveCustomersForWindow(prev.start, prev.end, allOrders);
+
+    const newCustCur = countNewCustomersForWindow(cur.start, cur.end, registeredClientCustomers);
+    const newCustPrev = countNewCustomersForWindow(prev.start, prev.end, registeredClientCustomers);
+
+    // Build the complete customer list map for Super Admin live customer calculations
+    const customerMap = new Map();
+    for (const u of registeredClientCustomers) {
+      const key = String(u._id);
+      customerMap.set(key, {
+        id: key,
+        userId: u._id,
+        email: u.email ? u.email.toLowerCase().trim() : "",
+        name: u.name || "",
+        phone: u.phone || "",
+        role: u.role,
+        createdAt: u.createdAt,
+        lastActiveAt: u.lastActiveAt || u.lastLoginAt || u.createdAt,
+        ordersCount: 0,
+        ordersThisMonthCount: 0
       });
     }
 
-    // 9. Category Distribution
-    const categoryDistributionAgg = await Order.aggregate([
-      { $match: monthOrdersMatch },
-      { $unwind: "$items" },
-      // Step 1: stringify productId so we can regex-test it safely
-      {
-        $addFields: {
-          _catPidStr: { $toString: "$items.productId" },
-        },
-      },
-      // Step 2: only convert to ObjectId if it's a valid 24-char hex string
-      // ($and inside $expr does NOT short-circuit in MongoDB, so we must guard here)
-      {
-        $addFields: {
-          _catPidForLookup: {
-            $cond: {
-              if: { $regexMatch: { input: "$_catPidStr", regex: /^[a-fA-F0-9]{24}$/ } },
-              then: { $toObjectId: "$_catPidStr" },
-              else: null,
-            },
-          },
-        },
-      },
-      {
-        $lookup: {
-          from: "products",
-          localField: "_catPidForLookup",
-          foreignField: "_id",
-          as: "p",
-        },
-      },
-      {
-        $addFields: {
-          categoryName: {
-            $ifNull: [
-              "$items.category",
-              { $ifNull: [{ $arrayElemAt: ["$p.category", 0] }, "Uncategorized"] }
-            ]
+    const EXCLUDED_ROLES = ["super_admin", "admin", "seo_manager", "counter_manager", "inventory_manager"];
+    for (const o of allOrders) {
+      const docDate = getDocDate(o);
+      if (!docDate || docDate < cur.start || docDate >= cur.end) continue;
+
+      if (o.user && EXCLUDED_ROLES.includes(o.user.role)) {
+        continue;
+      }
+
+      let key = "";
+      let email = "";
+      let name = "";
+      let phone = "";
+      let hasUser = false;
+      let orderUser = null;
+
+      if (o.user) {
+        key = String(o.user._id);
+        email = o.user.email ? o.user.email.toLowerCase().trim() : "";
+        name = o.user.name || "";
+        phone = o.user.phone || "";
+        hasUser = true;
+        orderUser = o.user;
+      } else {
+        email = o.customerEmail ? o.customerEmail.toLowerCase().trim() : "";
+        if (!email && o.shippingAddress?.email) {
+          email = o.shippingAddress.email.toLowerCase().trim();
+        }
+        name = o.customerName || o.shippingAddress?.fullName || "";
+        phone = o.customerPhone || o.shippingAddress?.phone || "";
+
+        if (email) {
+          key = email;
+        } else if (name || phone) {
+          key = `guest_${name.replace(/\s+/g, "_")}_${phone}`;
+        } else {
+          key = `order_${o._id}`;
+        }
+      }
+
+      let cust = customerMap.get(key);
+      if (!cust && email) {
+        for (const existing of customerMap.values()) {
+          if (existing.email === email) {
+            cust = existing;
+            customerMap.set(key, cust);
+            break;
           }
         }
-      },
-      {
-        $group: {
-          _id: "$categoryName",
-          totalSales: { $sum: { $multiply: [{ $ifNull: ["$items.price", 0] }, { $ifNull: ["$items.quantity", 0] }] } },
-          orderCount: { $sum: 1 }
-        }
-      },
-      { $sort: { totalSales: -1 } },
-      { $limit: 10 }
-    ]);
+      }
 
-    const categoryDistribution = categoryDistributionAgg.map(c => ({
-      category: c._id || "Uncategorized",
-      totalSales: c.totalSales,
-      orderCount: c.orderCount
-    }));
+      if (!cust) {
+        cust = {
+          id: key,
+          userId: hasUser ? orderUser._id : null,
+          email,
+          name,
+          phone,
+          role: hasUser ? orderUser.role : "customer",
+          createdAt: o.createdAt,
+          lastActiveAt: o.createdAt,
+          ordersCount: 0,
+          ordersThisMonthCount: 0
+        };
+        customerMap.set(key, cust);
+      }
+
+      cust.ordersCount += 1;
+      cust.ordersThisMonthCount += 1;
+      if (o.createdAt < cust.createdAt) {
+        cust.createdAt = o.createdAt;
+      }
+      if (o.createdAt > cust.lastActiveAt) {
+        cust.lastActiveAt = o.createdAt;
+      }
+    }
+
+    // Live Customers (last 15 minutes)
+    const fifteenMinutesAgo = new Date(now.getTime() - 15 * 60000);
+    const liveCustomers = Array.from(customerMap.values()).filter(c => c.lastActiveAt >= fifteenMinutesAgo).length;
+
+    // Conversion rate
+    const totalCustomers = customerMap.size;
+    const conversionRate = totalCustomers > 0 ? Math.min(100, (activeCustCur / totalCustomers) * 100) : 0;
+    const prevTotalCustomers = registeredClientCustomers.length; // Denominator approximation for prev
+    const conversionRatePrev = prevTotalCustomers > 0 ? Math.min(100, (activeCustPrev / prevTotalCustomers) * 100) : 0;
+
+    // Growth percentage rates
+    const totalRevenueChange = pctChange(curStats.revenue, prevStats.revenue);
+    const orderCountChange = pctChange(curStats.orderCount, prevStats.orderCount);
+    const activeCustomersChange = pctChange(activeCustCur, activeCustPrev);
+    const newCustomersChange = pctChange(newCustCur, newCustPrev);
+    const conversionRateChange = pctChange(conversionRate, conversionRatePrev);
+    const avgOrderValueChange = pctChange(curStats.avgOrderValue, prevStats.avgOrderValue);
+
+    // Calculate sales analytics for the last 7 days (in-memory)
+    const calculateSalesAnalytics = (ordersList, invoicesList) => {
+      const days = [];
+      const short = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+      for (let i = 6; i >= 0; i--) {
+        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 0, 0, 0, 0);
+        const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1, 0, 0, 0, 0);
+
+        const stats = calculateStatsForWindow(dayStart, dayEnd, ordersList, invoicesList);
+        days.push({
+          date: dayStart.toISOString().slice(0, 10),
+          revenue: Math.round(stats.revenue * 100) / 100,
+          orders: stats.orderCount
+        });
+      }
+      return days;
+    };
+
+    const salesAnalytics = calculateSalesAnalytics(allOrders, allInvoices);
+
+    // Calculate category distribution (in-memory)
+    const calculateTopCategories = (start, end, ordersList, invoicesList, limit = 10) => {
+      const categoriesMap = new Map();
+      const ordersInWindow = ordersList.filter(o => isDateInWindow(o, start, end));
+      const invoicesInWindow = invoicesList.filter(i => isDateInWindow(i, start, end));
+
+      for (const order of ordersInWindow) {
+        if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
+          for (const item of order.items) {
+            const cat = String(item.category || "Uncategorized").trim() || "Uncategorized";
+            const qty = Number(item.quantity) || 0;
+            const price = Number(item.price) || 0;
+            const itemRev = qty * price;
+
+            if (!categoriesMap.has(cat)) {
+              categoriesMap.set(cat, { totalSales: 0, orderCount: 0 });
+            }
+            const entry = categoriesMap.get(cat);
+            entry.totalSales += itemRev;
+            entry.orderCount += 1;
+          }
+        }
+      }
+
+      for (const invoice of invoicesInWindow) {
+        if (isInvoicePaidOrSuccessful(invoice)) {
+          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+          const matchingOrder = ordersList.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
+          if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+            continue;
+          }
+          if (Array.isArray(invoice.items)) {
+            for (const item of invoice.items) {
+              const cat = "Uncategorized";
+              const qty = Number(item.quantity) || 0;
+              const price = Number(item.price) || 0;
+              const itemRev = qty * price;
+
+              if (!categoriesMap.has(cat)) {
+                categoriesMap.set(cat, { totalSales: 0, orderCount: 0 });
+              }
+              const entry = categoriesMap.get(cat);
+              entry.totalSales += itemRev;
+              entry.orderCount += 1;
+            }
+          }
+        }
+      }
+
+      const sorted = Array.from(categoriesMap.entries())
+        .sort((a, b) => b[1].totalSales - a[1].totalSales)
+        .slice(0, limit)
+        .map(([name, entry]) => {
+          return {
+            category: name,
+            totalSales: Math.round(entry.totalSales * 100) / 100,
+            orderCount: entry.orderCount
+          };
+        });
+
+      return sorted;
+    };
+
+    const categoryDistribution = calculateTopCategories(cur.start, cur.end, allOrders, allInvoices);
+
+    // Calculate top products
+    const calculateTopProducts = (startCur, endCur, startPrev, endPrev, ordersList, invoicesList, limit = 3) => {
+      const productsCur = new Map();
+      const productsPrev = new Map();
+
+      const processItems = (ordersInWindow, invoicesInWindow, map, isCur) => {
+        for (const order of ordersInWindow) {
+          if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
+            for (const item of order.items) {
+              const name = String(item.name || "").trim();
+              if (!name) continue;
+              const qty = Number(item.quantity) || 0;
+              const price = Number(item.price) || 0;
+              const itemRev = qty * price;
+              const image = item.image || "";
+
+              if (isCur) {
+                if (!map.has(name)) map.set(name, { sales: 0, image });
+                const entry = map.get(name);
+                entry.sales += itemRev;
+                if (image && !entry.image) entry.image = image;
+              } else {
+                map.set(name, (map.get(name) || 0) + itemRev);
+              }
+            }
+          }
+        }
+
+        for (const invoice of invoicesInWindow) {
+          if (isInvoicePaidOrSuccessful(invoice)) {
+            const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+            const matchingOrder = ordersList.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
+            if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+              continue;
+            }
+
+            if (Array.isArray(invoice.items)) {
+              for (const item of invoice.items) {
+                const name = String(item.name || "").trim();
+                if (!name) continue;
+                const qty = Number(item.quantity) || 0;
+                const price = Number(item.price) || 0;
+                const itemRev = qty * price;
+
+                if (isCur) {
+                  if (!map.has(name)) map.set(name, { sales: 0, image: "" });
+                  const entry = map.get(name);
+                  entry.sales += itemRev;
+                } else {
+                  map.set(name, (map.get(name) || 0) + itemRev);
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const ordersCur = ordersList.filter(o => isDateInWindow(o, startCur, endCur));
+      const invoicesCur = invoicesList.filter(i => isDateInWindow(i, startCur, endCur));
+      processItems(ordersCur, invoicesCur, productsCur, true);
+
+      const ordersPrev = ordersList.filter(o => isDateInWindow(o, startPrev, endPrev));
+      const invoicesPrev = invoicesList.filter(i => isDateInWindow(i, startPrev, endPrev));
+      processItems(ordersPrev, invoicesPrev, productsPrev, false);
+
+      const list = Array.from(productsCur.entries()).map(([name, entry]) => {
+        const sales = Math.round(entry.sales * 100) / 100;
+        const prevRev = productsPrev.get(name) || 0;
+        let growthPercent = 0;
+        if (prevRev > 0) {
+          growthPercent = ((sales - prevRev) / prevRev) * 100;
+        } else if (sales > 0) {
+          growthPercent = 100;
+        }
+        return {
+          name,
+          sales,
+          growthPercent: Math.round(growthPercent * 10) / 10,
+          image: entry.image || "",
+        };
+      });
+
+      list.sort((a, b) => b.sales - a.sales);
+      return list.slice(0, limit);
+    };
+
+    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 3);
 
     // Trial Stats
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(now.getDate() + 3);
 
-    const trialClients = await Client.find({});
+    let trialQuery = {};
+    if (isValidObjectId(explicitClientId)) {
+      trialQuery = { _id: new mongoose.Types.ObjectId(String(explicitClientId)) };
+    }
+    const trialClients = await Client.find(trialQuery);
     const trialStats = {
       totalTrialClients: trialClients.length,
       activeTrials: 0,
@@ -674,27 +1082,51 @@ const getOverview = async (req, res) => {
       }
     });
 
-    // Debugging logs
-    console.log("[SuperAdmin Overview] Total clients count:", await Client.countDocuments());
-    console.log("[SuperAdmin Overview] Total orders count:", await Order.countDocuments());
-    console.log("[SuperAdmin Overview] Paid orders count:", await Order.countDocuments(paidMatch));
-    console.log("[SuperAdmin Overview] Calculated totalRevenue:", totalRevenue);
-    console.log("[SuperAdmin Overview] Calculated profit/loss:", profitThisMonth, lossThisMonth);
+    // Requirement 15: Safe backend debug logs — cancelled orders, loss amount, role filter
+    const totalOrdersFound = allOrders.length;
+    const paidOrdersFound = curStats.paidOrdersCount;
+    const totalRevenueCalculated = curStats.revenue;
+    const topProductFound = topProducts[0]?.name || "None";
+
+    console.log("[SuperAdmin Dashboard Stats LOG]:", {
+      roleFilter: "super_admin",
+      scopeFilter: isValidObjectId(explicitClientId) ? String(explicitClientId) : "Global (All Clients)",
+      totalOrdersFound,
+      paidOrdersFound,
+      totalRevenueCalculated,
+      lossThisMonth,
+      profitThisMonth,
+      topProductFound
+    });
 
     res.json({
       success: true,
       data: {
-        totalRevenue,
-        activeCustomers,
-        newCustomers,
-        conversionRate,
+        totalRevenue: Math.round(curStats.revenue * 100) / 100,
+        totalRevenueChange: Math.round(totalRevenueChange * 10) / 10,
+        totalRevenueTrend: trendFromChange(totalRevenueChange),
+        activeCustomers: activeCustCur,
+        activeCustomersChange: Math.round(activeCustomersChange * 10) / 10,
+        activeCustomersTrend: trendFromChange(activeCustomersChange),
+        newCustomers: newCustCur,
+        newCustomersChange: Math.round(newCustomersChange * 10) / 10,
+        newCustomersTrend: trendFromChange(newCustomersChange),
+        conversionRate: Math.round(conversionRate * 100) / 100,
+        conversionRateChange: Math.round(conversionRateChange * 10) / 10,
+        conversionRateTrend: trendFromChange(conversionRateChange),
         salesThisMonth,
         lossThisMonth,
         profitThisMonth,
-        totalOrdersThisMonth,
+        totalOrdersThisMonth: curStats.orderCount,
+        totalOrdersThisMonthChange: Math.round(orderCountChange * 10) / 10,
+        totalOrdersThisMonthTrend: trendFromChange(orderCountChange),
+        avgOrderValue: Math.round(curStats.avgOrderValue * 100) / 100,
+        avgOrderValueChange: Math.round(avgOrderValueChange * 10) / 10,
+        avgOrderValueTrend: trendFromChange(avgOrderValueChange),
         liveCustomers,
         salesAnalytics,
         categoryDistribution,
+        topProducts,
         trialStats
       }
     });

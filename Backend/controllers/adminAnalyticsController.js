@@ -1,10 +1,15 @@
 const Order = require("../models/Order");
 const User = require("../models/User");
+const mongoose = require("mongoose");
+const Invoice = require("../models/Invoice");
 const { 
   resolveClientId: resolveTenant, 
   buildScopeQuery, 
-  applyScope 
+  applyScope,
+  isValidObjectId
 } = require("../utils/tenantResolver");
+const { normalizeRole } = require("../utils/clientScopedRoles");
+
 
 
 
@@ -84,13 +89,19 @@ async function conversionRateForWindow(start, end, scopeQuery) {
 }
 
 async function orderTotalsForWindow(start, end, scopeQuery) {
-  // Requirement: Use real orders (paid/placed/POS)
+  // Requirement: Only non-deleted paid/successful orders
   const match = {
     createdAt: { $gte: start, $lt: end },
+    // Exclude soft-deleted orders
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    // Only count orders with a successful payment / fulfillment signal
     $or: [
       { isPaid: true },
-      { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS"] } },
-      { "payment.status": { $in: ["paid", "completed", "success"] } },
+      { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS", "successful", "Successful"] } },
+      { "payment.status": { $in: ["paid", "completed", "success", "successful"] } },
       { orderSource: { $in: ["pos", "POS", "manual", "Manual"] } },
       { paymentMethod: { $in: ["cash", "Cash", "CASH", "cod", "COD", "Cod", "card", "Card", "CARD", "razorpay", "Razorpay"] } },
       { orderStatus: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } },
@@ -128,12 +139,27 @@ const FULFILLED_STATUS_LOWER = [
  * and match at least one “successful sale” signal (paid, POS, delivered, stage ≥ 2, or fulfilled status).
  */
 /**
- * Sales this month: sum(totalPrice) for ALL orders placed in [start,end) regardless of status
- * (matches requirement "SALES THIS MONTH: orders in current month").
+ * Sales this month: sum(totalPrice) for non-deleted paid/fulfilled orders placed in [start,end).
+ * Requirement: exclude deleted, cancelled, refunded, failed orders from Sales This Month.
  */
 async function salesThisMonthForWindow(start, end, scopeQuery) {
   const match = {
     createdAt: { $gte: start, $lt: end },
+    // Exclude soft-deleted orders
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    // Only count paid/successful orders
+    $or: [
+      { isPaid: true },
+      { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS", "successful", "Successful"] } },
+      { "payment.status": { $in: ["paid", "completed", "success", "successful"] } },
+      { orderSource: { $in: ["pos", "POS", "manual", "Manual"] } },
+      { paymentMethod: { $in: ["cash", "Cash", "CASH", "cod", "COD", "Cod", "card", "Card", "CARD", "razorpay", "Razorpay"] } },
+      { orderStatus: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } },
+      { status: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } }
+    ]
   };
   applyScope(match, scopeQuery);
   const [agg] = await Order.aggregate([
@@ -195,7 +221,13 @@ async function lossThisMonthForWindow(start, end, scopeQuery) {
  * (linked User id, else normalized customerEmail on the order). Orders with neither are excluded.
  */
 async function activeOrderingCustomersCountForWindow(start, end, scopeQuery) {
-  const match = { createdAt: { $gte: start, $lt: end } };
+  const match = { 
+    createdAt: { $gte: start, $lt: end },
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+  };
   applyScope(match, scopeQuery);
   const [agg] = await Order.aggregate([
     { $match: match },
@@ -230,6 +262,10 @@ async function activeOrderingCustomersCountForWindow(start, end, scopeQuery) {
 async function customerLifetimeValueAllTime(scopeQuery) {
   // Requirement: CLV based on customer order totals for valid orders
   const match = {
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
     $or: [
       { isPaid: true },
       { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS"] } },
@@ -325,7 +361,13 @@ async function monthlyActiveCustomers(start, end, scopeQuery) {
  * This is not the lifetime CLV delta (that would need historical snapshots); it is documented as a revenue-intensity trend.
  */
 async function monthlyRevenuePerPayer(start, end, scopeQuery) {
-  const match = { createdAt: { $gte: start, $lt: end } };
+  const match = { 
+    createdAt: { $gte: start, $lt: end },
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+  };
   applyScope(match, scopeQuery);
   const rows = await Order.aggregate([
     { $match: match },
@@ -367,7 +409,7 @@ async function monthlyRevenuePerPayer(start, end, scopeQuery) {
   return payers > 0 ? revenue / payers : 0;
 }
 
-/** Last 7 local days (including today): label + total revenue (website + POS). */
+/** Last 7 local days (including today): label + total revenue — non-deleted paid/fulfilled orders only. */
 async function revenueFlowLast7Days(scopeQuery) {
   const now = new Date();
   const days = [];
@@ -375,7 +417,24 @@ async function revenueFlowLast7Days(scopeQuery) {
   for (let i = 6; i >= 0; i -= 1) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 0, 0, 0, 0);
     const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 0, 0, 0, 0);
-    const match = { createdAt: { $gte: day, $lt: next } };
+    const match = {
+      createdAt: { $gte: day, $lt: next },
+      // Exclude soft-deleted orders
+      isDeleted: { $ne: true },
+      deletedAt: { $exists: false },
+      status: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+      orderStatus: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+      // Only count paid/successful orders
+      $or: [
+        { isPaid: true },
+        { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS", "successful", "Successful"] } },
+        { "payment.status": { $in: ["paid", "completed", "success", "successful"] } },
+        { orderSource: { $in: ["pos", "POS", "manual", "Manual"] } },
+        { paymentMethod: { $in: ["cash", "Cash", "CASH", "cod", "COD", "Cod", "card", "Card", "CARD", "razorpay", "Razorpay"] } },
+        { orderStatus: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } },
+        { status: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } }
+      ]
+    };
     applyScope(match, scopeQuery);
     const [agg] = await Order.aggregate([
       { $match: match },
@@ -408,10 +467,16 @@ const PIE_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b
 async function topCategoriesForWindow(start, end, scopeQuery, limit = 8) {
   const match = { 
     createdAt: { $gte: start, $lt: end },
+    // Exclude soft-deleted orders
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+    // Only count paid/successful orders
     $or: [
       { isPaid: true },
-      { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS"] } },
-      { "payment.status": { $in: ["paid", "completed", "success"] } },
+      { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS", "successful", "Successful"] } },
+      { "payment.status": { $in: ["paid", "completed", "success", "successful"] } },
       { orderSource: { $in: ["pos", "POS", "manual", "Manual"] } },
       { paymentMethod: { $in: ["cash", "Cash", "CASH", "cod", "COD", "Cod", "card", "Card", "CARD", "razorpay", "Razorpay"] } },
       { orderStatus: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } },
@@ -494,10 +559,16 @@ async function topProductsForWindow(start, end, scopeQuery, limit = 3) {
   const productLineStages = (windowStart, windowEnd) => {
     const match = { 
       createdAt: { $gte: windowStart, $lt: windowEnd },
+      // Exclude soft-deleted orders
+      isDeleted: { $ne: true },
+      deletedAt: { $exists: false },
+      status: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+      orderStatus: { $nin: ["deleted", "cancelled", "canceled", "refunded", "failed"] },
+      // Only count paid/successful orders
       $or: [
         { isPaid: true },
-        { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS"] } },
-        { "payment.status": { $in: ["paid", "completed", "success"] } },
+        { paymentStatus: { $in: ["paid", "Paid", "PAID", "completed", "success", "Success", "SUCCESS", "successful", "Successful"] } },
+        { "payment.status": { $in: ["paid", "completed", "success", "successful"] } },
         { orderSource: { $in: ["pos", "POS", "manual", "Manual"] } },
         { paymentMethod: { $in: ["cash", "Cash", "CASH", "cod", "COD", "Cod", "card", "Card", "CARD", "razorpay", "Razorpay"] } },
         { orderStatus: { $in: ["delivered", "completed", "shipped", "confirmed", "packed", "out_for_delivery"] } },
@@ -597,66 +668,440 @@ const getAdminAnalytics = async (req, res) => {
   try {
     const userId = req.user?._id;
     const userRole = String(req.user?.role || "");
-    const isSuperAdmin = userRole.toLowerCase() === "super_admin" || userRole.toLowerCase() === "superadmin" || userRole.toLowerCase() === "super admin";
-    
-    const resolvedClientId = await resolveTenant(req);
-    const scopeQuery = isSuperAdmin ? {} : buildScopeQuery(req.user, resolvedClientId, true);
+    const normalizedRole = normalizeRole(userRole);
+    const isSuperAdmin = normalizedRole === "super_admin";
+    const isAdmin = normalizedRole === "admin";
 
-    console.log("ADMIN OVERVIEW DEBUG", {
-      userRole,
-      isSuperAdmin,
-      resolvedClientId,
-      scopeQuery: JSON.stringify(scopeQuery),
-      userId: req.user?._id,
-      assignedClientId: req.user?.clientId
-    });
+    let scopeQuery = {};
+    let clientStoreId = null;
 
-    console.log("[Analytics] Request context:", {
-      origin: req.headers.origin,
-      userRole,
-      isSuperAdmin,
-      resolvedClientId,
-      scopeQuery
-    });
+    if (isSuperAdmin || isAdmin) {
+      const explicitClientId = req.query?.clientId || req.body?.clientId || req.headers["x-client-id"];
+      if (isValidObjectId(explicitClientId)) {
+        scopeQuery = { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) };
+      } else {
+        scopeQuery = {};
+      }
+    } else {
+      // Non-privileged users (like client, store_manager, employee) must be strictly isolated.
+      // We resolve the client ID ONLY from their logged-in user profile or employee record, ignoring any query/body/headers overrides.
+      if (req.user) {
+        clientStoreId = req.user.clientId || req.user.assignedClient || req.user.linkedClientId;
+      }
+      
+      // Fallback: check Employee model
+      if (!clientStoreId && req.user && (req.user.id || req.user._id)) {
+        try {
+          const Employee = require("../models/Employee");
+          const emp = await Employee.findOne({ userId: req.user.id || req.user._id }).select("clientId");
+          if (emp && emp.clientId) {
+            clientStoreId = emp.clientId;
+          }
+        } catch (err) {
+          console.error(`[AdminAnalytics] Employee fallback error: ${err.message}`);
+        }
+      }
 
-    // Get total orders for debug log
-    const debugQuery = Object.keys(scopeQuery).length > 0 ? scopeQuery : {};
-    const totalOrdersFound = await Order.countDocuments(debugQuery);
+      if (isValidObjectId(clientStoreId)) {
+        scopeQuery = { clientId: new mongoose.Types.ObjectId(String(clientStoreId)) };
+      } else {
+        // Fallback to random non-matching ObjectId if client ID is missing to prevent displaying global/demo/admin data
+        scopeQuery = { clientId: new mongoose.Types.ObjectId() };
+      }
+    }
 
-    // Requirement 5: Add detailed debug logs
-    console.log("ADMIN OVERVIEW DEBUG", {
-      origin: req.headers.origin,
-      host: req.headers.host,
-      userId: req.user?._id,
-      email: req.user?.email,
-      role: req.user?.role,
-      userClientId: req.user?.clientId,
-      linkedClientId: req.user?.linkedClientId,
-      headerClientId: req.headers["x-client-id"],
-      resolvedClientId,
-      scopeQuery,
-      totalOrdersFound
-    });
-
-    console.log("-----------------------------------------");
-    console.log("role:", userRole, "clientId:", resolvedClientId, "query:", JSON.stringify(scopeQuery));
-    console.log("-----------------------------------------");
 
     const now = new Date();
     const cur = monthWindowContaining(now);
     const prev = previousMonthWindow(now);
 
-    const [convCur, convPrev] = await Promise.all([
-      conversionRateForWindow(cur.start, cur.end, scopeQuery),
-      conversionRateForWindow(prev.start, prev.end, scopeQuery),
-    ]);
+    const isOrderPaidOrSuccessful = (order) => {
+      const status = String(order.status || order.orderStatus || "").toLowerCase().trim();
+      const paymentStatus = String(order.paymentStatus || "").toLowerCase().trim();
+      const paymentMethod = String(order.paymentMethod || "").toLowerCase().trim();
+      const orderSource = String(order.orderSource || "").toLowerCase().trim();
 
-    const [totCur, totPrev] = await Promise.all([
-      orderTotalsForWindow(cur.start, cur.end, scopeQuery),
-      orderTotalsForWindow(prev.start, prev.end, scopeQuery),
-    ]);
+      if (
+        ["cancelled", "refunded", "failed"].includes(status) ||
+        ["refunded", "failed"].includes(paymentStatus)
+      ) {
+        return false;
+      }
+
+      if (orderSource === "pos" && paymentMethod === "cash") {
+        return true;
+      }
+
+      if (order.razorpayPaymentId && !["failed", "cancelled", "refunded"].includes(paymentStatus)) {
+        return true;
+      }
+
+      const successStatuses = ["paid", "completed", "success", "successful", "delivered"];
+      const successPaymentStatuses = ["paid", "completed", "success", "successful"];
+
+      if (successStatuses.includes(status) || successPaymentStatuses.includes(paymentStatus) || order.isPaid === true) {
+        if (status === "unpaid" || status === "pending" || paymentStatus === "unpaid" || paymentStatus === "pending") {
+          return false;
+        }
+        return true;
+      }
+
+      return false;
+    };
+
+    const isInvoicePaidOrSuccessful = (invoice) => {
+      const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
+      const orderStatus = String(invoice.orderStatus || "").toLowerCase().trim();
+
+      if (
+        ["cancelled", "refunded", "failed"].includes(paymentStatus) ||
+        ["cancelled", "refunded", "failed"].includes(orderStatus)
+      ) {
+        return false;
+      }
+
+      const successStatuses = ["paid", "completed", "success", "successful"];
+      return successStatuses.includes(paymentStatus) || successStatuses.includes(orderStatus);
+    };
+
+    const getDocDate = (doc) => {
+      if (doc.createdAt) {
+        const d = new Date(doc.createdAt);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (doc.orderDate) {
+        const d = new Date(doc.orderDate);
+        if (!isNaN(d.getTime())) return d;
+      }
+      if (doc.invoiceDate) {
+        const d = new Date(doc.invoiceDate);
+        if (!isNaN(d.getTime())) return d;
+      }
+      return null;
+    };
+
+    const isDateInWindow = (doc, start, end) => {
+      const docDate = getDocDate(doc);
+      if (!docDate) return false;
+      return docDate >= start && docDate < end;
+    };
+
+    const calculateStatsForWindow = (start, end, allOrders, allInvoices) => {
+      const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
+      const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
+
+      let revenue = 0;
+      let paidOrdersCount = 0;
+      const paidOrderIdsSet = new Set();
+
+      for (const order of ordersInWindow) {
+        if (isOrderPaidOrSuccessful(order)) {
+          const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+          revenue += amt;
+          paidOrdersCount++;
+          if (order.orderId) {
+            paidOrderIdsSet.add(String(order.orderId).trim().toLowerCase());
+          }
+        }
+      }
+
+      for (const invoice of invoicesInWindow) {
+        if (isInvoicePaidOrSuccessful(invoice)) {
+          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+          if (invOrderId && paidOrderIdsSet.has(invOrderId)) {
+            continue;
+          }
+          const amt = invoice.totalAmount || invoice.subtotal || 0;
+          revenue += amt;
+          paidOrdersCount++;
+          if (invOrderId) {
+            paidOrderIdsSet.add(invOrderId);
+          }
+        }
+      }
+
+      const orderCount = ordersInWindow.length;
+      const avgOrderValue = paidOrdersCount > 0 ? revenue / paidOrdersCount : 0;
+
+      return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet };
+    };
+
+    const calculateLossThisMonth = (start, end, allOrders) => {
+      const LOSS_STATUSES = ["cancelled", "refunded", "failed"];
+      let loss = 0;
+      let cancelledCount = 0;
+
+      for (const order of allOrders) {
+        const orderStatusStr = String(order.status || order.orderStatus || "").toLowerCase().trim();
+        const isCancelledStatus = LOSS_STATUSES.includes(orderStatusStr);
+
+        // Refunds first — avoid double-counting with cancellation block
+        if (order.refundAmount > 0 && order.refundedAt) {
+          const refDate = new Date(order.refundedAt);
+          if (refDate >= start && refDate < end) {
+            loss += order.refundAmount;
+            cancelledCount++;
+            continue;
+          }
+        }
+
+        // Cancelled / failed — use cancelledAt if set, fall back to createdAt.
+        // Fallback covers orders cancelled via admin status PATCH without explicit cancelledAt.
+        if (isCancelledStatus) {
+          const cancelDate = order.cancelledAt
+            ? new Date(order.cancelledAt)
+            : order.createdAt
+            ? new Date(order.createdAt)
+            : null;
+          if (cancelDate && cancelDate >= start && cancelDate < end) {
+            const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+            loss += amt;
+            cancelledCount++;
+          }
+        }
+      }
+
+      console.log(`[AdminAnalytics Loss] role=${userRole} cancelledOrdersCounted=${cancelledCount} lossAmount=${Math.round(loss * 100) / 100} window=[${start.toISOString().slice(0, 10)} – ${end.toISOString().slice(0, 10)}]`);
+      return Math.round(loss * 100) / 100;
+    };
+
+    const calculateTopProducts = (startCur, endCur, startPrev, endPrev, allOrders, allInvoices, limit = 3) => {
+      const curStats = calculateStatsForWindow(startCur, endCur, allOrders, allInvoices);
+      const prevStats = calculateStatsForWindow(startPrev, endPrev, allOrders, allInvoices);
+
+      const productsCur = new Map();
+      const productsPrev = new Map();
+
+      const processItems = (ordersInWindow, invoicesInWindow, paidIds, map, isCur) => {
+        for (const order of ordersInWindow) {
+          if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
+            for (const item of order.items) {
+              const name = String(item.name || "").trim();
+              if (!name) continue;
+              const qty = Number(item.quantity) || 0;
+              const price = Number(item.price) || 0;
+              const itemRev = qty * price;
+              const image = item.image || "";
+
+              if (isCur) {
+                if (!map.has(name)) map.set(name, { sales: 0, image });
+                const entry = map.get(name);
+                entry.sales += itemRev;
+                if (image && !entry.image) entry.image = image;
+              } else {
+                map.set(name, (map.get(name) || 0) + itemRev);
+              }
+            }
+          }
+        }
+
+        for (const invoice of invoicesInWindow) {
+          if (isInvoicePaidOrSuccessful(invoice)) {
+            const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+            const matchingOrder = allOrders.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
+            if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+              continue;
+            }
+
+            if (Array.isArray(invoice.items)) {
+              for (const item of invoice.items) {
+                const name = String(item.name || "").trim();
+                if (!name) continue;
+                const qty = Number(item.quantity) || 0;
+                const price = Number(item.price) || 0;
+                const itemRev = qty * price;
+
+                if (isCur) {
+                  if (!map.has(name)) map.set(name, { sales: 0, image: "" });
+                  const entry = map.get(name);
+                  entry.sales += itemRev;
+                } else {
+                  map.set(name, (map.get(name) || 0) + itemRev);
+                }
+              }
+            }
+          }
+        }
+      };
+
+      const ordersCur = allOrders.filter(o => isDateInWindow(o, startCur, endCur));
+      const invoicesCur = allInvoices.filter(i => isDateInWindow(i, startCur, endCur));
+      processItems(ordersCur, invoicesCur, curStats.paidOrderIdsSet, productsCur, true);
+
+      const ordersPrev = allOrders.filter(o => isDateInWindow(o, startPrev, endPrev));
+      const invoicesPrev = allInvoices.filter(i => isDateInWindow(i, startPrev, endPrev));
+      processItems(ordersPrev, invoicesPrev, prevStats.paidOrderIdsSet, productsPrev, false);
+
+      const topProducts = Array.from(productsCur.entries()).map(([name, entry]) => {
+        const sales = Math.round(entry.sales * 100) / 100;
+        const prevRev = productsPrev.get(name) || 0;
+        let growthPercent = 0;
+        if (prevRev > 0) {
+          growthPercent = ((sales - prevRev) / prevRev) * 100;
+        } else if (sales > 0) {
+          growthPercent = 100;
+        }
+        return {
+          name,
+          sales,
+          growthPercent: Math.round(growthPercent * 10) / 10,
+          image: entry.image || "",
+        };
+      });
+
+      topProducts.sort((a, b) => b.sales - a.sales);
+      return topProducts.slice(0, limit);
+    };
+
+    const calculateTopCategories = (start, end, allOrders, allInvoices, limit = 8) => {
+      const categoriesMap = new Map();
+      const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
+      const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
+
+      for (const order of ordersInWindow) {
+        if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
+          for (const item of order.items) {
+            const cat = String(item.category || "Uncategorized").trim() || "Uncategorized";
+            const qty = Number(item.quantity) || 0;
+            const price = Number(item.price) || 0;
+            const itemRev = qty * price;
+
+            categoriesMap.set(cat, (categoriesMap.get(cat) || 0) + itemRev);
+          }
+        }
+      }
+
+      for (const invoice of invoicesInWindow) {
+        if (isInvoicePaidOrSuccessful(invoice)) {
+          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+          const matchingOrder = allOrders.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
+          if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+            continue;
+          }
+          if (Array.isArray(invoice.items)) {
+            for (const item of invoice.items) {
+              const cat = "Uncategorized";
+              const qty = Number(item.quantity) || 0;
+              const price = Number(item.price) || 0;
+              const itemRev = qty * price;
+
+              categoriesMap.set(cat, (categoriesMap.get(cat) || 0) + itemRev);
+            }
+          }
+        }
+      }
+
+      const total = Array.from(categoriesMap.values()).reduce((sum, val) => sum + val, 0);
+
+      const PIE_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4", "#f43f5e"];
+      const sorted = Array.from(categoriesMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([name, val], idx) => {
+          const value = Math.round(val * 100) / 100;
+          const percent = total > 0 ? Math.round((val / total) * 1000) / 10 : 0;
+          return {
+            name,
+            value,
+            percent,
+            color: PIE_COLORS[idx % PIE_COLORS.length]
+          };
+        });
+
+      return sorted;
+    };
+
+    const calculateRevenueFlow = (allOrders, allInvoices) => {
+      const days = [];
+      const short = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const now = new Date();
+
+      for (let i = 6; i >= 0; i--) {
+        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 0, 0, 0, 0);
+        const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1, 0, 0, 0, 0);
+
+        const stats = calculateStatsForWindow(dayStart, dayEnd, allOrders, allInvoices);
+        days.push({
+          name: short[dayStart.getDay()],
+          sales: Math.round(stats.revenue * 100) / 100,
+          orders: stats.orderCount,
+          date: dayStart.toISOString().slice(0, 10)
+        });
+      }
+      return days;
+    };
+
+    // Include cancelled/refunded/failed orders so calculateLossThisMonth sees them.
+    // Exclude ALL soft-deleted orders (isDeleted=true OR deletedAt exists OR status="deleted").
+    // isOrderPaidOrSuccessful() handles revenue exclusion for cancelled/refunded orders.
+    const allOrders = await Order.find({
+      ...scopeQuery,
+      isDeleted: { $ne: true },
+      deletedAt: { $exists: false },
+      status: { $nin: ["deleted"] },
+      orderStatus: { $nin: ["deleted"] },
+      $or: [
+        { createdAt: { $gte: prev.start } },
+        { orderDate: { $gte: prev.start } },
+        { paidAt: { $gte: prev.start } },
+        { cancelledAt: { $gte: prev.start } },
+        { refundedAt: { $gte: prev.start } }
+      ]
+    }).lean();
+
+    const allInvoices = await Invoice.find({
+      ...scopeQuery,
+      $or: [
+        { createdAt: { $gte: prev.start } },
+        { invoiceDate: { $gte: prev.start } },
+        { paidAt: { $gte: prev.start } }
+      ]
+    }).lean();
+
+    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders, allInvoices);
+    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders, allInvoices);
+
+    const salesThisMonth = curStats.revenue;
+    const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
+    const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
+
+    const calculateConversionRate = async (start, end, scopeQuery) => {
+      const userQuery = { role: { $in: CUSTOMER_ROLES } };
+      applyScope(userQuery, scopeQuery);
+      const registered = await User.countDocuments(userQuery);
+      if (registered === 0) return { rate: 0, registered };
+
+      const orderQuery = {
+        createdAt: { $gte: start, $lt: end },
+        user: { $exists: true, $ne: null },
+      };
+      applyScope(orderQuery, scopeQuery);
+
+      const withUser = await Order.distinct("user", orderQuery);
+      const purchasers = withUser.filter((id) => id != null).length;
+      const rate = Math.min(100, (purchasers / registered) * 100);
+      return { rate, registered };
+    };
+
+    const conversionRateCur = await calculateConversionRate(cur.start, cur.end, scopeQuery);
+    const conversionRatePrev = await calculateConversionRate(prev.start, prev.end, scopeQuery);
+
+    const activeCustCur = await activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeQuery);
+    const activeCustPrev = await activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeQuery);
+
+    const newCustCur = await User.countDocuments({
+      role: { $in: CUSTOMER_ROLES },
+      createdAt: { $gte: cur.start, $lt: cur.end },
+      ...scopeQuery
+    });
+    const newCustPrev = await User.countDocuments({
+      role: { $in: CUSTOMER_ROLES },
+      createdAt: { $gte: prev.start, $lt: prev.end },
+      ...scopeQuery
+    });
 
     const clv = await customerLifetimeValueAllTime(scopeQuery);
+
     const [mrpCur, mrpPrev] = await Promise.all([
       monthlyRevenuePerPayer(cur.start, cur.end, scopeQuery),
       monthlyRevenuePerPayer(prev.start, prev.end, scopeQuery),
@@ -667,44 +1112,57 @@ const getAdminAnalytics = async (req, res) => {
       monthlyActiveCustomers(prev.start, prev.end, scopeQuery),
     ]);
 
-    const [newCustCur, newCustPrev] = await Promise.all([
-      newCustomersForWindow(cur.start, cur.end, scopeQuery),
-      newCustomersForWindow(prev.start, prev.end, scopeQuery),
-    ]);
+    const revenueFlow = calculateRevenueFlow(allOrders, allInvoices);
+    const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, allInvoices);
+    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 3);
 
-    const [activeCustCur, activeCustPrev] = await Promise.all([
-      activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeQuery),
-      activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeQuery),
-    ]);
+    // Requirement 15: Safe backend debug logs — deleted/cancelled orders, revenue recalculated from DB
+    const totalNonDeletedOrdersFound = allOrders.length;
+    const paidNonDeletedOrdersFound = curStats.paidOrdersCount;
+    const totalRevenueCalculated = Math.round(curStats.revenue * 100) / 100;
+    const deletedOrCancelledOrdersExcluded = allOrders.filter(o => {
+      const s = String(o.status || o.orderStatus || "").toLowerCase();
+      return s === "cancelled" || s === "canceled" || s === "refunded" || s === "failed";
+    }).length;
+    const topProductFound = topProducts[0]?.name || "None";
 
-    const [revenueFlow, topCategories, topProducts, salesThisMonthRaw, lossThisMonthRaw] =
-      await Promise.all([
-        revenueFlowLast7Days(scopeQuery),
-        topCategoriesForWindow(cur.start, cur.end, scopeQuery),
-        topProductsForWindow(cur.start, cur.end, scopeQuery, 3),
-        salesThisMonthForWindow(cur.start, cur.end, scopeQuery),
-        lossThisMonthForWindow(cur.start, cur.end, scopeQuery),
-      ]);
+    console.log("[Admin Dashboard Stats LOG]:", {
+      loggedInRole: userRole,
+      scopeFilter: clientStoreId ? String(clientStoreId) : (Object.keys(scopeQuery).length ? "client-scoped" : "Global (All Data)"),
+      totalNonDeletedOrdersFound,
+      paidNonDeletedOrdersFound,
+      deletedOrCancelledOrdersExcluded,
+      recalculatedRevenue: totalRevenueCalculated,
+      lossThisMonth,
+      profitThisMonth,
+      topProductFound
+    });
 
-    const salesThisMonth = Math.round(salesThisMonthRaw * 100) / 100;
-    const lossThisMonth = Math.round(lossThisMonthRaw * 100) / 100;
-    // PROFIT: salesThisMonth - lossThisMonth
-    const profitThisMonth = Math.round((totCur.revenue - lossThisMonth) * 100) / 100;
+    console.log("[Dashboard Isolation Log]:", {
+      loggedInRole: userRole,
+      clientStoreIdUsed: clientStoreId ? String(clientStoreId) : (scopeQuery.clientId ? String(scopeQuery.clientId) : "Global (All Data)"),
+      totalNonDeletedOrdersFound,
+      paidNonDeletedOrdersFound,
+      deletedOrCancelledOrdersExcluded,
+      recalculatedRevenue: totalRevenueCalculated,
+      lossThisMonth
+    });
 
-    const conversionRateChange = pctChange(convCur.rate, convPrev.rate);
-    const avgOrderValueChange = pctChange(totCur.avgOrderValue, totPrev.avgOrderValue);
+
+    const conversionRateChange = pctChange(conversionRateCur.rate, conversionRatePrev.rate);
+    const avgOrderValueChange = pctChange(curStats.avgOrderValue, prevStats.avgOrderValue);
     const clvTrendChange = pctChange(mrpCur, mrpPrev);
     const sessionsChange = pctChange(mauCur, mauPrev);
-    const totalRevenueChange = pctChange(totCur.revenue, totPrev.revenue);
-    const orderCountChange = pctChange(totCur.orderCount, totPrev.orderCount);
+    const totalRevenueChange = pctChange(curStats.revenue, prevStats.revenue);
+    const orderCountChange = pctChange(curStats.orderCount, prevStats.orderCount);
     const newCustomersChange = pctChange(newCustCur, newCustPrev);
     const activeCustomersChange = pctChange(activeCustCur, activeCustPrev);
 
     const fullSummary = {
-      totalRevenue: Math.round(totCur.revenue * 100) / 100,
+      totalRevenue: Math.round(curStats.revenue * 100) / 100,
       totalRevenueChange: Math.round(totalRevenueChange * 10) / 10,
       totalRevenueTrend: trendFromChange(totalRevenueChange),
-      orderCount: totCur.orderCount,
+      orderCount: curStats.orderCount,
       orderCountChange: Math.round(orderCountChange * 10) / 10,
       orderCountTrend: trendFromChange(orderCountChange),
       activeCustomers: activeCustCur,
@@ -713,10 +1171,10 @@ const getAdminAnalytics = async (req, res) => {
       newCustomersThisMonth: newCustCur,
       newCustomersChange: Math.round(newCustomersChange * 10) / 10,
       newCustomersTrend: trendFromChange(newCustomersChange),
-      conversionRate: Math.round(convCur.rate * 100) / 100,
+      conversionRate: Math.round(conversionRateCur.rate * 100) / 100,
       conversionRateChange: Math.round(conversionRateChange * 10) / 10,
       conversionRateTrend: trendFromChange(conversionRateChange),
-      avgOrderValue: Math.round(totCur.avgOrderValue * 100) / 100,
+      avgOrderValue: Math.round(curStats.avgOrderValue * 100) / 100,
       avgOrderValueChange: Math.round(avgOrderValueChange * 10) / 10,
       avgOrderValueTrend: trendFromChange(avgOrderValueChange),
       customerLifetimeValue: Math.round(clv.customerLifetimeValue * 100) / 100,

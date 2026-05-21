@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, AlertCircle, Package, Hash, Tag, DollarSign, Database, Image as ImageIcon, FileText, Camera } from 'lucide-react';
+import { X, Save, AlertCircle, Package, Hash, Tag, IndianRupee, Database, Image as ImageIcon, FileText, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../ui/button';
 import { Product } from '../../api/products';
@@ -434,20 +434,23 @@ export function ProductModal({
                     {/* Price */}
                     <div className="space-y-2">
                       <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                        <DollarSign className="w-4 h-4 text-indigo-500" />
-                        Unit Price ($)
+                        <IndianRupee className="w-4 h-4 text-indigo-500" />
+                        Unit Price (₹)
                       </label>
-                      <input
-                        type="number"
-                        name="unitPrice"
-                        required
-                        min="0"
-                        step="0.01"
-                        value={formData.unitPrice}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
-                        placeholder="0.00"
-                      />
+                      <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400 dark:text-slate-500">₹</span>
+                        <input
+                          type="number"
+                          name="unitPrice"
+                          required
+                          min="0"
+                          step="0.01"
+                          value={formData.unitPrice}
+                          onChange={handleChange}
+                          className="w-full pl-7 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                          placeholder="0.00"
+                        />
+                      </div>
                     </div>
 
                     {/* Stock */}

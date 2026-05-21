@@ -1592,8 +1592,14 @@ const deleteOrder = async (req, res) => {
       const oid = order.orderId;
       const mongoId = order._id;
       
-      // Perform strict database deletion using the model
-      await Order.findByIdAndDelete(mongoId);
+      // Perform soft delete using the model fields
+      order.isDeleted = true;
+      order.deletedAt = new Date();
+      order.status = "deleted";
+      order.orderStatus = "deleted";
+      await order.save();
+      
+      console.log("[OrderDelete LOG]: Deleted order ID:", mongoId);
       
       // Also delete related tracking logs if they exist
       if (oid) {
@@ -1604,7 +1610,7 @@ const deleteOrder = async (req, res) => {
         }
       }
 
-      res.json({ success: true, message: "Order and related tracking logs removed permanently", deletedId: mongoId });
+      res.json({ success: true, message: "Order and related tracking logs removed successfully", deletedId: mongoId });
     } else {
       res.status(404).json({ success: false, message: "Order not found or already deleted" });
     }

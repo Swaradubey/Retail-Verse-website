@@ -7,9 +7,9 @@ export function SupportRoute() {
   const { user } = useAuth();
   
   // Decide which support page to show based on role
-  const isSuperAdmin = user?.role === 'super_admin' || user?.role === 'admin';
+  const isSuperAdminOrClient = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'client';
   
-  if (isSuperAdmin) {
+  if (isSuperAdminOrClient) {
     return <DashboardSupport />;
   }
   

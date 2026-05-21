@@ -29,6 +29,7 @@ export function UserDashboardSupport() {
   const location = useLocation();
   const [stats, setStats] = useState({ total: 0, open: 0, resolved: 0, pending: 0 });
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [ticketForm, setTicketForm] = useState({ 
     subject: '', 
@@ -51,6 +52,17 @@ export function UserDashboardSupport() {
   useEffect(() => {
     fetchStats();
     fetchMyTickets();
+
+    const handleInvalidate = () => {
+      console.log('[DEBUG] Invalidating and refetching user support tickets...');
+      fetchStats();
+      fetchMyTickets();
+    };
+
+    window.addEventListener('invalidate-support-tickets', handleInvalidate);
+    return () => {
+      window.removeEventListener('invalidate-support-tickets', handleInvalidate);
+    };
   }, []);
 
   useEffect(() => {
@@ -66,18 +78,26 @@ export function UserDashboardSupport() {
   }, [location.search, systemTickets]);
 
   useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredTickets(systemTickets);
-    } else {
+    let result = systemTickets;
+
+    // Filter by status
+    if (statusFilter !== "all") {
+      result = result.filter((t: any) => String(t.status).toLowerCase() === statusFilter.toLowerCase());
+    }
+
+    // Filter by search query
+    if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
-      setFilteredTickets(systemTickets.filter((t: any) => 
+      result = result.filter((t: any) => 
         (t.subject && t.subject.toLowerCase().includes(q)) ||
         (t.description && t.description.toLowerCase().includes(q)) ||
         (t.status && t.status.toLowerCase().includes(q)) ||
         (t.issueType && t.issueType.toLowerCase().includes(q))
-      ));
+      );
     }
-  }, [searchQuery, systemTickets]);
+
+    setFilteredTickets(result);
+  }, [searchQuery, statusFilter, systemTickets]);
 
   const fetchStats = async () => {
     setLoadingStats(true);
@@ -233,10 +253,19 @@ export function UserDashboardSupport() {
           />
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto pr-2 pb-2 sm:pb-0">
-          <button className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors text-sm font-semibold w-full sm:w-auto">
-            <Filter className="w-4 h-4" />
-            <span className="whitespace-nowrap">Status: All</span>
-          </button>
+          <div className="relative flex items-center bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm font-semibold text-gray-700 dark:text-gray-200 transition-colors w-full sm:w-auto">
+            <Filter className="w-4 h-4 mr-2 text-gray-400" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="bg-transparent border-none p-0 outline-none text-sm font-semibold text-gray-700 dark:text-gray-200 focus:ring-0 cursor-pointer pr-8"
+            >
+              <option value="all" className="bg-white dark:bg-zinc-800 text-gray-900 dark:text-white">Status: All</option>
+              <option value="open" className="bg-white dark:bg-zinc-800 text-gray-900 dark:text-white">Status: Open</option>
+              <option value="pending" className="bg-white dark:bg-zinc-800 text-gray-900 dark:text-white">Status: Pending</option>
+              <option value="resolved" className="bg-white dark:bg-zinc-800 text-gray-900 dark:text-white">Status: Resolved</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -312,7 +341,7 @@ export function UserDashboardSupport() {
             <Loader2 className="w-8 h-8 animate-spin text-amber-500" />
             <p className="text-sm font-medium">Loading your tickets...</p>
           </div>
-        ) : filteredTickets.length === 0 ? (
+        ) : systemTickets.length === 0 ? (
           <Card className="border border-dashed border-gray-300 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/20 shadow-none rounded-[24px] overflow-hidden">
             <CardContent className="flex flex-col items-center justify-center py-20 text-center relative">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none" />
@@ -336,6 +365,12 @@ export function UserDashboardSupport() {
               </button>
             </CardContent>
           </Card>
+        ) : filteredTickets.length === 0 ? (
+          <div className="py-20 flex flex-col items-center justify-center text-gray-500 gap-3 text-center">
+            <Ticket className="w-10 h-10 text-gray-400 opacity-60" />
+            <p className="text-base font-bold text-gray-800 dark:text-gray-200">No matching tickets found</p>
+            <p className="text-sm text-gray-500">Try adjusting your filters or search query.</p>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {filteredTickets.map((t: any) => (

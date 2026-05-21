@@ -242,43 +242,47 @@ export function DashboardStats({
       return [
         {
           title: 'Total Revenue',
-          value: error ? '0' : '—',
+          value: error ? 'Error' : '—',
           change: '—',
           isPositive: true,
           icon: DollarSign,
-          iconTint: 'from-[#d4af37] to-amber-700',
+          iconTint: 'from-[#d4af37] to-[#b87500]',
           ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
+          path: '/dashboard/analytics',
         },
         {
-          title: superAdminOverview ? 'Active Customers' : 'Active Orders',
+          title: 'Orders This Month',
           value: '—',
           change: '—',
           isPositive: true,
-          icon: superAdminOverview ? UserCheck : ShoppingCart,
-          iconTint: 'from-teal-600 to-emerald-700',
-          ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
+          icon: ShoppingCart,
+          iconTint: 'from-[#d4af37] to-[#b87500]',
+          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
+          path: '/dashboard/orders',
         },
         {
-          title: 'New Customers',
-          value: '—',
-          change: '—',
-          isPositive: true,
-          icon: Users,
-          iconTint: 'from-amber-600 to-orange-700',
-          ringAccent: 'from-orange-300/50 via-amber-100/35 to-orange-400/45',
-          description: cardErrorDesc,
-        },
-        {
-          title: 'Conversion Rate',
+          title: 'Average Order Value',
           value: '—',
           change: '—',
           isPositive: true,
           icon: TrendingUp,
-          iconTint: 'from-violet-600 to-indigo-700',
-          ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
+          iconTint: 'from-[#d4af37] to-[#b87500]',
+          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
+          path: '/dashboard/analytics',
+        },
+        {
+          title: 'Top Product Sales',
+          value: '—',
+          change: '—',
+          isPositive: true,
+          icon: Package,
+          iconTint: 'from-[#d4af37] to-[#b87500]',
+          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
+          description: cardErrorDesc,
+          path: '/dashboard/products',
         },
       ];
     }
@@ -287,90 +291,10 @@ export function DashboardStats({
     const revChange = s.totalRevenueChange ?? 0;
     const orders = s.orderCount ?? 0;
     const ordChange = s.orderCountChange ?? 0;
-    const newCust = s.newCustomersThisMonth ?? 0;
-    const newChange = s.newCustomersChange ?? 0;
-    const conv = s.conversionRate ?? 0;
-    const convChange = s.conversionRateChange ?? 0;
     const avgOrder = s.avgOrderValue ?? 0;
     const avgChange = s.avgOrderValueChange ?? 0;
     const topProduct = analytics?.topProducts?.[0];
     const useInr = !!superAdminOverview;
-
-     if (analytics?.analyticsScope === 'operational') {
-       return [
-         {
-           title: 'Total Revenue',
-           value: formatCurrency(revenue, useInr),
-           change: formatSignedPct(revChange),
-           isPositive: revChange >= 0,
-           icon: DollarSign,
-           iconTint: 'from-[#d4af37] to-[#b87500]',
-           ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
-           description: 'vs last month',
-           path: '/dashboard/analytics',
-         },
-         {
-           title: 'Orders this month',
-           value: orders.toLocaleString(),
-           change: formatSignedPct(ordChange),
-           isPositive: ordChange >= 0,
-           icon: ShoppingCart,
-           iconTint: 'from-[#d4af37] to-[#b87500]',
-           ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
-           description: 'This month',
-           path: '/dashboard/orders',
-         },
-         {
-           title: 'Avg order value',
-           value: formatCurrency(avgOrder, useInr),
-           change: formatSignedPct(avgChange),
-           isPositive: avgChange >= 0,
-           icon: TrendingUp,
-           iconTint: 'from-[#d4af37] to-[#b87500]',
-           ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
-           description: 'vs last month',
-           path: '/dashboard/analytics',
-         },
-         {
-           title: 'Top product sales',
-           value: topProduct ? formatCurrency(topProduct.sales, useInr) : '—',
-           change: topProduct ? formatSignedPct(topProduct.growthPercent) : '—',
-           isPositive: (topProduct?.growthPercent ?? 0) >= 0,
-           icon: Package,
-           iconTint: 'from-[#d4af37] to-[#b87500]',
-           ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
-           description: topProduct?.name ? topProduct.name.slice(0, 28) : 'This month',
-           path: '/dashboard/products',
-         },
-       ];
-     }
-
-    const activeCust = s.activeCustomers ?? 0;
-    const activeCustChange = s.activeCustomersChange ?? 0;
-
-    const ordersKpi = {
-      title: 'Active Orders' as const,
-      value: orders.toLocaleString(),
-      change: formatSignedPct(ordChange),
-      isPositive: ordChange >= 0,
-      icon: ShoppingCart,
-      iconTint: 'from-teal-600 to-emerald-700',
-      ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
-      description: 'orders this month',
-      path: '/dashboard/orders',
-    };
-
-    const activeCustomersKpi = {
-      title: 'Active Customers' as const,
-      value: activeCust.toLocaleString(),
-      change: formatSignedPct(activeCustChange),
-      isPositive: activeCustChange >= 0,
-      icon: UserCheck,
-      iconTint: 'from-teal-600 to-emerald-700',
-      ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
-      description: 'distinct buyers this month',
-      path: '/dashboard/customers',
-    };
 
     return [
       {
@@ -379,33 +303,43 @@ export function DashboardStats({
         change: formatSignedPct(revChange),
         isPositive: revChange >= 0,
         icon: DollarSign,
-        iconTint: 'from-[#d4af37] to-amber-700',
+        iconTint: 'from-[#d4af37] to-[#b87500]',
         ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: 'vs last month',
         path: '/dashboard/analytics',
       },
-      superAdminOverview ? activeCustomersKpi : ordersKpi,
       {
-        title: 'New Customers',
-        value: newCust.toLocaleString(),
-        change: formatSignedPct(newChange),
-        isPositive: newChange >= 0,
-        icon: Users,
-        iconTint: 'from-amber-600 to-orange-700',
-        ringAccent: 'from-orange-300/50 via-amber-100/35 to-orange-400/45',
-        description: 'new accounts this month',
-        path: '/dashboard/customers',
+        title: 'Orders This Month',
+        value: orders.toLocaleString(),
+        change: formatSignedPct(ordChange),
+        isPositive: ordChange >= 0,
+        icon: ShoppingCart,
+        iconTint: 'from-[#d4af37] to-[#b87500]',
+        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
+        description: 'This month',
+        path: '/dashboard/orders',
       },
       {
-        title: 'Conversion Rate',
-        value: `${conv.toFixed(2)}%`,
-        change: formatSignedPct(convChange),
-        isPositive: convChange >= 0,
+        title: 'Average Order Value',
+        value: formatCurrency(avgOrder, useInr),
+        change: formatSignedPct(avgChange),
+        isPositive: avgChange >= 0,
         icon: TrendingUp,
-        iconTint: 'from-violet-600 to-indigo-700',
-        ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
+        iconTint: 'from-[#d4af37] to-[#b87500]',
+        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: 'vs last month',
         path: '/dashboard/analytics',
+      },
+      {
+        title: 'Top Product Sales',
+        value: topProduct ? formatCurrency(topProduct.sales, useInr) : 'No sales yet',
+        change: topProduct ? formatSignedPct(topProduct.growthPercent) : '—',
+        isPositive: (topProduct?.growthPercent ?? 0) >= 0,
+        icon: Package,
+        iconTint: 'from-[#d4af37] to-[#b87500]',
+        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
+        description: topProduct?.name ? topProduct.name.slice(0, 28) : 'This month',
+        path: '/dashboard/products',
       },
     ];
   }, [analytics, staffView, error, superAdminOverview, userOverview]);

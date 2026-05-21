@@ -44,7 +44,7 @@ const getZendeskConfig = () => {
 /**
  * Creates a ticket in Zendesk
  */
-const createTicket = async ({ subject, description, name, email, tags = [] }) => {
+const createTicket = async ({ subject, description, name, email, tags = [], type, status, priority }) => {
   const config = getZendeskConfig();
   if (!config) {
     console.warn("[Zendesk] API credentials missing, skipping Zendesk ticket creation");
@@ -52,16 +52,22 @@ const createTicket = async ({ subject, description, name, email, tags = [] }) =>
   }
 
   try {
+    const ticketPayload = {
+      subject,
+      comment: { body: description },
+      requester: { name, email },
+      tags,
+    };
+
+    if (type) ticketPayload.type = type;
+    if (status) ticketPayload.status = status;
+    if (priority) ticketPayload.priority = priority;
+
     const response = await fetch(`${config.baseUrl}/tickets.json`, {
       method: 'POST',
       headers: config.headers,
       body: JSON.stringify({
-        ticket: {
-          subject,
-          comment: { body: description },
-          requester: { name, email },
-          tags,
-        }
+        ticket: ticketPayload
       })
     });
 

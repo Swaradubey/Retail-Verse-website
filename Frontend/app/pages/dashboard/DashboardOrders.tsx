@@ -193,6 +193,8 @@ export function DashboardOrders() {
       if (res.success) {
         toast.success(res.message || 'Order deleted');
         setOrders((prev) => prev.filter((o) => o.orderId !== orderId && o._id !== idToDelete));
+        // Notify Dashboard to refetch analytics so revenue/stats update immediately
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId } }));
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');

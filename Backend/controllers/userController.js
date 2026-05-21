@@ -268,6 +268,43 @@ const updateUserRole = async (req, res) => {
       }
       throw saveErr;
     }
+
+    // Sync to Customer collection if the next role is "user" (case-insensitive "User")
+    if (nextRole === "user") {
+      try {
+        const Customer = require("../models/Customer");
+        const emailNorm = target.email.toLowerCase().trim();
+        
+        // Find existing customer by email or userId to avoid duplicates
+        let customer = await Customer.findOne({
+          $or: [
+            { userId: target._id },
+            { email: emailNorm }
+          ]
+        });
+
+        const customerData = {
+          userId: target._id,
+          name: target.name,
+          email: emailNorm,
+          phone: target.phone || "",
+          status: target.isActive ? "active" : "inactive",
+          createdAt: target.createdAt || new Date(),
+        };
+
+        if (customer) {
+          // Update existing customer record
+          Object.assign(customer, customerData);
+          await customer.save();
+        } else {
+          // Create new customer record
+          await Customer.create(customerData);
+        }
+      } catch (syncErr) {
+        console.error("[Customer Sync Error] Failed to sync customer record:", syncErr.message);
+      }
+    }
+
     await ensureRoleProfilesForUser(target);
     const fresh = await User.findById(target._id).select("-password").lean();
     res.json({ success: true, message: "Role updated", data: fresh });

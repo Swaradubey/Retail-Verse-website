@@ -195,4 +195,47 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
+// Automatically sync customer records on save if role is "user"
+userSchema.post("save", async function (doc, next) {
+  if (doc.role === "user") {
+    try {
+      const Customer = require("./Customer");
+      const emailNorm = doc.email.toLowerCase().trim();
+      let customer = await Customer.findOne({
+        $or: [
+          { userId: doc._id },
+          { email: emailNorm }
+        ]
+      });
+
+      const customerData = {
+        userId: doc._id,
+        name: doc.name,
+        email: emailNorm,
+        phone: doc.phone || "",
+        status: doc.isActive ? "active" : "inactive",
+        createdAt: doc.createdAt || new Date(),
+      };
+
+      if (customer) {
+        let hasChanges = false;
+        for (const k of Object.keys(customerData)) {
+          if (String(customer[k]) !== String(customerData[k])) {
+            customer[k] = customerData[k];
+            hasChanges = true;
+          }
+        }
+        if (hasChanges) {
+          await customer.save();
+        }
+      } else {
+        await Customer.create(customerData);
+      }
+    } catch (err) {
+      console.error("[User Model Post-Save Customer Sync Error]:", err.message);
+    }
+  }
+  if (typeof next === "function") next();
+});
+
 module.exports = mongoose.model("User", userSchema);

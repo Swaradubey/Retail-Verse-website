@@ -297,6 +297,9 @@ export function TrackOrder({ variant = 'page' }: Props) {
         
         // Remove from list
         setList((prev) => prev.filter((row) => row.orderId !== oid));
+
+        // Trigger custom event to notify other components (like Dashboard) to refetch stats
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId: oid } }));
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Could not delete record');

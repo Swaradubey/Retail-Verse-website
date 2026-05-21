@@ -147,8 +147,8 @@ export function InvoiceDetail() {
         return [
           name,
           String(qty),
-          `Rs. ${Number(price).toFixed(2)}`,
-          `Rs. ${Number(amount).toFixed(2)}`
+          `₹${Number(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          `₹${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
         ];
       });
 
@@ -172,16 +172,16 @@ export function InvoiceDetail() {
 
       doc.setFont("helvetica", "bold");
       doc.text("Subtotal:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(subtotal).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(`₹${Number(subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
 
       finalY += 8;
       doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(tax).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(`₹${Number(tax).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
 
       finalY += 10;
       doc.setFontSize(14);
       doc.text("Total Amount:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(total).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(`₹${Number(total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
 

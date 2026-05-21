@@ -8,7 +8,21 @@ const TOKEN_KEY = "eco_shop_token";
 /** Resolves final request URL whether env base includes `/api` or not. */
 function buildApiUrl(endpoint: string): string {
   const fallback = "https://omni-commerce-website.onrender.com/api";
-  const raw = String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || fallback;
+  let raw = String(
+    import.meta.env.VITE_API_BASE_URL ??
+    import.meta.env.VITE_API_URL ??
+    import.meta.env.REACT_APP_API_URL ??
+    import.meta.env.NEXT_PUBLIC_API_URL ??
+    ""
+  ).trim() || fallback;
+
+  // Protect against calling localhost in production
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  if (!isLocalhost && (raw.includes("localhost") || raw.includes("127.0.0.1"))) {
+    console.warn(`[ApiService] Production env detected but API URL is localhost: "${raw}". Falling back to production backend.`);
+    raw = fallback;
+  }
+
   console.log(`[ApiService] Using API Base URL: ${raw}`);
   const base = raw.replace(/\/+$/, "");
   let path = endpoint.trim();
@@ -130,6 +144,9 @@ class ApiService {
       }
 
       if (!response.ok) {
+        if (url.includes('/admin/analytics') || url.includes('/superadmin/overview')) {
+          console.error(`[ApiService] Dashboard API Request Failed: URL="${url}" Status=${response.status}`);
+        }
         console.error(`[ApiService] [${pageName}] Error:`, data.message || response.statusText);
         
         if (response.status === 401) {

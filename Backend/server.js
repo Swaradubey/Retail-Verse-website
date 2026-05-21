@@ -38,6 +38,9 @@ if (process.env.CLIENT_ORIGIN) {
   const envOrigins = process.env.CLIENT_ORIGIN.split(',').map(o => o.trim()).filter(Boolean);
   allowedOrigins.push(...envOrigins);
 }
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL.trim());
+}
 
 app.use(cors({
   origin: async function (origin, callback) {

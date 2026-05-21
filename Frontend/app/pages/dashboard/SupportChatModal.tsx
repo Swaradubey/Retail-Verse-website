@@ -19,14 +19,14 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
       // Auto-select first open ticket or just the first ticket
       const firstTicket = tickets.find((t: any) => t.status !== 'closed' && t.status !== 'solved') || tickets[0];
       if (firstTicket) {
-        setSelectedTicketId(firstTicket.id);
+        setSelectedTicketId(firstTicket._id || firstTicket.zendeskTicketId || firstTicket.id);
       }
     }
   }, [isOpen, tickets, selectedTicketId]);
 
   useEffect(() => {
     if (selectedTicketId) {
-      fetchMessages(selectedTicketId);
+      fetchMessages(selectedTicketId, false);
     }
   }, [selectedTicketId]);
 
@@ -38,19 +38,21 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const fetchMessages = async (ticketId: string) => {
+  const fetchMessages = async (ticketId: string, showSilent = false) => {
     if (!ticketId) return;
-    setLoadingMessages(true);
+    if (!showSilent) {
+      setLoadingMessages(true);
+    }
     try {
       const res = await ApiService.get(`/support-tickets/zendesk/${ticketId}/comments?_t=${Date.now()}`);
-      if (res.success) {
-        setMessages(res.data || []);
+      if (res && res.success) {
+        setMessages(Array.isArray(res.data) ? res.data : []);
       } else {
-        toast.error(res.message || 'Failed to load chat messages');
+        toast.error(res?.message || 'Failed to load chat messages');
       }
     } catch (err: any) {
       console.error("[Chat] Error:", err);
-      toast.error(err.message || 'Network error while loading messages');
+      toast.error(err?.message || 'Network error while loading messages');
     } finally {
       setLoadingMessages(false);
     }
@@ -64,17 +66,17 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
     setSending(true);
     try {
       const res = await ApiService.post(`/support-tickets/zendesk/${selectedTicketId}/comments`, { message: cleanMessage, isPublic: true });
-      if (res.success) {
+      if (res && res.success) {
         setMessageInput('');
-        await fetchMessages(selectedTicketId);
+        await fetchMessages(selectedTicketId, true);
         toast.success('Message sent');
         if (onRefreshTickets) onRefreshTickets();
       } else {
-        toast.error(res.message || 'Failed to send message');
+        toast.error(res?.message || 'Failed to send message');
       }
     } catch (err: any) {
       console.error("[Chat] Send Error:", err);
-      toast.error(err.message || 'Network error while sending message');
+      toast.error(err?.message || 'Network error while sending message');
     } finally {
       setSending(false);
     }
@@ -119,40 +121,43 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
               {tickets.length === 0 ? (
                 <div className="p-8 text-center text-gray-500 text-sm">No tickets found</div>
               ) : (
-                tickets.map((t: any) => (
-                  <button
-                    key={t.id}
-                    onClick={() => setSelectedTicketId(t.id)}
-                    className={`text-left p-4 border-b border-gray-50 dark:border-zinc-800/50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition ${
-                      selectedTicketId === t.id ? 'bg-amber-50 dark:bg-amber-500/10 border-l-4 border-l-amber-500' : 'border-l-4 border-l-transparent'
-                    }`}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[150px]">
-                        {t.requesterName}
-                      </span>
-                      <span className="text-xs text-gray-400 whitespace-nowrap">
-                        {new Date(t.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate mb-1">
-                      {t.subject}
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          t.status === 'open'
-                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
-                            : t.status === 'solved' || t.status === 'closed'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
-                            : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
-                        }`}
-                      >
-                        {t.status}
-                      </span>
-                    </div>
-                  </button>
-                ))
+                tickets.map((t: any) => {
+                  const tId = t._id || t.zendeskTicketId || t.id;
+                  return (
+                    <button
+                      key={tId}
+                      onClick={() => setSelectedTicketId(tId)}
+                      className={`text-left p-4 border-b border-gray-50 dark:border-zinc-800/50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition ${
+                        selectedTicketId === tId ? 'bg-amber-50 dark:bg-amber-500/10 border-l-4 border-l-amber-500' : 'border-l-4 border-l-transparent'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-semibold text-gray-900 dark:text-white truncate max-w-[150px]">
+                          {t.requesterName || t.userName}
+                        </span>
+                        <span className="text-xs text-gray-400 whitespace-nowrap">
+                          {new Date(t.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate mb-1">
+                        {t.subject}
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            t.status === 'open'
+                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+                              : t.status === 'solved' || t.status === 'closed' || t.status === 'resolved'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
+                          }`}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
@@ -167,28 +172,47 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
             ) : (
               <>
                 {/* Chat Header */}
-                <div className="p-4 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between shadow-sm z-10">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold uppercase">
-                      {tickets.find((t: any) => t.id === selectedTicketId)?.requesterName?.charAt(0) || 'U'}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 dark:text-white truncate max-w-[200px] md:max-w-md">
-                        {tickets.find((t: any) => t.id === selectedTicketId)?.subject}
-                      </h3>
-                      <p className="text-xs text-gray-500 flex items-center gap-1">
-                        Ticket #{selectedTicketId} • {tickets.find((t: any) => t.id === selectedTicketId)?.requesterName}
-                      </p>
-                    </div>
-                  </div>
-                  <button onClick={() => fetchMessages(selectedTicketId)} className="p-2 text-gray-400 hover:text-amber-500 bg-gray-50 dark:bg-zinc-800 rounded-lg transition">
-                     <RefreshCcw className="w-4 h-4" />
-                  </button>
-                </div>
+                {(() => {
+                  const selectedTicket = tickets.find((t: any) => 
+                    String(t._id || '') === String(selectedTicketId) ||
+                    String(t.zendeskTicketId || '') === String(selectedTicketId) ||
+                    String(t.id || '') === String(selectedTicketId)
+                  );
+                  return (
+                    <>
+                      <div className="p-4 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between shadow-sm z-10">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold uppercase">
+                            {selectedTicket?.requesterName?.charAt(0) || selectedTicket?.userName?.charAt(0) || 'U'}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-gray-900 dark:text-white truncate max-w-[200px] md:max-w-md">
+                              {selectedTicket?.subject || 'Support Conversation'}
+                            </h3>
+                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                              Ticket #{selectedTicketId} • {selectedTicket?.requesterName || selectedTicket?.userName || 'N/A'}
+                            </p>
+                          </div>
+                        </div>
+                        <button onClick={() => fetchMessages(selectedTicketId, messages.length > 0)} className="p-2 text-gray-400 hover:text-amber-500 bg-gray-50 dark:bg-zinc-800 rounded-lg transition">
+                          <RefreshCcw className={`w-4 h-4 ${loadingMessages ? 'animate-spin text-amber-500' : ''}`} />
+                        </button>
+                      </div>
+
+                      {/* Zendesk Sync Failed Alert Banner */}
+                      {selectedTicket?.zendeskSyncStatus === 'failed' && (
+                        <div className="bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-900/50 px-4 py-2.5 flex items-center gap-2 text-xs font-medium text-amber-800 dark:text-amber-300">
+                          <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                          <span>This invoice receipt ticket failed to sync with the Zendesk support system. You are viewing a local copy, and replies may not be received by our agents.</span>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
                 {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                  {loadingMessages ? (
+                  {loadingMessages && messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-amber-500 gap-3">
                       <Loader2 className="w-8 h-8 animate-spin" />
                       <span className="text-sm font-medium">Loading conversation...</span>
@@ -198,8 +222,10 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
                       No messages yet
                     </div>
                   ) : (
-                    messages.map((msg: any, idx: number) => {
-                      const isAdmin = msg.authorRole === 'admin' || msg.authorRole === 'agent' || msg.authorRole === 'super_admin';
+                    (messages || []).map((msg: any, idx: number) => {
+                      if (!msg) return null;
+                      const authorRoleNormalized = String(msg.authorRole || '').toLowerCase().trim();
+                      const isAdmin = authorRoleNormalized === 'admin' || authorRoleNormalized === 'agent' || authorRoleNormalized === 'super_admin';
                       return (
                         <div key={msg.id || idx} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                           <div className={`flex gap-3 max-w-[85%] md:max-w-[70%] ${isAdmin ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -216,7 +242,7 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
                             </div>
                             <div className={`flex flex-col ${isAdmin ? 'items-end' : 'items-start'}`}>
                               <span className="text-[11px] text-gray-500 font-semibold mb-1 px-1">
-                                {msg.authorName}
+                                {msg.authorName || (isAdmin ? 'Support Agent' : 'User')}
                               </span>
                               <div
                                 className={`px-4 py-3 rounded-2xl shadow-sm text-[15px] leading-relaxed whitespace-pre-wrap ${
@@ -229,7 +255,7 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
                               </div>
                               <span className="text-[10px] text-gray-400 mt-1 px-1 flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
-                                {new Date(msg.createdAt).toLocaleString()}
+                                {msg.createdAt ? new Date(msg.createdAt).toLocaleString() : 'N/A'}
                               </span>
                             </div>
                           </div>

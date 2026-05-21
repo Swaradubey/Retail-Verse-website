@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Package, Tag, ShoppingBag, BarChart3, Clock, Info } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Product } from '../../api/products';
+import { formatINR } from '../../utils/formatINR';
 
 interface ProductDetailModalProps {
   isOpen: boolean;
@@ -106,9 +107,9 @@ export function ProductDetailModal({ isOpen, product, onClose }: ProductDetailMo
                     Market Value
                   </div>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-black text-slate-900 dark:text-white">${product.price?.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-slate-900 dark:text-white">{formatINR(product.price ?? 0)}</span>
                     {product.originalPrice && product.originalPrice > product.price && (
-                      <span className="text-sm text-slate-400 line-through font-bold">${product.originalPrice.toFixed(2)}</span>
+                      <span className="text-sm text-slate-400 line-through font-bold">{formatINR(product.originalPrice)}</span>
                     )}
                   </div>
                   <div className="absolute -bottom-6 -right-6 w-20 h-20 bg-indigo-500/5 rounded-full blur-2xl group-hover:bg-indigo-500/10 transition-colors" />

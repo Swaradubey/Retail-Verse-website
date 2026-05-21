@@ -8,6 +8,7 @@ const ISSUE_TYPES = [
   "cancel_order_issue",
   "order_tracking_issue",
   "return_replacement_issue",
+  "order_support",
   "other",
 ];
 
@@ -71,10 +72,10 @@ const supportTicketSchema = new mongoose.Schema(
     zendeskTicketId: { type: String, trim: true, required: false },
 
     /** Ticket priority */
-    priority: { 
-      type: String, 
-      enum: ["low", "normal", "high", "urgent"], 
-      default: "normal" 
+    priority: {
+      type: String,
+      enum: ["low", "normal", "high", "urgent"],
+      default: "normal"
     },
 
     /** Optional admin reply / remark */
@@ -91,6 +92,44 @@ const supportTicketSchema = new mongoose.Schema(
       ref: "User",
       required: false,
     },
+    /** Client/Tenant ID for scoping */
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+    },
+    tenantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+    },
+    source: { type: String, trim: true, required: false },
+    category: { type: String, trim: true, required: false },
+    type: { type: String, trim: true, required: false },
+
+    /** Explicit ownership & tracking fields */
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+    },
+    orderId: { type: String, trim: true, required: false },
+    customerEmail: { type: String, trim: true, lowercase: true, required: false },
+
+    /** Embedded local messages for chat history fallback */
+    localMessages: [
+      {
+        body: { type: String, required: true },
+        authorName: { type: String, required: true },
+        authorRole: { type: String, required: true },
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
   },
   {
     timestamps: true,
@@ -99,9 +138,11 @@ const supportTicketSchema = new mongoose.Schema(
 
 // Index for fast per-user lookups
 supportTicketSchema.index({ user: 1, createdAt: -1 });
-// Index for admin list view (newest first)
+// Index for admin/client list view (newest first)
+supportTicketSchema.index({ clientId: 1, createdAt: -1 });
 supportTicketSchema.index({ createdAt: -1 });
 supportTicketSchema.index({ status: 1, createdAt: -1 });
 supportTicketSchema.index({ zendeskTicketId: 1 });
 
 module.exports = mongoose.model("SupportTicket", supportTicketSchema);
+

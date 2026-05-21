@@ -33,7 +33,14 @@ function pctChange(current, previous) {
 }
 
 async function userOrderTotalsForWindow(userId, start, end) {
-  const match = { user: userId, createdAt: { $gte: start, $lt: end } };
+  const match = { 
+    user: userId, 
+    createdAt: { $gte: start, $lt: end },
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+  };
   const [agg] = await Order.aggregate([
     { $match: match },
     {
@@ -58,7 +65,16 @@ async function userRevenueFlowLast7Days(userId) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, 0, 0, 0, 0);
     const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 0, 0, 0, 0);
     const [agg] = await Order.aggregate([
-      { $match: { user: userId, createdAt: { $gte: day, $lt: next } } },
+      { 
+        $match: { 
+          user: userId, 
+          createdAt: { $gte: day, $lt: next },
+          isDeleted: { $ne: true },
+          deletedAt: { $exists: false },
+          status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+          orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+        } 
+      },
       {
         $group: {
           _id: null,
@@ -83,7 +99,15 @@ const PIE_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b
 
 async function userCategoryDistribution(userId) {
   const rows = await Order.aggregate([
-    { $match: { user: userId } },
+    { 
+      $match: { 
+        user: userId,
+        isDeleted: { $ne: true },
+        deletedAt: { $exists: false },
+        status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+        orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+      } 
+    },
     { $unwind: "$items" },
     {
       $addFields: {
@@ -151,12 +175,26 @@ async function userCategoryDistribution(userId) {
 }
 
 async function userTotalOrdersAllTime(userId) {
-  return Order.countDocuments({ user: userId });
+  return Order.countDocuments({ 
+    user: userId,
+    isDeleted: { $ne: true },
+    deletedAt: { $exists: false },
+    status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+    orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+  });
 }
 
 async function userTotalSpentAllTime(userId) {
   const [agg] = await Order.aggregate([
-    { $match: { user: userId } },
+    { 
+      $match: { 
+        user: userId,
+        isDeleted: { $ne: true },
+        deletedAt: { $exists: false },
+        status: { $nin: ["deleted", "cancelled", "refunded", "failed"] },
+        orderStatus: { $nin: ["deleted", "cancelled", "refunded", "failed"] }
+      } 
+    },
     {
       $group: {
         _id: null,

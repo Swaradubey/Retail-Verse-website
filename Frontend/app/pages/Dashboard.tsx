@@ -172,6 +172,7 @@ export function Dashboard() {
         setOverviewData(d);
         return { ok: true };
       } catch (e: unknown) {
+        console.error('[Dashboard] Error in loadOverview:', e);
         const msg = e instanceof Error ? e.message : 'Failed to load dashboard data';
         setOverviewError(msg);
         if (!opts?.silent) {
@@ -189,6 +190,17 @@ export function Dashboard() {
 
   useEffect(() => {
     void loadOverview();
+  }, [loadOverview]);
+
+  useEffect(() => {
+    const handleOrderDeleted = () => {
+      console.log('[Dashboard] Order deleted event received, refetching overview stats...');
+      void loadOverview({ silent: true });
+    };
+    window.addEventListener('order-deleted', handleOrderDeleted);
+    return () => {
+      window.removeEventListener('order-deleted', handleOrderDeleted);
+    };
   }, [loadOverview]);
 
   useEffect(() => {

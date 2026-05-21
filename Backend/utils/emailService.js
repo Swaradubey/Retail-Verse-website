@@ -2,21 +2,28 @@
  * Email Service Utility
  * ---------------------
  * Provides a reusable nodemailer transporter for sending emails.
- * Reads SMTP configuration from environment variables.
+ * Reads SMTP configuration from backend environment variables ONLY.
  *
- * Required env vars (add to Backend/.env):
- *   SMTP_HOST        – e.g. smtp.gmail.com
- *   SMTP_PORT        – e.g. 587
- *   SMTP_SECURE      – "true" for port 465, "false" for STARTTLS (587)
- *   SMTP_USER        – sender email address
- *   SMTP_PASS        – app-specific password (Gmail: https://myaccount.google.com/apppasswords)
- *   SMTP_FROM_NAME   – display name for "From" (optional, defaults to "RetailVerse")
+ * Required env vars (set in Render → Environment):
+ *   SMTP_HOST   - SMTP server host (e.g. smtp-relay.brevo.com)
+ *   SMTP_PORT   - SMTP server port (e.g. 587 or 465)
+ *   SMTP_USER   - SMTP username/login
+ *   SMTP_PASS   - SMTP password/key
+ *   SMTP_FROM   - Verified sender email address
+ *
+ * Example Render production environment variables using Brevo:
+ *   SMTP_HOST=smtp-relay.brevo.com
+ *   SMTP_PORT=587
+ *   SMTP_USER=your_brevo_smtp_login
+ *   SMTP_PASS=your_brevo_smtp_key
+ *   SMTP_FROM=verified_sender_email
  */
 
 const nodemailer = require("nodemailer");
 
 let _transporter = null;
 let _transporterConfigHash = null;
+let _transporterVerified = false;
 
 /**
  * Build a simple hash of current SMTP config so we can detect env changes.
@@ -25,15 +32,15 @@ function _smtpConfigHash() {
   return [
     process.env.SMTP_HOST,
     process.env.SMTP_PORT,
-    process.env.SMTP_SECURE,
     process.env.SMTP_USER,
+    process.env.SMTP_PASS,
     process.env.SMTP_FROM,
   ].join("|");
 }
 
 /**
  * Returns a lazily-created nodemailer transporter.
- * Throws a clear error when SMTP env vars are missing.
+ * Throws a descriptive error when SMTP env vars are missing.
  * Re-creates the transporter if environment variables change.
  */
 function getTransporter() {
@@ -42,52 +49,91 @@ function getTransporter() {
 
   const host = process.env.SMTP_HOST;
   const rawPort = process.env.SMTP_PORT;
-  const port = Number(rawPort) || 587;
-  const secure = process.env.SMTP_SECURE === "true"; // Gmail port 587 → false
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM;
 
-  // Diagnostic log (never print the password)
-  console.log(
-    `[emailService] SMTP Config Check — host=${host || "(missing)"}, rawPort=${rawPort || "(missing)"}, port=${port}, secure=${secure}, user=${user || "(missing)"}, pass=${pass ? "***SET***" : "(missing)"}`
-  );
+  // Task 9 & 5: Diagnostic log — NEVER log SMTP_PASS
+  console.log("=== [emailService] SMTP Config Check ===");
+  console.log(`SMTP_HOST: ${host || "(missing)"}`);
+  console.log(`SMTP_PORT: ${rawPort || "(missing)"}`);
+  console.log(`SMTP_USER exists: ${!!user}`);
+  console.log(`SMTP_PASS exists: ${!!pass}`);
+  console.log(`SMTP_FROM exists: ${!!from}`);
+  console.log("========================================");
 
-  if (!host || !user || !pass) {
-    throw new Error(
-      "Email service is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables."
-    );
+  // Task 10: Check missing SMTP environment variables
+  if (!host || !rawPort || !user || !pass || !from) {
+    const missing = [];
+    if (!host) missing.push("SMTP_HOST");
+    if (!rawPort) missing.push("SMTP_PORT");
+    if (!user) missing.push("SMTP_USER");
+    if (!pass) missing.push("SMTP_PASS");
+    if (!from) missing.push("SMTP_FROM");
+    
+    const err = new Error(`SMTP configuration missing: ${missing.join(", ")}`);
+    err.code = "EMISSINGCONFIG";
+    throw err;
   }
+
+  // Task 5: Convert SMTP_PORT to Number
+  const port = Number(rawPort);
+
+  // Task 6: Auto-derive secure mode from port number:
+  //   465 → SSL (secure: true)
+  //   587 → STARTTLS (secure: false)
+  const secure = port === 465;
 
   _transporter = nodemailer.createTransport({
     host,
     port,
     secure,
     auth: { user, pass },
-    pool: true,                // reuse connections — helps on Render / cloud
-    maxConnections: 3,
-    // ── Timeouts so the request never hangs forever on Render / production ──
-    connectionTimeout: 30000,  // 30 s to establish TCP connection
-    greetingTimeout: 30000,    // 30 s for SMTP greeting
-    socketTimeout: 60000,      // 60 s for socket inactivity
-    // tls settings for services that need STARTTLS (port 587)
+    // Task 7: ── Timeouts — prevent hanging on Render / cloud environments ──
+    connectionTimeout: 30000,  // 30s to establish TCP connection
+    greetingTimeout:   30000,  // 30s for SMTP greeting
+    socketTimeout:     30000,  // 30s for socket inactivity
+    // TLS settings for STARTTLS (port 587 or other non-465 ports)
     ...(!secure ? { tls: { rejectUnauthorized: false } } : {}),
   });
 
   _transporterConfigHash = currentHash;
-  console.log(`[emailService] Transporter created — host=${host}, port=${port}, secure=${secure}, user=${user}`);
-
-  // Non-blocking SMTP verification — logs result for diagnostics but does not
-  // block the transporter from being returned / used.
-  _transporter.verify()
-    .then(() => {
-      console.log("[emailService] ✅ SMTP transporter verified — ready to send emails");
-    })
-    .catch((err) => {
-      console.error(`[emailService] ⚠️ SMTP transporter verification FAILED: ${err.message}`);
-      if (err.code) console.error(`[emailService] Error code: ${err.code}`);
-    });
+  _transporterVerified = false; // needs re-verification after recreate
+  console.log(`[emailService] Transporter created — host=${host}, port=${port}, secure=${secure}`);
 
   return _transporter;
+}
+
+/**
+ * Verify the transporter SMTP connection (blocking).
+ * Called once before the first email send.
+ * Throws classified errors for missing config, auth failure, or timeout.
+ */
+async function verifyTransporter() {
+  const transporter = getTransporter();
+
+  try {
+    await transporter.verify();
+    _transporterVerified = true;
+    console.log("[emailService] ✅ SMTP transporter verified — ready to send emails");
+  } catch (err) {
+    console.error(`[emailService] ⚠️ SMTP transporter verification FAILED: ${err.message}`);
+    if (err.code) console.error(`[emailService] Error code: ${err.code}`);
+
+    // Task 10: Classify the error for the controller
+    if (err.responseCode === 535 || err.code === "EAUTH" || (err.message && err.message.toLowerCase().includes("authentication")) || (err.message && err.message.toLowerCase().includes("credentials"))) {
+      const authErr = new Error("SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS.");
+      authErr.code = "EAUTH";
+      authErr.responseCode = err.responseCode;
+      throw authErr;
+    }
+    if (err.code === "ETIMEDOUT" || err.code === "ESOCKET" || err.code === "ECONNECTION" || err.message?.toLowerCase().includes("timeout") || err.message?.toLowerCase().includes("timed out")) {
+      const timeoutErr = new Error("SMTP connection timed out from Render production server. Use a production email provider like Brevo, SendGrid, Mailgun, or Resend SMTP.");
+      timeoutErr.code = "ETIMEDOUT";
+      throw timeoutErr;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -96,13 +142,53 @@ function getTransporter() {
  * @returns {Promise<{ messageId: string }>}
  */
 async function sendEmail({ to, subject, html, text }) {
+  // Task 9: Safe production logs before sending email — NEVER log SMTP_PASS
+  console.log("=== [emailService] PRE-SEND SMTP DIAGNOSTICS ===");
+  console.log(`SMTP_HOST: ${process.env.SMTP_HOST || "(missing)"}`);
+  console.log(`SMTP_PORT: ${process.env.SMTP_PORT || "(missing)"}`);
+  console.log(`SMTP_USER exists: ${!!process.env.SMTP_USER}`);
+  console.log(`SMTP_PASS exists: ${!!process.env.SMTP_PASS}`);
+  console.log(`SMTP_FROM exists: ${!!process.env.SMTP_FROM}`);
+  console.log(`Recipient email exists: ${!!to}`);
+  console.log("=================================================");
+
+  // Task 10: Check invalid recipient email address
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    const emailErr = new Error(`Invalid recipient email address: "${to || ""}"`);
+    emailErr.code = "EINVALIDRECIPIENT";
+    throw emailErr;
+  }
+
+  // Get transporter (throws EMISSINGCONFIG if env variables are missing)
   const transporter = getTransporter();
-  const fromName = process.env.SMTP_FROM_NAME || "RetailVerse";
+
+  // Task 8: Add transporter.verify() before sendMail
+  try {
+    console.log("[emailService] Verifying transporter connection before sending...");
+    await transporter.verify();
+    console.log("[emailService] ✅ SMTP transporter connection verified");
+  } catch (err) {
+    console.error(`[emailService] ⚠️ SMTP connection verification failed before sendMail: ${err.message}`);
+    // Classify error
+    if (err.responseCode === 535 || err.code === "EAUTH" || (err.message && err.message.toLowerCase().includes("authentication")) || (err.message && err.message.toLowerCase().includes("credentials"))) {
+      const authErr = new Error("SMTP authentication failed. Please check your SMTP_USER and SMTP_PASS.");
+      authErr.code = "EAUTH";
+      authErr.responseCode = err.responseCode;
+      throw authErr;
+    }
+    if (err.code === "ETIMEDOUT" || err.code === "ESOCKET" || err.code === "ECONNECTION" || err.message?.toLowerCase().includes("timeout") || err.message?.toLowerCase().includes("timed out")) {
+      const timeoutErr = new Error("SMTP connection timed out from Render production server. Use a production email provider like Brevo, SendGrid, Mailgun, or Resend SMTP.");
+      timeoutErr.code = "ETIMEDOUT";
+      throw timeoutErr;
+    }
+    throw err;
+  }
+
   const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   try {
     const info = await transporter.sendMail({
-      from: `"${fromName}" <${fromAddr}>`,
+      from: fromAddr,
       to,
       subject,
       html,
@@ -112,7 +198,6 @@ async function sendEmail({ to, subject, html, text }) {
     console.log(`[emailService] Email sent to ${to} — messageId=${info.messageId}`);
     return { messageId: info.messageId };
   } catch (err) {
-    // Log the real SMTP error on the server for debugging
     console.error(`[emailService] sendMail FAILED — to=${to}, error=${err.message}`);
     if (err.code) console.error(`[emailService] SMTP error code: ${err.code}`);
     if (err.responseCode) console.error(`[emailService] SMTP response code: ${err.responseCode}`);
@@ -275,4 +360,4 @@ function buildInvoiceEmailHtml(invoice) {
 </html>`;
 }
 
-module.exports = { sendEmail, buildInvoiceEmailHtml, getTransporter };
+module.exports = { sendEmail, buildInvoiceEmailHtml, getTransporter, verifyTransporter };

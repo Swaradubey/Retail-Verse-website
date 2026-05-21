@@ -343,6 +343,14 @@ const orderSchema = new mongoose.Schema(
       trim: true,
       required: false,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      required: false,
+    },
   },
   {
     timestamps: true,
