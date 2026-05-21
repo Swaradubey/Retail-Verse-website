@@ -786,44 +786,37 @@ const getAdminAnalytics = async (req, res) => {
       return docDate >= start && docDate < end;
     };
 
-    const calculateStatsForWindow = (start, end, allOrders, allInvoices) => {
+    const calculateStatsForWindow = (start, end, allOrders /*, allInvoices intentionally excluded — orders are the single source of truth */) => {
+      // Filter to orders whose createdAt falls in [start, end)
       const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
-      const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
 
       let revenue = 0;
       let paidOrdersCount = 0;
+      const paidOrderIds = [];
       const paidOrderIdsSet = new Set();
 
       for (const order of ordersInWindow) {
+        // Only count non-deleted, paid/successful orders for BOTH orderCount AND revenue.
+        // Cancelled, refunded, and failed orders are excluded from both metrics.
         if (isOrderPaidOrSuccessful(order)) {
           const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
           revenue += amt;
           paidOrdersCount++;
-          if (order.orderId) {
-            paidOrderIdsSet.add(String(order.orderId).trim().toLowerCase());
+          const oid = order.orderId || String(order._id || "");
+          if (oid) {
+            paidOrderIdsSet.add(String(oid).trim().toLowerCase());
+            paidOrderIds.push(String(oid).trim());
           }
         }
       }
 
-      for (const invoice of invoicesInWindow) {
-        if (isInvoicePaidOrSuccessful(invoice)) {
-          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
-          if (invOrderId && paidOrderIdsSet.has(invOrderId)) {
-            continue;
-          }
-          const amt = invoice.totalAmount || invoice.subtotal || 0;
-          revenue += amt;
-          paidOrdersCount++;
-          if (invOrderId) {
-            paidOrderIdsSet.add(invOrderId);
-          }
-        }
-      }
-
-      const orderCount = ordersInWindow.length;
+      // orderCount is the SAME set as revenue — only paid/successful non-deleted orders.
+      // This ensures "Orders This Month" and "Total Revenue" are always derived from
+      // identical records, preventing the count/revenue mismatch.
+      const orderCount = paidOrdersCount;
       const avgOrderValue = paidOrdersCount > 0 ? revenue / paidOrdersCount : 0;
 
-      return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet };
+      return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet, paidOrderIds };
     };
 
     const calculateLossThisMonth = (start, end, allOrders) => {
@@ -1058,12 +1051,19 @@ const getAdminAnalytics = async (req, res) => {
       ]
     }).lean();
 
-    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders, allInvoices);
-    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders, allInvoices);
+    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders);
+    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders);
 
     const salesThisMonth = curStats.revenue;
     const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
     const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
+
+    // ── Requirement 16: Safe backend logs ─────────────────────────────────────
+    console.log("[AdminDashboard] Orders counted for dashboard:", curStats.orderCount);
+    console.log("[AdminDashboard] Order IDs counted:", curStats.paidOrderIds);
+    console.log("[AdminDashboard] Paid orders counted:", curStats.paidOrdersCount);
+    console.log("[AdminDashboard] Revenue calculated from those orders: ₹" + (Math.round(curStats.revenue * 100) / 100));
+    // ──────────────────────────────────────────────────────────────────────────
 
     const calculateConversionRate = async (start, end, scopeQuery) => {
       const userQuery = { role: { $in: CUSTOMER_ROLES } };
@@ -1113,8 +1113,8 @@ const getAdminAnalytics = async (req, res) => {
     ]);
 
     const revenueFlow = calculateRevenueFlow(allOrders, allInvoices);
-    const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, allInvoices);
-    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 3);
+    const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, []);
+    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, [], 3);
 
     // Requirement 15: Safe backend debug logs — deleted/cancelled orders, revenue recalculated from DB
     const totalNonDeletedOrdersFound = allOrders.length;
