@@ -777,17 +777,7 @@ const createOrder = async (req, res) => {
 
       // 5. Finalize items and check stock (if product exists in DB)
       if (mongoose.Types.ObjectId.isValid(resolvedProductId)) {
-        // Build query to find product (matching client or global)
-        const stockQuery = { _id: resolvedProductId };
-        if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
-          stockQuery.$or = [
-            { clientId: clientId },
-            { clientId: null },
-            { clientId: { $exists: false } }
-          ];
-        }
-
-        const product = await Product.findOne(stockQuery);
+        const product = await Product.findById(resolvedProductId);
         
         if (product) {
           if (product.category) {
@@ -798,8 +788,8 @@ const createOrder = async (req, res) => {
           
           console.log(`[STOCK CHECK] Product: ${product.name} (${resolvedProductId}), DB Stock: ${product.stock}, Ordered Qty: ${item.quantity}, Comparison: ${orderedQty} > ${availableStock}`);
 
-          if (orderedQty > availableStock) {
-            console.warn(`[VALIDATION] Insufficient stock for ${product.name}. Ordered: ${orderedQty}, Available: ${availableStock}`);
+          if (availableStock < orderedQty || availableStock <= 0) {
+            console.warn(`[VALIDATION] Insufficient stock for ${product.name}. Requested: ${orderedQty}, Available: ${availableStock}`);
             return res.status(400).json({
               success: false,
               message: `Insufficient stock for ${product.name}. Available: ${availableStock}`
@@ -943,19 +933,11 @@ const createOrder = async (req, res) => {
           if (stockId && mongoose.Types.ObjectId.isValid(stockId)) {
             const orderedQty = Number(item.quantity || 0);
             
-            // Build update query (matching client or global, and ensuring enough stock)
+            // Build update query ensuring enough stock
             const updateQuery = { 
               _id: stockId, 
               stock: { $gte: orderedQty } 
             };
-            
-            if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
-              updateQuery.$or = [
-                { clientId: clientId },
-                { clientId: null },
-                { clientId: { $exists: false } }
-              ];
-            }
 
             console.log(`[STOCK DEDUCTION] Attempting deduction for ${item.name} (${stockId}). Qty: ${orderedQty}`);
 
@@ -976,6 +958,10 @@ const createOrder = async (req, res) => {
             
             console.log(`[STOCK DEDUCTION] Success for ${item.name}. New Stock: ${updatedProduct.stock}`);
             deductedItems.push({ productId: stockId, quantity: orderedQty });
+
+            if (updatedProduct.stock <= 10) {
+              console.warn(`[LOW STOCK] Product: ${item.name} (${stockId}), New Stock: ${updatedProduct.stock} — below threshold 10.`);
+            }
           }
         }
       } catch (stockError) {
@@ -1578,45 +1564,56 @@ const deleteOrder = async (req, res) => {
   try {
     const normalizedRole = normalizeRole(req.user?.role);
     const isSuperAdmin = normalizedRole === "super_admin";
-    
+
     const clientId = !isSuperAdmin ? (req.user?.clientId || req.clientId || (await resolveClientId(req))) : null;
     const paramId = req.params.id;
-    const query = isSuperAdmin ? { orderId: paramId } : { orderId: paramId, clientId };
-    let order = await Order.findOne(query);
-    if (!order && isValidObjectId(paramId)) {
-      const idQuery = isSuperAdmin ? { _id: paramId } : { _id: paramId, clientId };
-      order = await Order.findOne(idQuery);
-    }
 
-    if (order) {
-      const oid = order.orderId;
-      const mongoId = order._id;
-      
-      // Perform soft delete using the model fields
-      order.isDeleted = true;
-      order.deletedAt = new Date();
-      order.status = "deleted";
-      order.orderStatus = "deleted";
-      await order.save();
-      
-      console.log("[OrderDelete LOG]: Deleted order ID:", mongoId);
-      
-      // Also delete related tracking logs if they exist
-      if (oid) {
-        try {
-          await TrackOrder.deleteMany({ orderId: oid });
-        } catch (trkErr) {
-          console.error(`[OrderDelete] Failed to delete tracking logs for ${oid}:`, trkErr.message);
-        }
+    // Support both custom orderId (e.g. #RV-POS-...) and MongoDB _id
+    let order = null;
+    if (isSuperAdmin) {
+      order = await Order.findOne({ orderId: paramId });
+      if (!order && isValidObjectId(paramId)) {
+        order = await Order.findById(paramId);
       }
-
-      res.json({ success: true, message: "Order and related tracking logs removed successfully", deletedId: mongoId });
     } else {
-      res.status(404).json({ success: false, message: "Order not found or already deleted" });
+      order = await Order.findOne({ orderId: paramId, clientId });
+      if (!order && isValidObjectId(paramId)) {
+        order = await Order.findOne({ _id: paramId, clientId });
+      }
     }
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const oid = order.orderId;
+    const mongoId = order._id;
+
+    // Hard delete from MongoDB — avoids Mongoose validation errors on save()
+    await Order.deleteOne({ _id: mongoId });
+
+    console.log("[OrderDelete LOG]: Deleted order ID:", mongoId, "orderId:", oid);
+
+    // Clean up related tracking logs
+    if (oid) {
+      try {
+        await TrackOrder.deleteMany({ orderId: oid });
+      } catch (trkErr) {
+        console.error(`[OrderDelete] Failed to delete tracking logs for ${oid}:`, trkErr.message);
+      }
+    }
+
+    // Clean up related invoice record if exists
+    try {
+      await Invoice.deleteOne({ orderId: oid });
+    } catch (invErr) {
+      console.error(`[OrderDelete] Failed to delete invoice for ${oid}:`, invErr.message);
+    }
+
+    return res.json({ success: true, message: "Order deleted successfully", deletedId: mongoId });
   } catch (error) {
-    console.error("[OrderDelete] Error:", error.message);
-    res.status(500).json({ success: false, error: error.message });
+    console.error("[OrderDelete] Error:", error);
+    return res.status(500).json({ success: false, message: "Internal server error while deleting order" });
   }
 };
 

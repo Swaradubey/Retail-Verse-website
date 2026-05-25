@@ -5,6 +5,7 @@ import {
   Plus,
   LayoutGrid,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { InventoryStats } from '../components/inventory/InventoryStats';
@@ -193,6 +194,14 @@ export function Inventory() {
     }));
   }, [products]);
 
+  const lowStockCount = useMemo(() => {
+    return inventoryItems.filter((i) => (i.stock || 0) >= 1 && (i.stock || 0) < 10).length;
+  }, [inventoryItems]);
+
+  const outOfStockCount = useMemo(() => {
+    return inventoryItems.filter((i) => (i.stock || 0) === 0).length;
+  }, [inventoryItems]);
+
   // Filter and sort
   const filteredItems = useMemo(() => {
     let result = [...inventoryItems];
@@ -209,8 +218,8 @@ export function Inventory() {
 
     if (stockStatus !== 'all') {
       result = result.filter((item) => {
-        if (stockStatus === 'in-stock') return (item.stock || 0) > 10;
-        if (stockStatus === 'low-stock') return (item.stock || 0) >= 1 && (item.stock || 0) <= 10;
+        if (stockStatus === 'in-stock') return (item.stock || 0) >= 10;
+        if (stockStatus === 'low-stock') return (item.stock || 0) >= 1 && (item.stock || 0) < 10;
         if (stockStatus === 'out-of-stock') return (item.stock || 0) === 0;
         return true;
       });
@@ -397,6 +406,64 @@ export function Inventory() {
                   )}
                 </div>
               </div>
+
+              {/* Notification Banner/Card */}
+              <AnimatePresence>
+                {(lowStockCount > 0 || outOfStockCount > 0) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -16 }}
+                    className="relative overflow-hidden rounded-[1.25rem] border border-orange-200/80 bg-gradient-to-r from-orange-50/80 via-amber-50/50 to-orange-50/30 p-5 shadow-[0_4px_20px_-4px_rgba(249,115,22,0.12)] backdrop-blur-md dark:border-orange-500/20 dark:from-orange-950/20 dark:via-amber-950/10 dark:to-orange-950/5 dark:shadow-none sm:p-6"
+                  >
+                    <div className="absolute right-[-4%] top-[-30%] h-36 w-36 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 opacity-[0.06] blur-2xl" />
+                    
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 shadow-sm">
+                          <AlertTriangle className="h-5 w-5 animate-pulse" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-[15px] font-bold text-orange-950 dark:text-orange-100">
+                            Attention: Inventory Action Required
+                          </h3>
+                          <p className="text-sm text-orange-900/90 dark:text-orange-300/90 leading-relaxed max-w-[720px]">
+                            {outOfStockCount > 0 && lowStockCount > 0 ? (
+                              <>
+                                You have <span className="font-semibold text-rose-600 dark:text-rose-400">{outOfStockCount} items out of stock</span> and <span className="font-semibold text-orange-600 dark:text-orange-400">{lowStockCount} items running low</span>. Replenish stock soon to prevent customer disruption.
+                              </>
+                            ) : outOfStockCount > 0 ? (
+                              <>
+                                You have <span className="font-semibold text-rose-600 dark:text-rose-400">{outOfStockCount} items out of stock</span>. Replenish stock soon to prevent customer disruption.
+                              </>
+                            ) : (
+                              <>
+                                You have <span className="font-semibold text-orange-600 dark:text-orange-400">{lowStockCount} items running low on stock</span> (less than 10 units left). Consider replenishing soon.
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex shrink-0 items-center gap-2.5 sm:justify-end">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (outOfStockCount > 0) {
+                              setStockStatus('out-of-stock');
+                            } else {
+                              setStockStatus('low-stock');
+                            }
+                          }}
+                          className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
+                        >
+                          View Alerts
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Stats */}
               <InventoryStats items={inventoryItems} />

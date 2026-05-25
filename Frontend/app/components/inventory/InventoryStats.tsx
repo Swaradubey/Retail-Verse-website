@@ -60,8 +60,8 @@ function getTrend(trend: StatConfig['trend']) {
 
 export function InventoryStats({ items }: InventoryStatsProps) {
   const totalProducts = items.length;
-  const inStock = items.filter((i) => i.stock > 10).length;
-  const lowStock = items.filter((i) => i.stock >= 1 && i.stock <= 10).length;
+  const inStock = items.filter((i) => i.stock >= 10).length;
+  const lowStock = items.filter((i) => i.stock >= 1 && i.stock < 10).length;
   const outOfStock = items.filter((i) => i.stock === 0).length;
 
   const stats: StatConfig[] = [

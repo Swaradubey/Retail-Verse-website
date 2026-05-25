@@ -58,7 +58,7 @@ import {
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { getFullImageUrl } from '../utils/imageUrl';
+import { getFullImageUrl, getProductImageUrl } from '../utils/imageUrl';
 import ApiService from '../api/apiService';
 import { isStaffRole } from '../utils/staffRoles';
 
@@ -126,6 +126,7 @@ function isPlausibleUpiId(raw: string): boolean {
 /** Map API POS product to shop shape for wishlist keys/payloads (aligned with ProductDetail / ProductCard). */
 function posProductToShopProduct(p: Product): ShopProduct & { _id?: string } {
   const slug = slugifyProductName(p.name);
+  const img = getProductImageUrl(p);
   return {
     id: p._id || slug,
     _id: p._id,
@@ -134,8 +135,8 @@ function posProductToShopProduct(p: Product): ShopProduct & { _id?: string } {
     price: p.price,
     description: p.description || '',
     category: p.category,
-    image: getFullImageUrl(p.image),
-    images: p.image ? [getFullImageUrl(p.image)] : [],
+    image: getFullImageUrl(img),
+    images: img ? [getFullImageUrl(img)] : [],
     stock: p.stock,
     rating: p.rating ?? 0,
     reviews: 0,
@@ -526,6 +527,11 @@ export function Pos() {
 
   const addToCart = (product: Product) => {
     setCheckoutComplete(false);
+
+    if (product.stock > 0 && product.stock < 10) {
+      toast.warning(`Low Stock: Only ${product.stock} items left in stock`);
+    }
+
     setCart(prev => {
       const existing = prev.find(item => item._id === product._id);
       if (existing) {
@@ -548,6 +554,11 @@ export function Pos() {
   };
 
   const updateQuantity = (id: string, delta: number) => {
+    const item = cart.find(i => i._id === id);
+    if (item && delta > 0 && item.stock > 0 && item.stock < 10) {
+      toast.warning(`Low Stock: Only ${item.stock} items left in stock`);
+    }
+
     setCart(prev => prev.map(item => {
       if (item._id === id) {
         const newQuantity = item.cartQuantity + delta;
@@ -687,6 +698,7 @@ export function Pos() {
         orderId: order.orderId,
         customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "POS Customer",
         customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
+        customerPhone: order.customerPhone || (order.shippingAddress && order.shippingAddress.phone) || "",
         items: order.items.map((i: any) => ({
           name: i.name,
           quantity: i.quantity,
@@ -730,6 +742,7 @@ export function Pos() {
             orderId: order.orderId,
             customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "POS Customer",
             customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
+            customerPhone: order.customerPhone || (order.shippingAddress && order.shippingAddress.phone) || "",
             items: order.items.map((i: any) => ({
               name: i.name,
               quantity: i.quantity,
@@ -1142,8 +1155,8 @@ export function Pos() {
     }
   };
 
-  /** Handler for "Send via Email" button click. */
-  const handleSendInvoiceEmail = () => {
+/** Handler for "Send via Email" button click. */
+    const handleSendInvoiceEmail = () => {
     // Try to use the customer email from the invoice / payment form
     const autoEmail =
       latestInvoiceData?.customerEmail?.trim() ||
@@ -1159,10 +1172,11 @@ export function Pos() {
       setEmailInputError('');
       setEmailModalOpen(true);
     }
-  };
+   };
 
-  const handleDownloadPDF = async () => {
-    try {
+/** Handler for "Download PDF" button click. */
+    const handleDownloadPDF = () => {
+     try {
       setIsDownloading(true);
 
       const doc = new jsPDF("p", "mm", "a4");
@@ -1440,8 +1454,8 @@ export function Pos() {
                     >
                       <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
                     </button>
-                    {product.image ? (
-                      <img src={getFullImageUrl(product.image)} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]" />
+                    {getProductImageUrl(product) ? (
+                      <img src={getFullImageUrl(getProductImageUrl(product))} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]" />
                     ) : (
                       <Package2 className="w-10 h-10 text-gray-300" />
                     )}
@@ -1469,8 +1483,18 @@ export function Pos() {
 
                    <div className="mt-auto flex items-center justify-between">
                      <span className="font-bold text-[#111111]">{formatINR(product.price)}</span>
-                     <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${product.stock > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                       {product.stock > 0 ? `${product.stock} in stock` : 'Out of stock'}
+                     <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${
+                       product.stock <= 0
+                         ? 'bg-red-100 text-red-700'
+                         : product.stock < 10
+                           ? 'bg-amber-100 text-amber-700'
+                           : 'bg-green-100 text-green-700'
+                     }`}>
+                       {product.stock <= 0
+                         ? 'Out of stock'
+                         : product.stock < 10
+                           ? 'Low Stock'
+                           : `${product.stock} in stock`}
                      </span>
                    </div>
                 </div>
@@ -1532,9 +1556,9 @@ export function Pos() {
                   aria-live="polite"
                 >
                   <div className="flex h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-white/80">
-                    {currentOrderPreviewItem.image && !previewImageFailed ? (
+                    {getProductImageUrl(currentOrderPreviewItem) && !previewImageFailed ? (
                       <img
-                        src={getFullImageUrl(currentOrderPreviewItem.image)}
+                        src={getFullImageUrl(getProductImageUrl(currentOrderPreviewItem))}
                         alt=""
                         className="max-h-full max-w-full object-contain"
                         onError={() => setPreviewImageFailed(true)}
@@ -1579,9 +1603,9 @@ export function Pos() {
                       aria-label={`${item.name}, ${isSelected ? 'selected' : 'select for preview'}`}
                     >
                       <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center border border-black/5">
-                        {item.image ? (
+                        {getProductImageUrl(item) ? (
                           <img
-                            src={getFullImageUrl(item.image)}
+                            src={getFullImageUrl(getProductImageUrl(item))}
                             alt=""
                             className="h-full w-full object-cover"
                           />
@@ -1812,47 +1836,47 @@ export function Pos() {
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3 pt-2 print:hidden">
-                <div className="grid grid-cols-3 gap-2">
-                  <Button 
-                    variant="outline"
-                    type="button"
-                    disabled={isDownloading}
-                    className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
-                    onClick={handleDownloadPDF}
-                  >
-                    {isDownloading ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 shrink-0" />
-                    )}
-                    {isDownloading ? 'Downloading...' : 'Download PDF'}
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    type="button"
-                    className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
-                    onClick={() => window.print()}
-                  >
-                    <Printer className="h-4 w-4 shrink-0" />
-                    Print
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    type="button"
-                    disabled={emailSending}
-                    className="h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
-                    onClick={handleSendInvoiceEmail}
-                  >
-                    {emailSending ? (
-                      <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                    ) : (
-                      <Mail className="h-4 w-4 shrink-0" />
-                    )}
-                    {emailSending ? 'Sending…' : 'Email'}
-                  </Button>
-                </div>
+{/* Action Buttons */}
+               <div className="flex flex-col gap-3 pt-2 print:hidden">
+                 <div className="grid grid-cols-3 gap-2">
+                   <Button 
+                     variant="outline"
+                     type="button"
+                     disabled={isDownloading}
+                     className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
+                     onClick={handleDownloadPDF}
+                   >
+                     {isDownloading ? (
+                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                     ) : (
+                       <Download className="h-4 w-4 shrink-0" />
+                     )}
+                     {isDownloading ? 'Downloading...' : 'Download PDF'}
+                   </Button>
+                   <Button 
+                     variant="outline"
+                     type="button"
+                     className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
+                     onClick={() => window.print()}
+                   >
+                     <Printer className="h-4 w-4 shrink-0" />
+                     Print
+                   </Button>
+                   <Button 
+                     variant="outline"
+                     type="button"
+                     disabled={emailSending}
+                     className="h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
+                     onClick={handleSendInvoiceEmail}
+                   >
+                     {emailSending ? (
+                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                     ) : (
+                       <Mail className="h-4 w-4 shrink-0" />
+                     )}
+                     {emailSending ? 'Sending…' : 'Email'}
+                   </Button>
+                 </div>
                 <Button 
                   type="button"
                   className="w-full h-12 rounded-xl bg-[#111111] hover:bg-black text-white font-bold shadow-lg shadow-black/10 transition-all active:scale-[0.98]"

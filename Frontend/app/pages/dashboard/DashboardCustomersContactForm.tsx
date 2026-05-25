@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Mail, MessageSquareText } from 'lucide-react';
+import { Loader2, Mail, MessageSquareText, Inbox, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import {
   adminContactApi,
@@ -46,6 +46,23 @@ function truncate(text: string, max: number) {
   return `${t.slice(0, max)}…`;
 }
 
+function containerVariants(stagger = 0.06) {
+  return {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: stagger, delayChildren: 0.04 },
+    },
+  };
+}
+
+function itemVariants() {
+  return {
+    hidden: { opacity: 0, y: 12 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } },
+  };
+}
+
 export function DashboardCustomersContactForm() {
   const { token, user } = useAuth();
   const canView = hasFullAdminPrivileges(user?.role);
@@ -54,6 +71,8 @@ export function DashboardCustomersContactForm() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'all' | 'new'>('all');
+  const sectionRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     if (!token || !canView) { setLoading(false); return; }
@@ -74,7 +93,10 @@ export function DashboardCustomersContactForm() {
 
   const total = rows.length;
   const newCount = useMemo(() => rows.filter((r) => r.status === 'new').length, [rows]);
-  const isAdmin = hasFullAdminPrivileges(user?.role);
+  const filteredRows = useMemo(() => filter === 'new' ? rows.filter((r) => r.status === 'new') : rows, [rows, filter]);
+  const scrollToSection = () => {
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const DELETE_SELECT_VALUE = 'delete';
 
   const onStatusChange = async (id: string, value: string) => {
@@ -123,120 +145,268 @@ export function DashboardCustomersContactForm() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div className="space-y-8" variants={containerVariants()} initial="hidden" animate="show">
       {/* Stats row */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="group relative overflow-hidden border-none bg-white/50 shadow-md backdrop-blur-md dark:bg-black/40">
-            <div className="absolute top-0 left-0 w-1 h-full bg-blue-500 opacity-70" />
+      <motion.div variants={itemVariants()} className="grid gap-5 md:grid-cols-2">
+        <motion.div variants={itemVariants()}>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => { setFilter('all'); scrollToSection(); }}
+            onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFilter('all'); scrollToSection(); } }}
+            className={`group relative overflow-hidden border bg-white/70 shadow-lg backdrop-blur-xl transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer dark:bg-black/40 dark:shadow-black/20 ${
+              filter === 'all'
+                ? 'border-blue-300/60 shadow-blue-200/50 ring-2 ring-blue-500/30 dark:border-blue-500/40 dark:ring-blue-400/30'
+                : 'border-white/20 shadow-gray-200/50 dark:border-white/5'
+            }`}
+          >
+            <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-500 to-blue-400 opacity-80" />
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Total messages</CardTitle>
-              <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500"><Mail className="w-4 h-4" /></div>
+              <div className="space-y-0.5">
+                <CardTitle className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground/80">
+                  Total Messages
+                </CardTitle>
+                <CardDescription className="text-[11px] leading-tight">
+                  All-time contact form submissions
+                </CardDescription>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/10 to-blue-600/5 text-blue-600 shadow-sm ring-1 ring-blue-500/10 dark:text-blue-400 dark:ring-blue-400/20">
+                <Mail className="h-5 w-5" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-black">{total}</div>
-              <p className="text-xs text-muted-foreground mt-1">All-time contact form submissions</p>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">
+                  {total}
+                </span>
+                <span className="text-sm font-semibold text-muted-foreground/60">total</span>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground/70">
+                Messages from the website contact form
+              </p>
             </CardContent>
           </Card>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <Card className="group relative overflow-hidden border-none bg-white/50 shadow-md backdrop-blur-md dark:bg-black/40">
-            <div className="absolute top-0 left-0 w-1 h-full bg-amber-500 opacity-70" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">New / unread</CardTitle>
-              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500"><MessageSquareText className="w-4 h-4" /></div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-black">{newCount}</div>
-              <p className="text-xs text-muted-foreground mt-1">Submissions still marked as new</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
 
+        <motion.div variants={itemVariants()}>
+          <Card
+            role="button"
+            tabIndex={0}
+            onClick={() => { setFilter('new'); scrollToSection(); }}
+            onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFilter('new'); scrollToSection(); } }}
+            className={`group relative overflow-hidden bg-white/70 shadow-lg backdrop-blur-xl transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 cursor-pointer dark:bg-black/40 dark:shadow-black/20 ${
+              filter === 'new'
+                ? 'border-2 border-orange-300 shadow-[0_0_0_3px_rgba(251,146,60,0.20)] dark:border-orange-400 dark:shadow-[0_0_0_3px_rgba(251,146,60,0.30)]'
+                : 'border border-white/20 shadow-gray-200/50 dark:border-white/5'
+            }`}
+          >
+            <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-amber-500 to-amber-400 opacity-80" />
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+              <div className="space-y-0.5">
+                <CardTitle className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground/80">
+                  New / Unread
+                </CardTitle>
+                <CardDescription className="text-[11px] leading-tight">
+                  Submissions still marked as new
+                </CardDescription>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 text-amber-600 shadow-sm ring-1 ring-amber-500/10 dark:text-amber-400 dark:ring-amber-400/20">
+                <MessageSquareText className="h-5 w-5" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">
+                  {newCount}
+                </span>
+                <span className="text-sm font-semibold text-muted-foreground/60">new</span>
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground/70">
+                Messages awaiting review
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </motion.div>
+
+      {/* Contact Form Leads Section */}
+      <div ref={sectionRef}>
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-600 mb-4" />
-          <p className="text-sm font-medium">Loading contact messages…</p>
-        </div>
-      ) : error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50/80 px-6 py-8 dark:bg-red-950/20 dark:border-red-900">
-          <p className="text-red-800 font-medium dark:text-red-200">{error}</p>
-          <button type="button" onClick={() => load()} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Retry</button>
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/80 px-6 py-16 text-center dark:border-white/10 dark:bg-white/5">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-600 dark:bg-blue-900/20">
-            <Mail className="h-8 w-8" />
-          </div>
-          <h2 className="mb-2 text-xl font-bold text-gray-900 dark:text-white">No contact messages yet</h2>
-          <p className="mx-auto max-w-md text-muted-foreground">
-            When visitors submit the contact form on your site, entries will appear here.
-          </p>
-        </div>
-      ) : (
-        <Card className="overflow-hidden rounded-2xl border-none bg-white/80 shadow-xl backdrop-blur-xl dark:bg-black/40">
-          <CardHeader className="border-b border-gray-100 pb-6 dark:border-white/5">
-            <CardTitle className="text-xl font-bold">Contact Form Leads</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Manage inquiries and leads from the website contact page.
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-gray-50/50 text-[12px] font-bold uppercase tracking-wider text-muted-foreground dark:bg-white/[0.02]">
-                  <tr>
-                    <th className="px-6 py-4">Customer</th>
-                    <th className="px-6 py-4">Phone</th>
-                    <th className="px-6 py-4 min-w-[200px]">Message</th>
-                    <th className="px-6 py-4">Submitted</th>
-                    <th className="px-6 py-4">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                  {rows.map((row) => (
-                    <tr key={row._id} className="transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-bold text-foreground">{row.firstName} {row.lastName}</span>
-                          <span className="text-[10px] text-muted-foreground">{row.email}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{row.phone || '—'}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium" title={row.subject}>{truncate(row.subject, 40)}</span>
-                          <span className="text-xs text-muted-foreground mt-0.5" title={row.message}>{truncate(row.message, 100)}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-xs whitespace-nowrap text-muted-foreground">{formatDate(row.createdAt)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                          <Badge className={statusBadgeClass(row.status)}>{statusLabel(row.status)}</Badge>
-                          <label className="sr-only" htmlFor={`status-${row._id}`}>Update status for {row.email}</label>
-                          <select
-                            id={`status-${row._id}`}
-                            className="max-w-[140px] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs dark:border-white/10 dark:bg-black/40"
-                            value={row.status}
-                            disabled={updatingId === row._id}
-                            onChange={(e) => onStatusChange(row._id, e.target.value)}
-                          >
-                            <option value="new">New</option>
-                            <option value="in-progress">In progress</option>
-                            <option value="resolved">Resolved</option>
-                            {isAdmin && <option value={DELETE_SELECT_VALUE}>Delete</option>}
-                          </select>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <motion.div variants={itemVariants()} className="flex flex-col items-center justify-center py-28 text-muted-foreground">
+          <div className="relative mb-6">
+            <div className="absolute inset-0 animate-ping rounded-full bg-blue-400/20 dark:bg-blue-600/20" />
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-50 to-blue-100 shadow-inner dark:from-blue-950/30 dark:to-blue-900/20">
+              <Loader2 className="h-7 w-7 animate-spin text-blue-600 dark:text-blue-400" />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <p className="text-sm font-semibold text-foreground/80">Loading contact messages…</p>
+          <p className="mt-1 text-xs text-muted-foreground/60">Please wait while we fetch the latest entries.</p>
+        </motion.div>
+      ) : error ? (
+        <motion.div variants={itemVariants()} className="rounded-2xl border border-red-200/80 bg-red-50/80 px-6 py-8 text-center backdrop-blur-sm dark:border-red-900/50 dark:bg-red-950/20">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+          </div>
+          <p className="font-semibold text-red-800 dark:text-red-200">{error}</p>
+          <button type="button" onClick={() => load()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-red-600 to-red-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-red-200/50 transition-all hover:from-red-700 hover:to-red-600 hover:shadow-xl active:scale-[0.97] dark:shadow-red-900/30">
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </button>
+        </motion.div>
+      ) : filteredRows.length === 0 ? (
+        <motion.div variants={itemVariants()}>
+          <Card className="overflow-hidden border border-dashed border-gray-200/70 bg-white/50 shadow-sm dark:border-white/10 dark:bg-black/20">
+            <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 shadow-sm ring-1 ring-blue-100 dark:from-blue-950/30 dark:to-blue-900/20 dark:ring-blue-900/40">
+                <Inbox className="h-10 w-10 text-blue-500/70 dark:text-blue-400/60" />
+              </div>
+              {rows.length === 0 ? (
+                <>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">No contact messages yet</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground/80">
+                    When visitors submit the contact form on your site, entries will appear here for you to review and manage.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">No {filter === 'new' ? 'new / unread' : 'matching'} messages</h3>
+                  <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground/80">
+                    {filter === 'new' ? 'All contact form submissions have been reviewed.' : 'Try selecting a different filter to see more results.'}
+                  </p>
+                </>
+              )}
+            </div>
+          </Card>
+        </motion.div>
+      ) : (
+        <motion.div variants={itemVariants()}>
+          <Card className="overflow-hidden border border-white/20 bg-white/80 shadow-xl shadow-gray-200/40 backdrop-blur-xl transition-all duration-300 dark:border-white/5 dark:bg-black/40 dark:shadow-black/20">
+            <CardHeader className="flex flex-col gap-1 border-b border-gray-100/80 px-7 py-6 dark:border-white/5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-gray-900 dark:text-white">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500/10 to-blue-600/5 text-blue-600 shadow-sm ring-1 ring-blue-500/10 dark:text-blue-400 dark:ring-blue-400/20">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                  Contact Form Leads
+                  <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                    filter === 'all'
+                      ? 'bg-blue-100/80 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                      : 'bg-amber-100/80 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                  }`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${filter === 'all' ? 'bg-blue-500' : 'bg-amber-500'}`} />
+                    {filter === 'all' ? 'All messages' : 'New / Unread'}
+                  </span>
+                </CardTitle>
+                <p className="mt-1 text-sm leading-relaxed text-muted-foreground/80">
+                  Manage inquiries and leads from the website contact page.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="inline-flex items-center gap-1.5 rounded-lg bg-gray-100/80 px-3 py-1.5 text-xs font-semibold text-muted-foreground dark:bg-white/5">
+                  <Mail className="h-3.5 w-3.5" />
+                  <span>{total} {total === 1 ? 'message' : 'messages'}</span>
+                </div>
+                {newCount > 0 && (
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-100/80 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                    <MessageSquareText className="h-3.5 w-3.5" />
+                    <span>{newCount} unread</span>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b border-gray-100/80 dark:border-white/5">
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Customer</th>
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Phone</th>
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70 min-w-[200px]">Message</th>
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Submitted</th>
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Status</th>
+                      <th className="px-7 py-4 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100/60 dark:divide-white/5">
+                    {filteredRows.map((row) => (
+                      <tr
+                        key={row._id}
+                        className="transition-colors duration-150 hover:bg-gray-50/60 dark:hover:bg-white/[0.02]"
+                      >
+                        <td className="px-7 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 text-xs font-bold text-gray-600 shadow-sm dark:from-gray-800 dark:to-gray-700 dark:text-gray-300">
+                              {row.firstName?.charAt(0)?.toUpperCase() || '?'}
+                              {row.lastName?.charAt(0)?.toUpperCase() || ''}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm font-semibold text-gray-900 dark:text-white">
+                                {row.firstName} {row.lastName}
+                              </span>
+                              <span className="block truncate text-xs text-muted-foreground/70">
+                                {row.email}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-7 py-4">
+                          <span className="text-sm text-muted-foreground/80">{row.phone || <span className="text-muted-foreground/40">—</span>}</span>
+                        </td>
+                        <td className="px-7 py-4">
+                          <div className="min-w-0 max-w-xs">
+                            <p className="truncate text-sm font-medium text-gray-900 dark:text-white" title={row.subject}>
+                              {truncate(row.subject, 48)}
+                            </p>
+                            <p className="mt-0.5 truncate text-xs leading-relaxed text-muted-foreground/70" title={row.message}>
+                              {truncate(row.message, 110)}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-7 py-4">
+                          <span className="text-xs font-medium text-muted-foreground/70">
+                            {formatDate(row.createdAt)}
+                          </span>
+                        </td>
+                        <td className="px-7 py-4">
+                          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+                            <Badge className={statusBadgeClass(row.status)}>
+                              {statusLabel(row.status)}
+                            </Badge>
+                            <label className="sr-only" htmlFor={`status-${row._id}`}>Update status for {row.email}</label>
+                            <select
+                              id={`status-${row._id}`}
+                              className="w-full min-w-[120px] rounded-lg border border-gray-200/70 bg-white/80 px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-black/40 dark:text-gray-300 dark:hover:border-white/20"
+                              value={row.status}
+                              disabled={updatingId === row._id}
+                              onChange={(e) => onStatusChange(row._id, e.target.value)}
+                            >
+                              <option value="new">New</option>
+                              <option value="in-progress">In progress</option>
+                              <option value="resolved">Resolved</option>
+                            </select>
+                          </div>
+                        </td>
+                        <td className="px-7 py-4">
+                          <button
+                            type="button"
+                            title="Delete message"
+                            onClick={() => onStatusChange(row._id, DELETE_SELECT_VALUE)}
+                            disabled={updatingId === row._id}
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors dark:hover:bg-red-900/20"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

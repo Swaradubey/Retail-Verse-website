@@ -312,7 +312,6 @@ export function Dashboard() {
         item.href === '/dashboard/users' ||
         item.href === '/super-admin/custom-domain' ||
         item.href === '/dashboard/add-employee' ||
-        item.href === '/dashboard/analytics' ||
         item.href === '/dashboard/support'
       );
     }

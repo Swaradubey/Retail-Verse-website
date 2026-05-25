@@ -14,7 +14,12 @@ const submitContact = async (req, res) => {
   }
 
   try {
-    const contact = await Contact.create(req.body);
+    const clientId = req.clientId || req.headers["x-client-id"] || req.body.clientId || null;
+    const payload = { ...req.body };
+    if (clientId && isValidObjectId(clientId)) {
+      payload.clientId = clientId;
+    }
+    const contact = await Contact.create(payload);
     console.log("[Backend Debug] Contact Request Saved Successfully:", contact._id);
     res.status(201).json({
       success: true,
@@ -29,10 +34,13 @@ const submitContact = async (req, res) => {
 
 // @desc    Get all contact requests
 // @route   GET /api/contact
-// @access  Private (Admin/Staff)
+// @access  Private (Admin/Staff/Client)
 const getContacts = async (req, res) => {
   try {
     const contacts = await Contact.find({}).sort("-createdAt");
+    console.log(
+      `[contactController] getContacts - role=${req.user?.role || "unknown"} count=${contacts.length}`
+    );
     res.json({
       success: true,
       data: contacts,
@@ -44,7 +52,7 @@ const getContacts = async (req, res) => {
 
 // @desc    Get single contact request
 // @route   GET /api/contact/:id
-// @access  Private (Admin/Staff)
+// @access  Private (Admin/Staff/Client)
 const getContactById = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) {
@@ -63,7 +71,7 @@ const getContactById = async (req, res) => {
 
 // @desc    Update contact status
 // @route   PATCH /api/contact/:id/status
-// @access  Private (Admin/Staff)
+// @access  Private (Admin/Staff/Client)
 const updateContactStatus = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) {
@@ -88,7 +96,7 @@ const updateContactStatus = async (req, res) => {
 
 // @desc    Delete contact request
 // @route   DELETE /api/contact/:id
-// @access  Private (Admin/Staff)
+// @access  Private (Admin/Staff/Client)
 const deleteContact = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) {
@@ -96,6 +104,7 @@ const deleteContact = async (req, res) => {
     }
     const contact = await Contact.findByIdAndDelete(req.params.id);
     if (contact) {
+      console.log(`[contactController] deleteContact - ${req.params.id} deleted by ${req.user?.email} (${req.user?.role})`);
       res.json({ success: true, message: "Contact entry removed safely" });
     } else {
       res.status(404).json({ success: false, message: "Contact request not found" });

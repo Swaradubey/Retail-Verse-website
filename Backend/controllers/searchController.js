@@ -82,10 +82,7 @@ const globalSearch = async (req, res) => {
     orders.forEach(o => results.push({ type: "Order", id: o._id, name: o.orderId || o._id.toString(), secondary: o.customerName || o.customer?.name || o.customerEmail || o.customer?.email }));
 
     // 7. Contacts / Leads (Contact forms)
-    // Assuming Contact forms might be tied to clientId or just global for super admin
-    const contactFilter = isSuperAdmin ? {} : { storeId: clientId };
     const contacts = await Contact.find({
-      ...contactFilter,
       $or: [{ name: regex }, { email: regex }, { subject: regex }]
     }).limit(limit).lean();
     contacts.forEach(c => results.push({ type: "Lead", id: c._id, name: c.name, secondary: c.email || c.subject }));

@@ -103,6 +103,12 @@ const supportTicketSchema = new mongoose.Schema(
       ref: "Client",
       default: null,
     },
+    /** Store ID for multi-store client scoping */
+    storeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      default: null,
+    },
     source: { type: String, trim: true, required: false },
     category: { type: String, trim: true, required: false },
     type: { type: String, trim: true, required: false },
@@ -140,6 +146,7 @@ const supportTicketSchema = new mongoose.Schema(
 supportTicketSchema.index({ user: 1, createdAt: -1 });
 // Index for admin/client list view (newest first)
 supportTicketSchema.index({ clientId: 1, createdAt: -1 });
+supportTicketSchema.index({ storeId: 1, createdAt: -1 });
 supportTicketSchema.index({ createdAt: -1 });
 supportTicketSchema.index({ status: 1, createdAt: -1 });
 supportTicketSchema.index({ zendeskTicketId: 1 });

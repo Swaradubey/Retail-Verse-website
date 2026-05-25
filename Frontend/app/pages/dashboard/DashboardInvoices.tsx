@@ -821,7 +821,7 @@ export function DashboardInvoices() {
                   </div>
                   Invoice Details
                 </DialogTitle>
-                {viewInvoice && (user?.role === 'admin' || user?.role === 'super_admin') && (
+                {viewInvoice && (user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'client') && (
                   <button
                     type="button"
                     title="Delete Invoice"

@@ -62,22 +62,28 @@ async function resolveClientId(req) {
     }
   }
 
-  // Priority 1 & 2: User-specific client assignment
-  const uClientId = user?.clientId || user?.assignedClient;
-  if (isValidObjectId(uClientId)) {
-    return String(uClientId);
-  }
+  const userRole = normalizeRole(user?.role);
+  const isPrivileged = userRole === "super_admin" || userRole === "admin";
 
-  // Fallback for Store Managers/Employees: check Employee model
-  if (user?.id || user?._id) {
-    try {
-      const Employee = require("../models/Employee");
-      const emp = await Employee.findOne({ userId: user.id || user._id }).select("clientId");
-      if (emp && isValidObjectId(emp.clientId)) {
-        return String(emp.clientId);
+  // Priority 1 & 2: User-specific client assignment — skip for privileged roles
+  // Admins/Super Admins are global and must not be scoped by user.clientId
+  if (!isPrivileged) {
+    const uClientId = user?.clientId || user?.assignedClient;
+    if (isValidObjectId(uClientId)) {
+      return String(uClientId);
+    }
+
+    // Fallback for Store Managers/Employees: check Employee model
+    if (user?.id || user?._id) {
+      try {
+        const Employee = require("../models/Employee");
+        const emp = await Employee.findOne({ userId: user.id || user._id }).select("clientId");
+        if (emp && isValidObjectId(emp.clientId)) {
+          return String(emp.clientId);
+        }
+      } catch (err) {
+        console.error(`[TenantResolver] Employee lookup error: ${err.message}`);
       }
-    } catch (err) {
-      console.error(`[TenantResolver] Employee lookup error: ${err.message}`);
     }
   }
 
@@ -96,9 +102,6 @@ async function resolveClientId(req) {
   // Priority 5: Domain-based lookup
   // SKIP domain lookup for privileged roles if they haven't been assigned a specific client yet.
   // This ensures Global Admins see the same data (everything) on custom domains as they do on Vercel/Localhost.
-  const userRole = normalizeRole(user?.role);
-  const isPrivileged = userRole === "super_admin" || userRole === "admin";
-
   if (isPrivileged) {
     console.log(`[TenantResolver] Skipping domain resolution for privileged role: ${userRole}`);
     return null;

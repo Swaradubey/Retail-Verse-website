@@ -23,10 +23,10 @@ router.post(
   submitContact
 );
 
-// Protected routes (Admin/Staff only)
-router.get("/", protect, allowRoles("super_admin", "admin", "staff"), getContacts);
-router.get("/:id", protect, allowRoles("super_admin", "admin", "staff"), getContactById);
-router.patch("/:id/status", protect, allowRoles("super_admin", "admin", "staff"), updateContactStatus);
-router.delete("/:id", protect, allowRoles("super_admin", "admin", "staff"), deleteContact);
+// Protected routes (Admin/Staff/Client)
+router.get("/", protect, allowRoles("super_admin", "admin", "staff", "client", "store_manager", "client_admin"), getContacts);
+router.get("/:id", protect, allowRoles("super_admin", "admin", "staff", "client", "store_manager", "client_admin"), getContactById);
+router.patch("/:id/status", protect, allowRoles("super_admin", "admin", "staff", "client", "store_manager", "client_admin"), updateContactStatus);
+router.delete("/:id", protect, allowRoles("super_admin", "admin", "staff", "client", "store_manager", "client_admin"), deleteContact);
 
 module.exports = router;

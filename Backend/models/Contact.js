@@ -31,6 +31,11 @@ const contactSchema = new mongoose.Schema(
       enum: ["new", "in-progress", "resolved"],
       default: "new",
     },
+    clientId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Client",
+      index: true,
+    },
   },
   {
     timestamps: true,

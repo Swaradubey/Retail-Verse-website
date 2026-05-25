@@ -8,6 +8,19 @@ const LS_KEY = 'pos_products_cache_v1';
 
 function normalizeForCache(raw: Product): Product {
   const barcode = (raw as Product & { barcode?: string }).barcode;
+  const img =
+    raw.image ||
+    (raw as any).imageUrl ||
+    (raw as any).thumbnail ||
+    (Array.isArray((raw as any).images) && (raw as any).images.length > 0
+      ? typeof (raw as any).images[0] === 'string'
+        ? (raw as any).images[0]
+        : (raw as any).images[0]?.url
+      : undefined) ||
+    (Array.isArray((raw as any).media) && (raw as any).media.length > 0
+      ? (raw as any).media[0]?.url
+      : undefined) ||
+    '';
   const p: Product = {
     _id: raw._id,
     name: raw.name ?? '',
@@ -15,7 +28,7 @@ function normalizeForCache(raw: Product): Product {
     price: typeof raw.price === 'number' ? raw.price : Number(raw.price) || 0,
     stock: typeof raw.stock === 'number' ? raw.stock : Number(raw.stock) || 0,
     category: raw.category ?? '',
-    image: raw.image,
+    image: img,
     description: raw.description,
     isActive: raw.isActive,
     status: raw.status,

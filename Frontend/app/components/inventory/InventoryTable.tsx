@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Package,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
@@ -46,7 +47,7 @@ interface InventoryTableProps {
 
 function getStockStatus(stock: number): StockStatus {
   if (stock === 0) return 'out-of-stock';
-  if (stock <= 10) return 'low-stock';
+  if (stock < 10) return 'low-stock';
   return 'in-stock';
 }
 
@@ -62,11 +63,11 @@ function StatusBadge({ status }: { status: StockStatus }) {
     },
     'low-stock': {
       label: 'Low Stock',
-      bg: 'bg-amber-50/95 dark:bg-amber-950/40',
-      text: 'text-amber-900 dark:text-amber-300',
-      border: 'border-amber-200/75 dark:border-amber-800/45',
-      dot: 'bg-amber-500',
-      ring: 'ring-amber-500/15',
+      bg: 'bg-orange-50/95 dark:bg-orange-950/40',
+      text: 'text-orange-900 dark:text-orange-300',
+      border: 'border-orange-200/80 dark:border-orange-800/50',
+      dot: 'bg-orange-500',
+      ring: 'ring-orange-500/15',
     },
     'out-of-stock': {
       label: 'Out of Stock',
@@ -286,10 +287,22 @@ function MobileCard({
             <div className="flex items-center gap-3">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Stock</p>
-                <p className={`text-sm font-bold ${item.stock === 0 ? 'text-rose-500' : item.stock <= 10 ? 'text-amber-500' : 'text-gray-900 dark:text-white'
-                  }`}>
-                  {item.stock} units
-                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {item.stock < 10 && (
+                    <AlertTriangle className={`h-3.5 w-3.5 shrink-0 animate-pulse ${
+                      item.stock === 0 ? 'text-rose-500' : 'text-orange-500'
+                    }`} />
+                  )}
+                  <p className={`text-sm font-bold ${
+                    item.stock === 0
+                      ? 'text-rose-500'
+                      : item.stock < 10
+                        ? 'text-orange-500'
+                        : 'text-gray-900 dark:text-white'
+                    }`}>
+                    {item.stock} units
+                  </p>
+                </div>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Updated</p>
@@ -476,14 +489,20 @@ export function InventoryTable({
                     animate="visible"
                     className={`group border-b border-slate-100/90 transition-colors duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] dark:border-white/[0.04] ${
                       isOutOfStock
-                        ? 'bg-rose-50/25 hover:bg-rose-50/50 dark:bg-rose-950/[0.06] dark:hover:bg-rose-950/[0.12]'
+                        ? 'bg-rose-50/20 hover:bg-rose-50/35 dark:bg-rose-950/[0.04] dark:hover:bg-rose-950/[0.08]'
                         : isLowStock
-                          ? 'bg-amber-50/20 hover:bg-amber-50/45 dark:bg-amber-950/[0.05] dark:hover:bg-amber-950/[0.1]'
+                          ? 'bg-orange-50/30 hover:bg-orange-50/50 dark:bg-orange-950/[0.05] dark:hover:bg-orange-950/[0.09]'
                           : 'hover:bg-slate-50/90 dark:hover:bg-white/[0.03]'
                     }`}
                     style={{ cursor: 'default' }}
                   >
-                    <TableCell className="py-4 pl-6">
+                    <TableCell className="py-4 pl-6 relative">
+                      {isLowStock && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-orange-500 rounded-r-md" />
+                      )}
+                      {isOutOfStock && (
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-rose-500 rounded-r-md" />
+                      )}
                       <div className="flex items-center gap-4">
                         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 shadow-md ring-2 ring-white dark:bg-white/10 dark:ring-white/15">
                           <img
@@ -523,17 +542,24 @@ export function InventoryTable({
                     </TableCell>
 
                     <TableCell className="py-4">
-                      <span
-                        className={`text-[14px] font-semibold tabular-nums ${
-                          item.stock === 0
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : item.stock <= 10
-                              ? 'text-amber-600 dark:text-amber-400'
-                              : 'text-slate-900 dark:text-white'
-                        }`}
-                      >
-                        {item.stock}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {item.stock < 10 && (
+                          <AlertTriangle className={`h-4 w-4 shrink-0 animate-pulse ${
+                            item.stock === 0 ? 'text-rose-500' : 'text-orange-500'
+                          }`} />
+                        )}
+                        <span
+                          className={`text-[14px] font-semibold tabular-nums ${
+                            item.stock === 0
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : item.stock < 10
+                                ? 'text-orange-600 dark:text-orange-400'
+                                : 'text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {item.stock}
+                        </span>
+                      </div>
                     </TableCell>
 
                     <TableCell className="hidden py-4 sm:table-cell">

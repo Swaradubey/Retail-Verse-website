@@ -42,25 +42,25 @@ router.get(
 router.get(
   "/contact-messages",
   protect,
-  allowRoles("super_admin", "admin"),
+  allowRoles("super_admin", "admin", "client", "store_manager", "client_admin"),
   getContacts
 );
 router.get(
   "/contact-messages/:id",
   protect,
-  allowRoles("super_admin", "admin"),
+  allowRoles("super_admin", "admin", "client", "store_manager", "client_admin"),
   getContactById
 );
 router.patch(
   "/contact-messages/:id/status",
   protect,
-  allowRoles("super_admin", "admin"),
+  allowRoles("super_admin", "admin", "client", "store_manager", "client_admin"),
   updateContactStatus
 );
 router.delete(
   "/contact-messages/:id",
   protect,
-  allowRoles("super_admin", "admin"),
+  allowRoles("super_admin", "admin", "client", "store_manager", "client_admin"),
   deleteContact
 );
 

@@ -13,3 +13,22 @@ export function getFullImageUrl(url?: string | null): string {
   const path = url.startsWith("/") ? url : `/${url}`;
   return `${base}${path}`;
 }
+
+/** Extract the best available image URL from a product-like object, checking all common field locations. */
+export function getProductImageUrl(product: any): string {
+  if (!product) return '';
+  const img =
+    product.image ||
+    product.imageUrl ||
+    product.thumbnail ||
+    (Array.isArray(product.images) && product.images.length > 0
+      ? typeof product.images[0] === 'string'
+        ? product.images[0]
+        : product.images[0]?.url
+      : undefined) ||
+    (Array.isArray(product.media) && product.media.length > 0
+      ? product.media[0]?.url
+      : undefined) ||
+    '';
+  return img;
+}

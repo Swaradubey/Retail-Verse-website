@@ -1,3 +1,8 @@
+
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+dns.setDefaultResultOrder("ipv4first");
+
 const path = require("path");
 
 const envPath = path.resolve(__dirname, ".env");
@@ -45,29 +50,29 @@ if (process.env.FRONTEND_URL) {
 app.use(cors({
   origin: async function (origin, callback) {
     if (!origin) return callback(null, true); // allow non-browser requests
-    
+
     // Check statically allowed origins
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
+
     try {
       const originUrl = new URL(origin);
       const hostname = originUrl.hostname;
-      
+
       // Allow any subdomain of storesetgo.online and any .vercel.app domain
       if (hostname.endsWith('.storesetgo.online') || hostname.endsWith('.vercel.app')) {
         return callback(null, true);
       }
-      
+
       // Dynamic Custom Domain Check from Database
       if (require("mongoose").connection.readyState === 1) {
         const CustomDomain = require("./models/CustomDomain");
-        
+
         // Normalize hostname for lookup (remove www.)
         const normalized = hostname.toLowerCase().replace(/^www\./, "");
-        
-        const customDomain = await CustomDomain.findOne({ 
+
+        const customDomain = await CustomDomain.findOne({
           $or: [
             { domainName: normalized },
             { domainName: `www.${normalized}` },
@@ -75,7 +80,7 @@ app.use(cors({
             { domain: `www.${normalized}` }
           ]
         });
-        
+
         if (customDomain) {
           return callback(null, true);
         }
@@ -83,7 +88,7 @@ app.use(cors({
     } catch (err) {
       console.error("[CORS] Error checking origin:", err.message);
     }
-    
+
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true
@@ -206,9 +211,9 @@ app.get("/auth/google/callback", (req, res, next) => {
     try {
       const user = req.user;
       const frontendUrl = process.env.FRONTEND_URL || "https://www.retailverse.in";
-      
+
       console.log(`[Google OAuth Debug] FRONTEND_URL: ${frontendUrl}`);
-      
+
       if (!user) {
         console.error("[Google OAuth] No user after callback");
         return res.redirect(`${frontendUrl}/login?error=google_auth_failed`);
@@ -233,7 +238,7 @@ app.get("/auth/google/callback", (req, res, next) => {
 
       const finalRedirectUrl = `${frontendUrl}/google-auth-callback?${params.toString()}`;
       console.log("GOOGLE_FINAL_REDIRECT_URL:", finalRedirectUrl.split("token=")[0] + "token=[REDACTED]");
-      
+
       // Redirect to a dedicated callback route — frontend handles the token/params
       return res.redirect(finalRedirectUrl);
     } catch (err) {
@@ -261,13 +266,13 @@ const PORT = process.env.PORT || 5000;
     console.log("[Backend Debug] Connecting to MongoDB...");
     await connectDB();
     console.log("[Backend Debug] MongoDB Connected successfully.");
-    
+
     const server = app.listen(PORT, () => {
       console.log(`\n================================================`);
       console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
       console.log(`================================================\n`);
-      
+
       const sr = shiprocketService.getShiprocketEnvDiagnostics();
       if (sr.configuredForTracking) {
         console.log("[Shiprocket] API credentials loaded — courier tracking enabled.");

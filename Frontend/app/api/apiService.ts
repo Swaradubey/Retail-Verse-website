@@ -154,7 +154,7 @@ class ApiService {
           localStorage.removeItem("eco_shop_user");
         }
         
-        throw new Error(data.message || `Request failed with status ${response.status}`);
+        throw new Error(data.message || data.error || `Request failed with status ${response.status}`);
       }
 
       return data as ApiResponse<T>;

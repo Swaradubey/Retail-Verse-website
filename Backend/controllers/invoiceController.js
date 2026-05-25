@@ -311,20 +311,26 @@ const sendInvoiceEmail = async (req, res) => {
       const isSuperAdminOrAdmin = ["superadmin", "super_admin", "admin"].includes(loggedInRole);
 
       let determinedClientId = order.clientId || invoice.clientId || req.user?.clientId;
-      if (!determinedClientId && req.user?._id) {
-        if (!isSuperAdminOrAdmin) {
-          determinedClientId = req.user._id;
-        } else {
-          determinedClientId = req.user._id;
+      if (!determinedClientId && invoiceData.orderId) {
+        try {
+          const orderLookup = await Order.findOne({ orderId: invoiceData.orderId }).select("clientId").lean();
+          if (orderLookup?.clientId) {
+            determinedClientId = orderLookup.clientId;
+          }
+        } catch (e) {
+          console.warn("[invoiceController] Error resolving clientId from order:", e.message);
         }
       }
 
       let determinedTenantId = order.clientId || invoice.clientId || req.user?.clientId;
-      if (!determinedTenantId && req.user?._id) {
-        if (!isSuperAdminOrAdmin) {
-          determinedTenantId = req.user._id;
-        } else {
-          determinedTenantId = req.user._id;
+      if (!determinedTenantId && invoiceData.orderId) {
+        try {
+          const orderLookup = await Order.findOne({ orderId: invoiceData.orderId }).select("clientId").lean();
+          if (orderLookup?.clientId) {
+            determinedTenantId = orderLookup.clientId;
+          }
+        } catch (e) {
+          console.warn("[invoiceController] Error resolving tenantId from order:", e.message);
         }
       }
 
@@ -350,6 +356,7 @@ const sendInvoiceEmail = async (req, res) => {
         zendeskTicketId: zdTicket ? String(zdTicket.id) : undefined,
         clientId: determinedClientId,
         tenantId: determinedTenantId,
+        storeId: req.user?.storeId || null,
         userId: req.user?._id || null,
         createdBy: req.user?._id || null,
         orderId: invoiceData.orderId || invoiceData.invoiceNumber,
@@ -359,8 +366,8 @@ const sendInvoiceEmail = async (req, res) => {
         type: "invoice"
       });
 
-      // Temporary debug log (Requirement 7)
-      console.log(`[DEBUG] Created invoice ticket details: ticketId=${ticket._id}, clientId=${ticket.clientId}, tenantId=${ticket.tenantId}, createdBy=${ticket.createdBy}, userId=${ticket.userId}`);
+      // Logging for debugging (Requirement 9)
+      console.log(`[SupportTicket] sendInvoiceEmail - CREATED ticket id: ${ticket._id}, clientId: ${ticket.clientId}, tenantId: ${ticket.tenantId}, storeId: ${ticket.storeId}, userId: ${ticket.userId}, createdBy: ${ticket.createdBy}, customerEmail: ${ticket.customerEmail}`);
 
       if (ticket) {
         console.log(`[SupportTicket] Local invoice ticket created successfully: ${ticket._id}`);
@@ -428,17 +435,80 @@ const sendInvoiceEmail = async (req, res) => {
   }
 };
 
+// @desc    Send invoice via SMS
+// @route   POST /api/invoices/send-sms
+// @access  Private (Staff roles)
+const sendInvoiceSMS = async (req, res) => {
+  try {
+    const { sendSMS } = require("../utils/smsService");
+    const { recipientPhone, invoiceData } = req.body;
+
+    if (!recipientPhone || String(recipientPhone).trim().length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid recipient phone number.",
+      });
+    }
+
+    if (!invoiceData || !invoiceData.invoiceNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Invoice data is required.",
+      });
+    }
+
+    const storeName = process.env.SMTP_FROM_NAME || "RetailVerse";
+    const total = invoiceData.totalAmount || invoiceData.subtotal || 0;
+    const formattedTotal = total.toLocaleString("en-IN", { minimumFractionDigits: 2 });
+    const orderId = invoiceData.orderId || invoiceData.invoiceNumber || "N/A";
+    const invoiceNumber = invoiceData.invoiceNumber || "N/A";
+
+    let message = `Thank you for shopping with ${storeName}!\n\n`;
+    message += `Invoice No: ${invoiceNumber}\n`;
+    message += `Order ID: ${orderId}\n`;
+    message += `Grand Total: ₹${formattedTotal}\n`;
+
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl && orderId !== "N/A") {
+      message += `View Invoice: ${frontendUrl}/super-admin/invoice/${orderId}\n`;
+    } else {
+      // short summary
+      const itemsSummary = (invoiceData.items || [])
+        .map(item => `${item.name} x${item.quantity}`)
+        .join(", ");
+      if (itemsSummary) {
+        message += `Items: ${itemsSummary.substring(0, 100)}${itemsSummary.length > 100 ? '...' : ''}\n`;
+      }
+    }
+
+    const result = await sendSMS(recipientPhone, message, { orderId });
+
+    return res.json({
+      success: true,
+      message: "Invoice SMS sent successfully.",
+      provider: result.provider,
+    });
+  } catch (error) {
+    console.error("[invoiceController] sendInvoiceSMS error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send invoice SMS.",
+    });
+  }
+};
+
 // @desc    Delete invoice
 // @route   DELETE /api/invoices/:id
-// @access  Private (SuperAdmin/Admin)
+// @access  Private (SuperAdmin/Admin/Client with ownership)
 const deleteInvoice = async (req, res) => {
   try {
     const id = req.params.id;
     const role = req.user?.role || req.user?.userRole || req.user?.accountType;
     const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
     const isAdmin = ["admin"].includes(String(role).toLowerCase());
+    const isClient = ["client", "store_manager", "client_admin"].includes(String(role).toLowerCase());
 
-    if (!isSuperAdmin && !isAdmin) {
+    if (!isSuperAdmin && !isAdmin && !isClient) {
       return res.status(403).json({ success: false, message: "Access denied. Only admins can delete invoices." });
     }
 
@@ -449,27 +519,49 @@ const deleteInvoice = async (req, res) => {
     // 1. Try to find and delete as a real Invoice record
     const invoice = await Invoice.findById(id);
     if (invoice) {
+      // Client-scoped roles must own this invoice
+      if (isClient) {
+        const userClientId = String(req.user?.clientId || req.clientId || '');
+        const invoiceClientId = invoice.clientId ? String(invoice.clientId) : '';
+        if (!userClientId || !invoiceClientId || userClientId !== invoiceClientId) {
+          return res.status(403).json({ success: false, message: "Access denied. You can only delete your own invoices." });
+        }
+      }
+
       const orderIdString = invoice.orderId;
       await Invoice.findByIdAndDelete(id);
 
       // Also delete the corresponding Order to prevent re-derivation in getInvoices
       await Order.findOneAndDelete({ orderId: orderIdString });
 
+      console.log(`[invoiceController] deleteInvoice - Invoice ${id} deleted by ${req.user?.email} (${role})`);
       return res.json({ success: true, message: "Invoice and related order deleted successfully" });
     }
 
     // 2. If not found as an Invoice, it might be a derived invoice where ID is the Order _id
-    const order = await Order.findByIdAndDelete(id);
+    const order = await Order.findById(id);
     if (order) {
+      // Client-scoped roles must own this order
+      if (isClient) {
+        const userClientId = String(req.user?.clientId || req.clientId || '');
+        const orderClientId = order.clientId ? String(order.clientId) : '';
+        if (!userClientId || !orderClientId || userClientId !== orderClientId) {
+          return res.status(403).json({ success: false, message: "Access denied. You can only delete your own invoices." });
+        }
+      }
+
+      await Order.findByIdAndDelete(id);
       // Also try to delete any Invoice record that might exist for this orderId string
       await Invoice.findOneAndDelete({ orderId: order.orderId });
+
+      console.log(`[invoiceController] deleteInvoice - Derived invoice (order ${id}) deleted by ${req.user?.email} (${role})`);
       return res.json({ success: true, message: "Invoice (derived from order) deleted successfully" });
     }
 
     return res.status(404).json({ success: false, message: "Invoice not found" });
   } catch (error) {
     console.error("[invoiceController] deleteInvoice error:", error.message);
-    res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -477,6 +569,7 @@ module.exports = {
   getInvoices,
   getInvoiceById,
   sendInvoiceEmail,
+  sendInvoiceSMS,
   deleteInvoice,
 };
 

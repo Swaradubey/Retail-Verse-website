@@ -74,10 +74,11 @@ const checkTicketAccess = async (ticket, user, resolvedClientId) => {
     }
   }
 
-  // Invoice ticket specific fallback: if it's an invoice support ticket, admins of all kinds should have access
+  // Invoice ticket specific fallback: if it's an invoice support ticket, 
+  // grant access only if the ticket belongs to the same client
   const isInvoiceTicket = ticket.issueType === 'order_support' || (ticket.subject && ticket.subject.startsWith('Invoice Receipt'));
-  if (isInvoiceTicket && (isAdmin || userRole === "client" || userRole === "store_manager")) {
-    console.log(`[SupportTicket - checkTicketAccess] Allowed: Admin/Client accessing Invoice Ticket`);
+  if (isInvoiceTicket && (isSuperAdmin || isAdmin)) {
+    console.log(`[SupportTicket - checkTicketAccess] Allowed: SuperAdmin/Admin accessing Invoice Ticket`);
     return true;
   }
 
@@ -89,12 +90,14 @@ const checkTicketAccess = async (ticket, user, resolvedClientId) => {
 
   const tClientId = ticket.clientId ? String(ticket.clientId) : null;
   const tTenantId = ticket.tenantId ? String(ticket.tenantId) : null;
+  const tStoreId = ticket.storeId ? String(ticket.storeId) : null;
   const tCreatedBy = ticket.createdBy ? String(ticket.createdBy) : null;
   const tUserId = ticket.userId ? String(ticket.userId) : null;
 
   const allowedByClientRule = 
     (tClientId && userClientIds.includes(tClientId)) ||
     (tTenantId && userClientIds.includes(tTenantId)) ||
+    (tStoreId && userClientIds.includes(tStoreId)) ||
     (tCreatedBy === userId) ||
     (tUserId === userId);
 
@@ -195,6 +198,7 @@ const createSupportTicket = async (req, res) => {
       priority: priority || "normal",
       zendeskTicketId,
       clientId: req.user?.clientId || req.clientId || null,
+      storeId: req.user?.storeId || null,
       userId: userId,
       createdBy: userId,
       orderId: orderRef || undefined,
@@ -223,6 +227,7 @@ const getMyTickets = async (req, res) => {
     }
 
     const email = req.user?.email ? String(req.user.email).toLowerCase().trim() : null;
+    const userRole = String(req.user?.role || '').toLowerCase();
 
     const query = {
       $or: [
@@ -235,10 +240,28 @@ const getMyTickets = async (req, res) => {
       query.$or.push({ customerEmail: email });
     }
 
+    // For client-scoped roles, also query by clientId/tenantId/storeId
+    // so invoice tickets assigned to their store show up (Requirement 4)
+    const isTenantRole = ["client", "store_manager", "client_admin", "staff", "employee"].includes(userRole);
+    if (isTenantRole) {
+      const clientId = req.user?.clientId || req.clientId;
+      if (clientId) {
+        query.$or.push({ clientId });
+        query.$or.push({ tenantId: clientId });
+        query.$or.push({ storeId: clientId });
+        query.$or.push({ createdBy: clientId });
+      }
+    }
+
+    // Logging for debugging (Requirement 9)
+    console.log(`[SupportTicket] getMyTickets - user: ${userId}, role: ${userRole}, clientId: ${req.user?.clientId || req.clientId || "none"}, query filters: ${JSON.stringify(query)}`);
+
     const tickets = await SupportTicket.find(query)
       .sort({ createdAt: -1 })
       .select("-__v")
       .lean();
+
+    console.log(`[SupportTicket] getMyTickets - Found ${tickets.length} tickets for user ${userId}`);
 
     return res.json({
       success: true,
@@ -265,8 +288,8 @@ const getAllTickets = async (req, res) => {
       return res.status(403).json({ success: false, message: "Admin access required" });
     }
 
-    // Requirement 10 & 16: Log data retrieval details
-    console.log(`[SupportTicket] getAllTickets - Page: Support, Role: ${req.user?.role}, ClientId: ${clientId || "global"}`);
+    // Requirement 9 & 10: Log data retrieval details
+    console.log(`[SupportTicket] getAllTickets - Page: Support, Role: ${req.user?.role}, UserId: ${req.user?._id}, ClientId: ${clientId || "global"}, isSuperAdmin: ${isSuperAdmin}, isAdmin: ${isAdmin}, isClient: ${isClient}`);
 
     const { status, page = 1, limit = 50 } = req.query;
     const filter = {};
@@ -280,7 +303,8 @@ const getAllTickets = async (req, res) => {
       const ids = [
         req.user?._id,
         req.user?.clientId,
-        req.user?.tenantId
+        req.user?.tenantId,
+        req.user?.storeId
       ].filter(Boolean);
 
       const mongooseIds = [];
@@ -295,15 +319,16 @@ const getAllTickets = async (req, res) => {
       filter.$or = [
         { clientId: { $in: mongooseIds } },
         { tenantId: { $in: mongooseIds } },
+        { storeId: { $in: mongooseIds } },
         { createdBy: { $in: mongooseIds } },
         { userId: { $in: mongooseIds } }
       ];
+      console.log(`[SupportTicket] getAllTickets - Client scoping filter: ${JSON.stringify(filter)}`);
     }
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Requirement 16: Log DB query details & debug logs (Requirement 7)
-    console.log(`[DEBUG] Client Ticket query filter: ${JSON.stringify(filter)}`);
+    // Requirement 9: Log DB query details & debug logs
     console.log(`[SupportTicket] DB Query - Collection: supporttickets, Filter: ${JSON.stringify(filter)}`);
 
     const [tickets, total] = await Promise.all([
@@ -317,6 +342,41 @@ const getAllTickets = async (req, res) => {
         .lean(),
       SupportTicket.countDocuments(filter),
     ]);
+
+    // Fallback: for client-scoped roles, also find tickets that reference their orders
+    // but may not have clientId set (old tickets)
+    if (!isSuperAdmin && !isAdmin && clientId) {
+      try {
+        const existingIds = new Set(tickets.map(t => String(t._id)));
+        const clientOrders = await Order.find({ clientId })
+          .select("orderId")
+          .lean();
+        const clientOrderIds = clientOrders.map(o => o.orderId).filter(Boolean);
+        if (clientOrderIds.length > 0) {
+          const fallbackTickets = await SupportTicket.find({
+            $or: [
+              { orderRef: { $in: clientOrderIds } },
+              { orderId: { $in: clientOrderIds } }
+            ],
+            clientId: null
+          })
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .populate("user", "name email role")
+            .populate("order", "orderId totalPrice orderStatus createdAt items")
+            .select("-__v")
+            .lean();
+          const newTickets = fallbackTickets.filter(t => !existingIds.has(String(t._id)));
+          if (newTickets.length > 0) {
+            console.log(`[SupportTicket] Fallback: Found ${newTickets.length} old tickets via orderRef match for client ${clientId}`);
+            tickets.push(...newTickets);
+            tickets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          }
+        }
+      } catch (fbErr) {
+        console.warn("[SupportTicket] Fallback order matching error:", fbErr.message);
+      }
+    }
 
     // Temporary debug log (Requirement 7)
     const newestTicket = tickets && tickets.length > 0 ? tickets[0] : null;
@@ -390,6 +450,7 @@ const getTicketById = async (req, res) => {
               zendeskTicketId: String(zdTicket.id),
               zendeskSyncStatus: "synced",
               clientId: req.user?.clientId || req.clientId || null,
+              storeId: req.user?.storeId || null,
               userId: ticketUser,
               createdBy: ticketUser,
               customerEmail: zdTicket.requester?.email || req.user.email || ""
@@ -599,6 +660,7 @@ const createZendeskTicket = async (req, res) => {
         status: "open",
         zendeskTicketId: String(ticket.id),
         clientId: req.user?.clientId || req.clientId || null,
+        storeId: req.user?.storeId || null,
         userId: req.user._id,
         createdBy: req.user._id,
         customerEmail: email
@@ -745,7 +807,8 @@ const getZendeskStats = async (req, res) => {
       const ids = [
         req.user?._id,
         req.user?.clientId,
-        req.user?.tenantId
+        req.user?.tenantId,
+        req.user?.storeId
       ].filter(Boolean);
 
       const mongooseIds = [];
@@ -760,12 +823,13 @@ const getZendeskStats = async (req, res) => {
       filter.$or = [
         { clientId: { $in: mongooseIds } },
         { tenantId: { $in: mongooseIds } },
+        { storeId: { $in: mongooseIds } },
         { createdBy: { $in: mongooseIds } },
         { userId: { $in: mongooseIds } }
       ];
     }
 
-    // Safe debugging log (Requirement 10)
+    // Safe debugging log (Requirement 9)
     console.log(`[SupportTicket] getZendeskStats - Role: ${req.user?.role}, userId: ${req.user?._id}, clientId: ${clientId || "global"}, ticket count query filters: ${JSON.stringify(filter)}`);
 
     // Query MongoDB for system ticket statistics with case-insensitivity and status variations
@@ -963,11 +1027,12 @@ const getZendeskTicketComments = async (req, res) => {
               zendeskTicketId: String(zdTicket.id),
               zendeskSyncStatus: "synced",
               clientId: req.user?.clientId || req.clientId || null,
+              storeId: req.user?.storeId || null,
               userId: ticketUser,
               createdBy: ticketUser,
               customerEmail: zdTicket.requester?.email || req.user.email || ""
             });
-            console.log(`[SupportTicket - getZendeskTicketComments] Auto-created local ticket for Zendesk ID ${id}: ${ticketDoc._id}`);
+            console.log(`[SupportTicket - getZendeskTicketComments] Auto-created local ticket for Zendesk ID ${id}: ${ticketDoc._id}, clientId: ${ticketDoc.clientId}`);
           }
         } catch (zdErr) {
           console.warn(`[SupportTicket - getZendeskTicketComments] Failed to fetch/create Zendesk ticket ${id}:`, zdErr.message);
@@ -1127,11 +1192,12 @@ const addZendeskTicketComment = async (req, res) => {
               zendeskTicketId: String(zdTicket.id),
               zendeskSyncStatus: "synced",
               clientId: req.user?.clientId || req.clientId || null,
+              storeId: req.user?.storeId || null,
               userId: ticketUser,
               createdBy: ticketUser,
               customerEmail: zdTicket.requester?.email || req.user.email || ""
             });
-            console.log(`[SupportTicket - addZendeskTicketComment] Auto-created local ticket for Zendesk ID ${id}: ${ticketDoc._id}`);
+            console.log(`[SupportTicket - addZendeskTicketComment] Auto-created local ticket for Zendesk ID ${id}: ${ticketDoc._id}, clientId: ${ticketDoc.clientId}`);
           }
         } catch (zdErr) {
           console.warn(`[SupportTicket - addZendeskTicketComment] Failed to fetch/create Zendesk ticket ${id}:`, zdErr.message);
