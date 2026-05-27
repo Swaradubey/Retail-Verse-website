@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, MessageSquare, Send, Loader2, User, UserCircle, RefreshCcw, Clock } from 'lucide-react';
+import { X, MessageSquare, Send, Loader2, User, UserCircle, RefreshCcw, Clock, ArrowLeft } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -12,6 +12,7 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [showConversations, setShowConversations] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -108,9 +109,9 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
           </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           {/* Sidebar - Conversation List */}
-          <div className="w-1/3 min-w-[250px] border-r border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto hidden md:block">
+          <div className={`w-full md:w-1/3 md:min-w-[250px] border-r border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-y-auto ${showConversations ? 'flex' : 'hidden'} md:flex flex-col`}>
             <div className="p-4 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center sticky top-0 bg-white dark:bg-zinc-900 z-10">
               <h3 className="font-semibold text-gray-700 dark:text-gray-300">Conversations</h3>
               <button onClick={onRefreshTickets} className="p-1.5 text-gray-400 hover:text-amber-500 transition">
@@ -126,7 +127,10 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
                   return (
                     <button
                       key={tId}
-                      onClick={() => setSelectedTicketId(tId)}
+                      onClick={() => {
+                        setSelectedTicketId(tId);
+                        setShowConversations(false);
+                      }}
                       className={`text-left p-4 border-b border-gray-50 dark:border-zinc-800/50 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition ${
                         selectedTicketId === tId ? 'bg-amber-50 dark:bg-amber-500/10 border-l-4 border-l-amber-500' : 'border-l-4 border-l-transparent'
                       }`}
@@ -163,7 +167,7 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
           </div>
 
           {/* Main Chat Area */}
-          <div className="flex-1 flex flex-col bg-gray-50/50 dark:bg-zinc-900/50 relative">
+          <div className={`flex-1 flex flex-col bg-gray-50/50 dark:bg-zinc-900/50 relative ${!showConversations ? 'flex' : 'hidden'} md:flex`}>
             {!selectedTicketId ? (
               <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-4">
                 <MessageSquare className="w-16 h-16 opacity-20" />
@@ -182,6 +186,12 @@ export function SupportChatModal({ isOpen, onClose, tickets, onRefreshTickets }:
                     <>
                       <div className="p-4 bg-white dark:bg-zinc-900 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between shadow-sm z-10">
                         <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setShowConversations(true)}
+                            className="md:hidden p-2 -ml-2 text-gray-500 hover:text-gray-800 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+                          >
+                            <ArrowLeft className="w-5 h-5" />
+                          </button>
                           <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold uppercase">
                             {selectedTicket?.requesterName?.charAt(0) || selectedTicket?.userName?.charAt(0) || 'U'}
                           </div>

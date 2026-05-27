@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { Heart, LogOut, Store, Package, ShoppingCart, Truck, LayoutDashboard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { isInventoryManagerRole, isCustomerAccountRole } from '../utils/staffRoles';
+import { Footer } from '../components/Footer';
 import {
   Sidebar,
   SidebarContent,
@@ -49,15 +50,21 @@ export function Account() {
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-[#fafafa] dark:bg-[#09090b]">
         <Sidebar collapsible="icon" className="border-r border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-xl">
-          <SidebarHeader className="h-16 flex items-center px-6">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-                <span className="font-bold text-lg">E</span>
-              </div>
-              <span className="font-bold text-xl tracking-tight group-data-[collapsible=icon]:hidden">My account</span>
-            </Link>
+          <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6">
+            <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
+              <Link to="/" className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+                  <span className="font-bold text-lg">E</span>
+                </div>
+                <span className="font-bold text-xl tracking-tight">My account</span>
+              </Link>
+              <SidebarTrigger className="ml-auto size-7" />
+            </div>
+            <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full h-full">
+              <SidebarTrigger className="size-7" />
+            </div>
           </SidebarHeader>
-          <SidebarContent className="px-2 pt-4">
+          <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8">
             <SidebarGroup>
               <SidebarGroupLabel className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground group-data-[collapsible=icon]:hidden">
                 Account
@@ -142,6 +149,9 @@ export function Account() {
                 <h1 className="text-2xl font-extrabold tracking-tight mb-6">{pageTitle}</h1>
               )}
               <Outlet />
+            </div>
+            <div className="max-w-[1000px] mx-auto mt-8">
+              <Footer />
             </div>
           </main>
         </SidebarInset>

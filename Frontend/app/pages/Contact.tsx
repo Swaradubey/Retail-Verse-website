@@ -18,9 +18,9 @@ const contactCards = [
   {
     icon: Mail,
     eyebrow: "Email us",
-    title: "hello@ecoshop.com",
+    title: "retailverse@gmail.com",
     desc: "For support, order help, or partnership queries.",
-    href: "mailto:hello@ecoshop.com",
+    href: "mailto:hello@retailverse.com",
   },
   {
     icon: Phone,
@@ -33,7 +33,7 @@ const contactCards = [
     icon: MapPin,
     eyebrow: "Visit us",
     title: "100 Smith Street",
-    desc: "Collingwood VIC 3066, Australia",
+    desc: "Collingwood VIC 3066, India",
   },
   {
     icon: Clock3,

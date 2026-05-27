@@ -160,7 +160,7 @@ export function Footer() {
           </div>
 
           {/* Newsletter */}
-          <div>
+          <div className="min-w-0">
             <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-white/90">
               Stay Updated
             </h3>
@@ -169,16 +169,16 @@ export function Footer() {
               your inbox.
             </p>
 
-            <form className="rounded-3xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm">
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <form className="rounded-3xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm min-w-0 overflow-hidden">
+              <div className="flex flex-col gap-3">
                 <input
                   type="email"
                   placeholder="Enter your email"
-                  className="h-12 flex-1 rounded-2xl border border-transparent bg-transparent px-4 text-sm text-white placeholder:text-white/35 outline-none"
+                  className="h-12 w-full rounded-2xl border border-transparent bg-transparent px-4 text-sm text-white placeholder:text-white/35 outline-none"
                 />
                 <button
                   type="submit"
-                  className="group inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-sm font-medium text-white transition-all duration-300 hover:bg-blue-500"
+                  className="group inline-flex w-full h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-sm font-medium text-white transition-all duration-300 hover:bg-blue-500"
                 >
                   Subscribe
                   <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />

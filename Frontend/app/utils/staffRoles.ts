@@ -101,22 +101,35 @@ export function hasFullAdminPrivileges(role: string | undefined): boolean {
   return normalized === 'admin' || normalized === 'super_admin' || normalized === 'client' || normalized === 'client_admin';
 }
 
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  store_manager: 'Store Manager',
+  client: 'Client',
+  seo_manager: 'SEO Manager',
+  inventory_manager: 'Inventory Manager',
+  counter_manager: 'Counter Manager',
+  manager: 'Manager',
+  viewer: 'Viewer',
+  cashier: 'Cashier',
+  staff: 'Staff',
+  employee: 'Employee',
+  customer: 'Customer',
+  user: 'User',
+};
+
 /** Compact badge label for header/nav (null = no badge). */
 export function accountRoleBadgeText(role: string | undefined): string | null {
+  if (!role) return null;
   const normalized = normalizeRole(role);
-  if (normalized === 'super_admin') return 'Super Admin';
-  if (normalized === 'admin') return 'Admin';
-  if (normalized === 'manager') return 'Manager';
-  if (normalized === 'viewer') return 'Viewer';
-  return null;
+  return ROLE_LABEL[normalized] ?? role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Subline under the user name in dashboard chrome. */
 export function accountRoleSubtitle(role: string | undefined): string {
-  const normalized = normalizeRole(role);
-  if (normalized === 'super_admin') return 'Logged in as Super Admin';
-  if (normalized === 'admin') return 'Logged in as Admin';
-  return 'Premium Plan';
+  if (!role) return 'Logged in as User';
+  const label = accountRoleBadgeText(role) || 'User';
+  return `Logged in as ${label}`;
 }
 
 function isAllowedUserDashboardPath(path: string): boolean {

@@ -12,6 +12,7 @@ import {
   Trash2,
   AlertCircle,
   Plus,
+  ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
@@ -86,6 +87,7 @@ export function DashboardInbox() {
   const [newSubject, setNewSubject] = useState('');
   const [newFirstMessage, setNewFirstMessage] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showConversations, setShowConversations] = useState(true);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
@@ -278,8 +280,8 @@ export function DashboardInbox() {
     'E';
 
   return (
-    <div className="h-[calc(100vh-280px)] flex gap-6 overflow-hidden">
-      <Card className="w-1/3 border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col">
+    <div className="h-[calc(100vh-280px)] flex gap-6 overflow-hidden flex-col md:flex-row">
+      <Card className={`w-full md:w-1/3 border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col ${showConversations ? 'flex' : 'hidden'} md:flex`}>
         <CardHeader className="border-b border-gray-100 dark:border-white/5 pb-4">
           <div className="flex items-center justify-between mb-4 gap-2">
             <CardTitle className="text-xl font-bold">Inbox</CardTitle>
@@ -337,7 +339,10 @@ export function DashboardInbox() {
               return (
                 <motion.div
                   key={msg.id}
-                  onClick={() => setSelectedId(msg.id)}
+                  onClick={() => {
+                    setSelectedId(msg.id);
+                    setShowConversations(false);
+                  }}
                   className={`p-4 cursor-pointer relative group flex items-start gap-3 transition-all duration-300 ${
                     selectedId === msg.id
                       ? 'bg-blue-50/50 dark:bg-blue-500/5'
@@ -383,7 +388,7 @@ export function DashboardInbox() {
         </CardContent>
       </Card>
 
-      <Card className="flex-1 border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col">
+      <Card className={`flex-1 border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-2xl overflow-hidden flex flex-col ${!showConversations ? 'flex' : 'hidden'} md:flex`}>
         <AnimatePresence mode="wait">
           {selectedSummary && selectedId ? (
             <motion.div
@@ -395,6 +400,12 @@ export function DashboardInbox() {
             >
               <CardHeader className="border-b border-gray-100 dark:border-white/5 flex flex-row items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowConversations(true)}
+                    className="md:hidden p-2 -ml-2 text-gray-500 hover:text-gray-800 dark:hover:text-white rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
                   <div className="w-10 h-10 rounded-full border border-gray-200 dark:border-white/10 overflow-hidden">
                     <img
                       src={avatarUrlForConversation(selectedId)}

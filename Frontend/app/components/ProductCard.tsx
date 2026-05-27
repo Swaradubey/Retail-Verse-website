@@ -13,7 +13,7 @@ import {
 } from '../utils/wishlistPayload';
 import { productApi, Product as DynamicProduct } from '../api/products';
 import { formatINR } from '../utils/formatINR';
-import { getFullImageUrl } from '../utils/imageUrl';
+import { getFullImageUrl, getProductImageUrl } from '../utils/imageUrl';
 
 interface ProductCardProps {
   product: Product & { _id?: string };
@@ -89,8 +89,8 @@ export function ProductCard({
             price: p.price,
             description: p.description || '',
             category: p.category,
-            image: p.image || '',
-            images: p.image ? [p.image] : [],
+            image: getProductImageUrl(p) || '',
+            images: [getProductImageUrl(p)].filter(Boolean),
             stock: p.stock,
             rating: 0,
             reviews: 0,
@@ -138,9 +138,9 @@ export function ProductCard({
     >
       {/* Image */}
       <div className="relative aspect-[4/4.2] overflow-hidden bg-[#f7f7f7] flex items-center justify-center">
-        {product.image ? (
+        {getProductImageUrl(product) ? (
           <img
-            src={getFullImageUrl(product.image)}
+            src={getFullImageUrl(getProductImageUrl(product))}
             alt={product.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />

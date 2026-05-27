@@ -453,22 +453,22 @@ export function DashboardStats({
       }`}
     >
       <Card className="relative overflow-hidden rounded-[1.125rem] border-0 bg-transparent shadow-none">
-        <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 pt-5 px-5">
+        <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 pt-4 px-4">
           <CardTitle className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-amber-900/75 group-hover:text-amber-900 transition-colors duration-300">
             {stat.title}
           </CardTitle>
           <div
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#d4af37] to-[#b87500] text-white shadow-lg shadow-amber-700/20 ring-4 ring-white/70 transition-transform duration-300 ease-out group-hover:scale-105"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#d4af37] to-[#b87500] text-white shadow-lg shadow-amber-700/20 ring-4 ring-white/70 transition-transform duration-300 ease-out group-hover:scale-105"
           >
-            <stat.icon className="h-5 w-5" strokeWidth={2.25} />
+            <stat.icon className="h-4 w-4" strokeWidth={2.5} />
           </div>
         </CardHeader>
-        <CardContent className="px-5 pb-5 pt-0">
+        <CardContent className="px-4 pb-4 pt-0">
           <div className="flex flex-col gap-1">
-            <span className="text-2xl sm:text-[1.75rem] font-extrabold tracking-tight text-zinc-900 tabular-nums">
+            <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-900 tabular-nums">
               {stat.value}
             </span>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <div
                 className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full transition-colors duration-300 ${
                   stat.isPositive
@@ -497,16 +497,16 @@ export function DashboardStats({
   );
 
   const overviewGridClass = userOverview
-    ? 'grid gap-5 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto w-full'
-    : 'grid gap-5 sm:gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4';
+    ? 'grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 max-w-6xl mx-auto w-full'
+    : 'grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4';
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       <div className={overviewGridClass}>
         {stats.map((stat, index) => renderKpiCard(stat as StatCardConfig, index, 0))}
       </div>
       {superAdminMonthKpis ? (
-        <div className="grid gap-5 sm:gap-6 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {superAdminMonthKpis.map((stat, index) => renderKpiCard(stat, index, stats.length))}
         </div>
       ) : null}

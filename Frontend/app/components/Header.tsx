@@ -142,14 +142,16 @@ export function Header() {
                     <span className="max-w-[110px] truncate text-sm font-semibold text-[#111111]">
                       {user.name}
                     </span>
-                    {accountRoleBadgeText(user.role) && (
-                      <span
-                        className={`max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide ${user.role === 'super_admin' ? 'text-violet-800' : 'text-amber-900'
-                          }`}
-                      >
-                        {accountRoleBadgeText(user.role)}
-                      </span>
-                    )}
+                    <span
+                      className={`max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide ${user.role === 'super_admin'
+                          ? 'text-violet-800'
+                          : user.role === 'admin'
+                            ? 'text-amber-900'
+                            : 'text-stone-500'
+                        }`}
+                    >
+                      {accountRoleBadgeText(user.role) || 'User'}
+                    </span>
                   </div>
                 </Link>
 
@@ -291,14 +293,16 @@ export function Header() {
                     <span className="text-base font-semibold text-[#111111]">
                       {user.name}
                     </span>
-                    {(user.role === 'super_admin' || user.role === 'admin') && (
-                      <span
-                        className={`text-xs font-semibold ${user.role === 'super_admin' ? 'text-violet-800' : 'text-amber-900'
-                          }`}
-                      >
-                        {accountRoleSubtitle(user.role)}
-                      </span>
-                    )}
+                    <span
+                      className={`text-xs font-semibold ${user.role === 'super_admin'
+                          ? 'text-violet-800'
+                          : user.role === 'admin'
+                            ? 'text-amber-900'
+                            : 'text-stone-500'
+                        }`}
+                    >
+                      {accountRoleSubtitle(user.role)}
+                    </span>
                   </div>
                 </Link>
 

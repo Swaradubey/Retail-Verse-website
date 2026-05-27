@@ -46,6 +46,7 @@ import {
   SidebarProvider,
   SidebarInset,
   SidebarRail,
+  SidebarTrigger,
   SidebarMenuSub,
   SidebarMenuSubItem,
   SidebarMenuSubButton
@@ -62,6 +63,7 @@ import { DashboardRecentTickets } from '../components/DashboardRecentTickets';
 import { DashboardQuickActions } from '../components/DashboardQuickActions';
 import { DashboardContactSummary } from '../components/DashboardContactSummary';
 import { DashboardNavbar } from '../components/DashboardNavbar';
+import { Footer } from '../components/Footer';
 import { DashboardSkeleton } from '../components/DashboardSkeleton';
 import { canAccessInventoryEditor } from '../utils/inventoryPermissions';
 import {
@@ -493,9 +495,15 @@ export function Dashboard() {
                 ? 'border-r border-amber-200/35 dark:border-amber-900/25 bg-white/55 dark:bg-zinc-950/55 backdrop-blur-xl shadow-[4px_0_24px_-12px_rgba(212,175,55,0.15)]'
                 : 'border-r border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-xl'
             }
+            style={
+              user?.impersonation?.active
+                ? { top: '48px', height: 'calc(100svh - 48px)' }
+                : undefined
+            }
           >
-            <SidebarHeader className="h-16 flex items-center px-6">
-              <div className="flex items-center gap-3">
+            <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6">
+              {/* Expanded header */}
+              <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
                 <div
                   className={
                     isOverview
@@ -505,10 +513,15 @@ export function Dashboard() {
                 >
                   <span className="font-bold text-lg">E</span>
                 </div>
-                <span className="font-bold text-xl tracking-tight group-data-[collapsible=icon]:hidden">Retail Verse</span>
+                <span className="font-bold text-xl tracking-tight flex-1">Retail Verse</span>
+                <SidebarTrigger className="size-7" />
+              </div>
+              {/* Collapsed header - centered toggle */}
+              <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full h-full">
+                <SidebarTrigger className="size-7" />
               </div>
             </SidebarHeader>
-            <SidebarContent className="px-2 pt-4">
+            <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8">
               <SidebarGroup>
                 <SidebarGroupLabel
                   className={
@@ -888,6 +901,7 @@ export function Dashboard() {
                     </a>
                   </div>
                 </footer>
+                <Footer />
               </div>
             </main>
           </SidebarInset>

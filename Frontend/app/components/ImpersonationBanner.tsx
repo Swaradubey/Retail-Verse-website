@@ -43,9 +43,9 @@ export function ImpersonationBanner() {
   return (
     <div
       role="status"
-      className="shrink-0 z-[60] flex flex-col gap-2 border-b border-amber-300/60 bg-amber-50 px-4 py-2.5 text-sm text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/80 dark:text-amber-50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+      className="sticky top-0 z-[60] w-full shrink-0 flex flex-col gap-2 border-b border-amber-300/60 bg-amber-50 px-4 py-2.5 text-sm text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/80 dark:text-amber-50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
     >
-      <p className="min-w-0 font-medium">
+      <p className="min-w-0 font-medium whitespace-normal break-words">
         Viewing as <span className="font-semibold">{roleLabel}</span>:{' '}
         <span className="font-semibold">{user?.name}</span>
         <span className="text-amber-800/90 dark:text-amber-200/90"> — opened by Super Admin</span>

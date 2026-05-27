@@ -24,6 +24,7 @@ import {
  import { wishlistApi } from '../api/wishlist';
  import { slugifyProductName } from '../utils/wishlistPayload';
  import { formatINR } from '../utils/formatINR';
+import { getProductImageUrl } from '../utils/imageUrl';
 
 const categoryIcons: Record<string, React.ElementType> = {
   'Audio': Headphones,
@@ -96,8 +97,8 @@ export function Shop() {
             price: p.price,
             description: p.description || '',
             category: p.category,
-            image: p.image || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
-            images: p.image ? [p.image] : [],
+            image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
+            images: [getProductImageUrl(p)].filter(Boolean),
             stock: p.stock,
             rating: 0,
             reviews: 0,
