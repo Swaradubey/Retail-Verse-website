@@ -55,6 +55,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '../components/ui/collapsible';
+import { Button } from '../components/ui/button';
 import { DashboardStats } from '../components/DashboardStats';
 import { DashboardCharts } from '../components/DashboardCharts';
 import { DashboardRecentTickets } from '../components/DashboardRecentTickets';
