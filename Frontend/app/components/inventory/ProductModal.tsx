@@ -181,9 +181,12 @@ export function ProductModal({
 
     // Explicit Validation
     const missingFields: string[] = [];
-    if (!formData.productName.trim()) missingFields.push("Product Name");
-    if (!formData.sku.trim()) missingFields.push("SKU Code");
-    if (!formData.category) missingFields.push("Category");
+    if (mode === 'add') {
+      if (!formData.productName.trim()) missingFields.push("Product Name");
+      if (!formData.sku.trim()) missingFields.push("SKU Code");
+      if (!formData.category) missingFields.push("Category");
+      if (!formData.imageUrl.trim()) missingFields.push("Image URL");
+    }
     if (formData.unitPrice < 0) {
       setError("Unit Price cannot be negative");
       setIsSubmitting(false);
@@ -194,9 +197,8 @@ export function ProductModal({
       setIsSubmitting(false);
       return;
     }
-    if (!formData.imageUrl.trim()) missingFields.push("Image URL");
 
-    if (missingFields.length > 0) {
+    if (mode === 'add' && missingFields.length > 0) {
       setError(`Please fill in all required fields: ${missingFields.join(", ")}`);
       setIsSubmitting(false);
       return;
@@ -221,29 +223,17 @@ export function ProductModal({
 
       mappedPayload = limitedPayload;
     } else if (mode === 'edit' && product?._id) {
-      const otherUnchanged =
-        formData.sku === (product.sku || '') &&
-        formData.category === (product.category || '') &&
-        Number(formData.unitPrice) === Number(product.price ?? 0) &&
-        Number(formData.stockLevel) === Number(product.stock ?? 0) &&
-        (formData.imageUrl || '') === (product.image || '');
-      const nameChanged = formData.productName !== (product.name || '');
-      const descChanged = (formData.description ?? '') !== (product.description ?? '');
-      if (otherUnchanged && (nameChanged || descChanged)) {
-        mappedPayload = {};
-        if (nameChanged) mappedPayload.name = formData.productName;
-        if (descChanged) mappedPayload.description = formData.description ?? '';
-      } else {
-        mappedPayload = {
-          name: formData.productName,
-          sku: formData.sku,
-          category: formData.category,
-          price: formData.unitPrice,
-          stock: formData.stockLevel,
-          image: formData.imageUrl,
-          description: formData.description,
-        };
-      }
+      // Merge form data with original product data so that all required
+      // backend fields (name, sku, category, price, stock) are always present.
+      mappedPayload = {
+        name: formData.productName || product.name || '',
+        sku: formData.sku || product.sku || '',
+        category: formData.category || product.category || '',
+        price: formData.unitPrice ?? product.price ?? 0,
+        stock: Number(formData.stockLevel) ?? product.stock ?? 0,
+        image: formData.imageUrl || product.image || '',
+        description: formData.description ?? product.description ?? '',
+      };
     } else {
       mappedPayload = {
         name: formData.productName,

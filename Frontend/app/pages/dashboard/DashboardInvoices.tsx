@@ -534,12 +534,22 @@ export function DashboardInvoices() {
     } else {
       const total = quotes.length;
       const accepted = quotes.filter((o) => String(o.status).toLowerCase() === 'accepted').length;
-      const pending = quotes.filter((o) => String(o.status).toLowerCase() === 'pending').length;
+      // Pending: quotes whose table-displayed status would be "pending".
+      // Table display uses: paymentStatus || status || 'Pending'.
+      // Include status="pending" and status="countered" (countered but not yet accepted/rejected).
+      const pending = quotes.filter((o) => {
+        const ps = String(o.paymentStatus || '').toLowerCase();
+        const s = String(o.status || '').toLowerCase();
+        return s === 'pending' || s === 'countered' || (ps === 'pending' && s !== 'accepted' && s !== 'rejected');
+      }).length;
+      const paid = quotes.filter((o) => String(o.paymentStatus || '').toLowerCase() === 'paid').length;
       const totalAmount = quotes.reduce((acc, o) => acc + (Number(o.finalPrice || o.requestedPrice) || 0), 0);
+      console.debug('[Quotes KPI]', { total, accepted, pending, paid, totalAmount, quoteStatuses: quotes.map(o => ({ id: o._id, status: o.status, paymentStatus: o.paymentStatus })) });
       return [
         { title: 'Total Quotes', value: total, icon: FileText, color: 'blue' },
         { title: 'Accepted', value: accepted, icon: CheckCircle2, color: 'emerald' },
         { title: 'Pending', value: pending, icon: Clock, color: 'amber' },
+        { title: 'Paid', value: paid, icon: CheckCircle2, color: 'emerald' },
         { title: 'Total Value', value: `₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: 'indigo' },
       ];
     }

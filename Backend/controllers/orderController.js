@@ -1066,6 +1066,11 @@ const createOrder = async (req, res) => {
         }
       }
       console.error("[ERROR] Mongoose save error:", saveError.message);
+      if (saveError.errors) {
+        Object.keys(saveError.errors).forEach((p) => {
+          console.error(`[VALIDATION] ${p}: ${saveError.errors[p].message}`);
+        });
+      }
       res.status(500).json({
         success: false,
         message: "Failed to save order to database",

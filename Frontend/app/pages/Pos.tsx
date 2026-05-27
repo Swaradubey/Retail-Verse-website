@@ -838,7 +838,7 @@ export function Pos() {
       }
 
       try {
-        const result = await createOrder({
+        const orderPayload = {
           orderId: `ORD-POS-${Date.now()}`,
           isPos: true,
           orderSource: 'pos',
@@ -850,7 +850,9 @@ export function Pos() {
           paymentMethod: 'COD',
           totalPrice: orderTotal,
           ...getPosCustomerFieldsForPayload(),
-        });
+        };
+        console.log('[POS] COD order payload:', JSON.stringify(orderPayload, null, 2));
+        const result = await createOrder(orderPayload);
 
         if (result.success) {
           toast.success('Order placed successfully');
@@ -859,6 +861,7 @@ export function Pos() {
           throw new Error(result.message || 'Failed to place order.');
         }
       } catch (err: unknown) {
+        console.error('[POS] COD order error:', err);
         const message =
           err instanceof Error ? err.message : 'Failed to place order. Please try again.';
         toast.error(message);
@@ -948,7 +951,7 @@ export function Pos() {
       }
 
       try {
-        const result = await createOrder({
+        const orderPayload = {
           orderId: `ORD-POS-${Date.now()}`,
           isPos: true,
           orderSource: 'pos',
@@ -961,7 +964,9 @@ export function Pos() {
           paymentDetails,
           totalPrice: orderTotal,
           ...getPosCustomerFieldsForPayload(),
-        });
+        };
+        console.log('[POS] Card order payload:', JSON.stringify(orderPayload, null, 2));
+        const result = await createOrder(orderPayload);
 
         if (result.success) {
           toast.success('Order placed successfully');
@@ -970,6 +975,7 @@ export function Pos() {
           throw new Error(result.message || 'Failed to place order.');
         }
       } catch (err: unknown) {
+        console.error('[POS] Card order error:', err);
         const message =
           err instanceof Error ? err.message : 'Failed to place order. Please try again.';
         toast.error(message);
@@ -1066,7 +1072,7 @@ export function Pos() {
         swipe: 'Cash',
       };
 
-      const result = await createOrder({
+      const orderPayload = {
         orderId: `ORD-POS-${Date.now()}`,
         isPos: true,
         orderSource: 'pos',
@@ -1079,7 +1085,9 @@ export function Pos() {
         paymentDetails,
         totalPrice: orderTotal,
         ...getPosCustomerFieldsForPayload(),
-      });
+      };
+      console.log('[POS] Order payload:', JSON.stringify(orderPayload, null, 2));
+      const result = await createOrder(orderPayload);
 
       if (result.success) {
         toast.success('Order placed successfully');
@@ -1091,6 +1099,7 @@ export function Pos() {
         throw new Error(result.message || 'Failed to place order.');
       }
     } catch (err: unknown) {
+      console.error('[POS] Order error:', err);
       const message =
         err instanceof Error ? err.message : 'Failed to place order. Please try again.';
       toast.error(message);
