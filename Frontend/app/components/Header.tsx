@@ -8,9 +8,7 @@ import { accountRoleBadgeText, accountRoleSubtitle, isCustomerAccountRole, isSta
 
 const HIDDEN_HEADER_ROLES = [
   'employee',
-  'counter_manager',
   'seo_manager',
-  'store_manager',
   'inventory_manager',
 ];
 
