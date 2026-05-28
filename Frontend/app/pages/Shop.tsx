@@ -240,7 +240,7 @@ export function Shop() {
 
   return (
     <div
-      className="min-h-screen relative"
+      className="min-h-screen relative overflow-x-hidden"
       style={{ background: 'linear-gradient(135deg, #fdfcfb, #f8f3e8, #f1e6d6)' }}
     >
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">

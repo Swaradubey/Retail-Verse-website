@@ -124,7 +124,7 @@ const secondaryItems = [
 /** Shared pill layout for every dashboard sidebar link (matches Overview row: radius, padding, min-height, icon gap). */
 function dashboardSidebarNavButtonClass(isActive: boolean, pageIsOverview: boolean): string {
   const base =
-    'relative group flex w-full h-auto min-h-[44px] items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-300 ease-out outline-hidden ring-sidebar-ring focus-visible:ring-2 overflow-hidden [&>svg]:!size-5 [&>svg]:shrink-0 [&>svg]:transition-transform [&>svg]:duration-300 [&>svg]:ease-out group-hover:[&>svg]:scale-105 group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!min-h-8 group-data-[collapsible=icon]:!p-2 group-data-[collapsible=icon]:gap-0';
+    'relative group flex w-full h-auto min-h-[44px] items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-300 ease-out outline-hidden ring-sidebar-ring focus-visible:ring-2 overflow-hidden [&>svg]:!size-5 [&>svg]:shrink-0 [&>svg]:transition-transform [&>svg]:duration-300 [&>svg]:ease-out group-hover:[&>svg]:scale-105 group-data-[collapsible=icon]:!size-12 group-data-[collapsible=icon]:!min-h-12 group-data-[collapsible=icon]:!p-3 group-data-[collapsible=icon]:gap-0';
 
   if (isActive) {
     return `${base} border border-amber-200/70 bg-gradient-to-r from-amber-100/90 via-amber-50/80 to-transparent text-amber-900 shadow-sm shadow-amber-900/10 dark:border-amber-700/45 dark:from-amber-900/35 dark:via-amber-950/30 dark:to-transparent dark:text-amber-100 font-bold hover:shadow-md`;
@@ -481,8 +481,8 @@ export function Dashboard() {
       <div
         className={
           isOverview || isInventoryOrAnalytics
-            ? 'flex flex-col min-h-screen w-full bg-[linear-gradient(145deg,#fdf6e3_0%,#ffffff_45%,#fff8dc_100%)] dark:bg-[linear-gradient(145deg,#1a1510_0%,#0c0a08_50%,#14110c_100%)]'
-            : 'flex flex-col min-h-screen w-full bg-[#fafafa] dark:bg-[#09090b]'
+            ? 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[linear-gradient(145deg,#fdf6e3_0%,#ffffff_45%,#fff8dc_100%)] dark:bg-[linear-gradient(145deg,#1a1510_0%,#0c0a08_50%,#14110c_100%)]'
+            : 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[#fafafa] dark:bg-[#09090b]'
         }
       >
         <ImpersonationBanner />
@@ -694,14 +694,14 @@ export function Dashboard() {
             <main
               className={
                 isOverview || isInventoryOrAnalytics
-                  ? 'flex-1 overflow-y-auto p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade'
+                  ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade'
                   : location.pathname.startsWith('/dashboard/products')
-                    ? 'flex-1 overflow-y-auto custom-scrollbar'
-                    : 'flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 custom-scrollbar'
+                    ? 'flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar'
+                    : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 custom-scrollbar'
               }
               style={isOverview ? { fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" } : undefined}
             >
-              <div className="max-w-[1600px] mx-auto space-y-8 sm:space-y-10">
+              <div className="w-full max-w-[1600px] mx-auto space-y-8 sm:space-y-10 min-w-0">
                 {/* Welcome Section */}
                 {location.pathname !== '/dashboard/products' && (
                   <motion.div
