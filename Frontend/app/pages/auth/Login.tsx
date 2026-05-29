@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation, useSearchParams } from 'react-router';
-import { useAuth } from '../../context/AuthContext';
+import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useAuth, resetNavigationState } from '../../context/AuthContext';
 import { resolvePostLoginPath } from '../../utils/staffRoles';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShoppingBag } from 'lucide-react';
 
@@ -14,7 +14,6 @@ export function Login() {
 
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
 
   useEffect(() => {
@@ -23,9 +22,6 @@ export function Login() {
       setError('Google authentication failed. Please try again or use your credentials.');
     }
   }, [searchParams]);
-
-  const from =
-    (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +36,8 @@ export function Login() {
 
     try {
       const data = await login(email, password);
-      navigate(resolvePostLoginPath(data.role, from), { replace: true });
+      resetNavigationState();
+      navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Something went wrong. Please try again.';

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router';
-import { useAuth } from '../../context/AuthContext';
+import { Link, useNavigate } from 'react-router';
+import { useAuth, resetNavigationState } from '../../context/AuthContext';
 import { resolvePostLoginPath } from '../../utils/staffRoles';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, Shield } from 'lucide-react';
 
@@ -13,10 +13,6 @@ export function SuperAdminLogin() {
 
   const { loginSuperAdmin, user } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const from =
-    (location.state as { from?: { pathname: string } })?.from?.pathname || '/super-admin';
 
   useEffect(() => {
     if (user?.role === 'super_admin') {
@@ -31,7 +27,8 @@ export function SuperAdminLogin() {
 
     try {
       const data = await loginSuperAdmin(email, password);
-      navigate(resolvePostLoginPath(data.role, from), { replace: true });
+      resetNavigationState();
+      navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Something went wrong. Please try again.';

@@ -65,6 +65,24 @@ export const TOKEN_STORAGE_KEY = 'eco_shop_token';
 /** Super Admin JWT stored while viewing the Admin Dashboard via impersonation (restore if needed). */
 export const IMPERSONATION_SUPER_TOKEN_BACKUP_KEY = 'eco_shop_impersonation_super_backup';
 
+/** Clear any UI navigation‑persistence keys so a fresh login always starts on the role's default route. */
+export function resetNavigationState(): void {
+  const keys = [
+    'activePage',
+    'activeTab',
+    'selectedMenu',
+    'selectedSection',
+    'currentRoute',
+    'lastRoute',
+    'lastVisitedPath',
+    'dashboardView',
+    'sidebarActiveItem',
+  ];
+  for (const key of keys) {
+    localStorage.removeItem(key);
+  }
+}
+
 function mergeProfileIntoUser(
   fresh: ProfileUser,
   prev: Partial<User> & Record<string, unknown>
@@ -295,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     setToken(null);
+    resetNavigationState();
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(IMPERSONATION_SUPER_TOKEN_BACKUP_KEY);

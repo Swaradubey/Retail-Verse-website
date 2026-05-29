@@ -144,7 +144,7 @@ function isAllowedUserDashboardPath(path: string): boolean {
 /** Where to send the user after a successful login. */
 export function resolvePostLoginPath(role: string | undefined, fromPath: string): string {
   const normalized = normalizeRole(role);
-  if (isRestrictedInventoryDashboardRole(normalized) || normalized === 'client') {
+  if (isRestrictedInventoryDashboardRole(normalized)) {
     const blocked = fromPath.startsWith('/login') || fromPath.startsWith('/register');
     
     // Counter Manager should prefer POS
@@ -155,12 +155,12 @@ export function resolvePostLoginPath(role: string | undefined, fromPath: string)
       return '/pos';
     }
 
-    // SEO Manager should prefer SEO page
+    // SEO Manager: only Products and Inventory are allowed; default to /dashboard/products
     if (normalized === 'seo_manager') {
-      if (!blocked && (fromPath.startsWith('/dashboard/seo') || fromPath.startsWith('/dashboard/inventory') || fromPath.startsWith('/dashboard/products'))) {
+      if (!blocked && (fromPath.startsWith('/dashboard/inventory') || fromPath.startsWith('/dashboard/products'))) {
         return fromPath;
       }
-      return '/dashboard/seo';
+      return '/dashboard/products';
     }
 
     if (!blocked && (fromPath.startsWith('/dashboard/inventory') || fromPath.startsWith('/dashboard/products'))) {

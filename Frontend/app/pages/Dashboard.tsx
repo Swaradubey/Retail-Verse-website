@@ -300,8 +300,8 @@ export function Dashboard() {
       return (
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
-        (isStoreManagerRole(user?.role) && item.href === '/pos') ||
-        (normalizeRole(user?.role) === 'seo_manager' && item.href === '/dashboard/seo')
+        (isStoreManagerRole(user?.role) && item.href === '/pos')
+        // seo_manager: NO /dashboard/seo in sidebar — only Products and Inventory
       );
     }
     if (isClientRole(user?.role)) {
@@ -404,14 +404,19 @@ export function Dashboard() {
     location.pathname.startsWith('/dashboard/products/') ||
     location.pathname === '/dashboard/inventory' ||
     location.pathname.startsWith('/dashboard/inventory/') ||
-    ((isStoreManagerRole(user?.role) || isCounterManagerRole(user?.role)) && (location.pathname === '/pos' || location.pathname.startsWith('/pos/'))) ||
-    (normalizeRole(user?.role) === 'seo_manager' && (location.pathname === '/dashboard/seo' || location.pathname.startsWith('/dashboard/seo/')));
+    ((isStoreManagerRole(user?.role) || isCounterManagerRole(user?.role)) && (location.pathname === '/pos' || location.pathname.startsWith('/pos/')));
+    // seo_manager: /dashboard/seo is NOT a valid route for them
 
   const shouldRedirectRestrictedRole =
     (restrictedInventoryDashboardRole || isCounterManagerRole(user?.role)) && !canAccessCurrentDashboardRoute;
 
+  // SEO Manager: block /dashboard/seo and redirect to /dashboard/products
+  if (normalizeRole(user?.role) === 'seo_manager' && (location.pathname === '/dashboard/seo' || location.pathname.startsWith('/dashboard/seo/'))) {
+    return <Navigate to="/dashboard/products" replace />;
+  }
+
   if (shouldRedirectRestrictedRole) {
-    return <Navigate to="/dashboard/inventory" replace />;
+    return <Navigate to="/dashboard/products" replace />;
   }
 
   const cashierAllowedRoute =

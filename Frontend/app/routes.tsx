@@ -241,7 +241,8 @@ export const router = createBrowserRouter([
           {
             path: 'dashboard/seo',
             element: (
-              <AdminRoute>
+              // seo_manager is blocked from /dashboard/seo — they only get Products and Inventory
+              <AdminRoute blockedRoles={['seo_manager']}>
                 <DashboardSeo />
               </AdminRoute>
             ),
