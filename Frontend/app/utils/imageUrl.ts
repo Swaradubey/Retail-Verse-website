@@ -20,11 +20,17 @@ export function getProductImageUrl(product: any): string {
   const img =
     product.image ||
     product.imageUrl ||
+    product.productImage ||
     product.thumbnail ||
     (Array.isArray(product.images) && product.images.length > 0
       ? typeof product.images[0] === 'string'
         ? product.images[0]
         : product.images[0]?.url
+      : undefined) ||
+    (Array.isArray(product.photos) && product.photos.length > 0
+      ? typeof product.photos[0] === 'string'
+        ? product.photos[0]
+        : product.photos[0]?.url
       : undefined) ||
     (Array.isArray(product.media) && product.media.length > 0
       ? product.media[0]?.url

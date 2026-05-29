@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ import {
 import ApiService from '../api/apiService';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getProductImageUrl, getFullImageUrl } from '../utils/imageUrl';
 
 interface CreateQuoteModalProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const productSearchRef = useRef<HTMLDivElement>(null);
 
   const [message, setMessage] = useState('');
 
@@ -50,6 +52,25 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
       fetchProducts();
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (productSearchRef.current && !productSearchRef.current.contains(e.target as Node)) {
+        setShowProductDropdown(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowProductDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
   const fetchProducts = async () => {
     try {
@@ -80,7 +101,7 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
         name: product.name,
         price: product.price,
         quantity: 1,
-        image: product.image,
+        image: getProductImageUrl(product),
       },
     ]);
     setProductSearch('');
@@ -165,6 +186,7 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
     setCustomerName('');
     setSelectedItems([]);
     setProductSearch('');
+    setShowProductDropdown(false);
     setMessage('');
   };
 
@@ -278,7 +300,7 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
               {/* Right Column: Products */}
               <div className="space-y-6">
                 {/* Add Products Search */}
-                <div>
+                <div ref={productSearchRef} className="relative">
                   <Label className="text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 block">
                     Add Products
                   </Label>
@@ -309,12 +331,23 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
                               className="p-3 hover:bg-gray-50 dark:hover:bg-gray-800/60 cursor-pointer flex items-center justify-between transition-colors border-b border-gray-100 dark:border-gray-800 last:border-b-0"
                             >
                               <div className="flex items-center gap-3 min-w-0">
-                                <div className="h-9 w-9 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-                                  {p.image ? (
-                                    <img src={p.image} alt="" className="h-full w-full object-cover" />
-                                  ) : (
-                                    <Package className="h-4 w-4 text-amber-500" />
-                                  )}
+                                <div className="h-9 w-9 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
+                                  {(() => {
+                                    const src = getFullImageUrl(getProductImageUrl(p));
+                                    return src ? (
+                                      <img
+                                        src={src}
+                                        alt=""
+                                        className="absolute inset-0 w-full h-full object-cover"
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                          const el = e.currentTarget.parentElement?.querySelector('.pkg-icon');
+                                          if (el) el.classList.remove('hidden');
+                                        }}
+                                      />
+                                    ) : null;
+                                  })()}
+                                  <Package className={`h-4 w-4 text-amber-500 pkg-icon ${getFullImageUrl(getProductImageUrl(p)) ? 'hidden' : ''}`} />
                                 </div>
                                 <div className="min-w-0">
                                   <p className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{p.name}</p>
@@ -371,12 +404,23 @@ export function CreateQuoteModal({ isOpen, onClose, onSuccess }: CreateQuoteModa
                           >
                             <X className="h-3 w-3" />
                           </button>
-                          <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden flex-shrink-0">
-                            {item.image ? (
-                              <img src={item.image} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <Package className="h-4 w-4 text-amber-500" />
-                            )}
+                          <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center overflow-hidden flex-shrink-0 relative">
+                            {(() => {
+                              const src = getFullImageUrl(item.image);
+                              return src ? (
+                                <img
+                                  src={src}
+                                  alt=""
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const el = e.currentTarget.parentElement?.querySelector('.pkg-icon');
+                                    if (el) el.classList.remove('hidden');
+                                  }}
+                                />
+                              ) : null;
+                            })()}
+                            <Package className={`h-4 w-4 text-amber-500 pkg-icon ${item.image ? 'hidden' : ''}`} />
                           </div>
                           <div className="flex-1 min-w-0 pl-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <p className="font-medium text-xs sm:text-sm text-gray-900 dark:text-gray-100 truncate pr-4">{item.name}</p>
