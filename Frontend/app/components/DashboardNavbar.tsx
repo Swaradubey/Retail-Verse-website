@@ -63,8 +63,16 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  const [lastSeenNotificationTime, setLastSeenNotificationTime] = useState<string | null>(
+    localStorage.getItem("lastSeenNotificationTime")
+  );
+
+  const unreadCount = notifications.filter((notification) => {
+    return !lastSeenNotificationTime || new Date(notification.createdAt) > new Date(lastSeenNotificationTime);
+  }).length;
 
   useEffect(() => {
     if (!premiumOverview) return;
@@ -176,14 +184,11 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
       );
       if (res.success && res.notifications) {
         setNotifications(res.notifications);
-        setUnreadCount(res.unreadCount ?? 0);
       } else {
         setNotifications([]);
-        setUnreadCount(0);
       }
     } catch {
       setNotifications([]);
-      setUnreadCount(0);
     } finally {
       setNotifLoading(false);
     }
@@ -192,11 +197,36 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
   const handleNotifClick = () => {
     setNotifOpen(true);
     fetchNotifications();
+    const now = new Date().toISOString();
+    localStorage.setItem("lastSeenNotificationTime", now);
+    setLastSeenNotificationTime(now);
   };
 
   useEffect(() => {
     fetchNotifications();
   }, []);
+
+  const handleNotificationClick = (notification: any) => {
+    setSelectedNotification(notification);
+  };
+
+  const handleBackToList = () => {
+    setSelectedNotification(null);
+  };
+
+  const handleViewDetailsNavigate = (notification: any) => {
+    setNotifOpen(false);
+    setSelectedNotification(null);
+    if (notification.type === 'sale') {
+      const orderId = notification.orderId || notification.relatedId || notification.id;
+      navigate(`/dashboard/orders?orderId=${orderId}`);
+    } else if (notification.type === 'low_stock') {
+      const productId = notification.productId || notification.relatedId || notification.id;
+      navigate(`/dashboard/products?productId=${productId}`);
+    } else {
+      navigate('/dashboard/orders');
+    }
+  };
 
   return (
     <header
@@ -397,55 +427,108 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
         </div>
       </div>
 
-      <Dialog open={notifOpen} onOpenChange={setNotifOpen}>
+      <Dialog open={notifOpen} onOpenChange={(open) => { setNotifOpen(open); if (!open) setSelectedNotification(null); }}>
         <DialogContent className={premiumOverview ? 'sm:max-w-md border-amber-200/40 dark:border-amber-900/30' : 'sm:max-w-md'}>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
-              <Bell className="w-5 h-5" />
-              Notifications
-            </DialogTitle>
-            {unreadCount > 0 && (
-              <span className="mr-8 text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
-                {unreadCount} new
-              </span>
-            )}
-          </div>
-          <div className="max-h-80 overflow-y-auto -mx-6 px-6">
-            {notifLoading ? (
-              <div className="flex justify-center items-center py-10">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          {selectedNotification ? (
+            <>
+              <div className="flex items-center gap-2 mb-4">
+                <button
+                  type="button"
+                  onClick={handleBackToList}
+                  className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  aria-label="Back to notifications"
+                >
+                  ← Back
+                </button>
               </div>
-            ) : notifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                <Bell className="w-10 h-10 mb-3 opacity-30" />
-                <p className="text-sm">No new notifications</p>
+              <div className="flex items-start gap-4 p-4 rounded-xl bg-gray-50 dark:bg-white/5">
+                <div className="shrink-0 mt-0.5">
+                  {selectedNotification.type === 'sale' ? (
+                    <ShoppingCart className="w-6 h-6 text-green-600 dark:text-green-400" />
+                  ) : selectedNotification.type === 'low_stock' ? (
+                    <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                  ) : (
+                    <Package className="w-6 h-6 text-red-600 dark:text-red-400" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 space-y-2">
+                  <h3 className="text-base font-bold">{selectedNotification.title}</h3>
+                  <p className="text-sm text-muted-foreground">{selectedNotification.message}</p>
+                  {selectedNotification.orderId && (
+                    <p className="text-xs text-muted-foreground/60">Order ID: {selectedNotification.orderId}</p>
+                  )}
+                  {selectedNotification.productId && (
+                    <p className="text-xs text-muted-foreground/60">Product ID: {selectedNotification.productId}</p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground/60">{timeAgo(selectedNotification.createdAt)}</p>
+                </div>
               </div>
-            ) : (
-              <div className="py-2 space-y-1">
-                {notifications.map((n, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                  >
-                    <div className="shrink-0 mt-0.5">
-                      {n.type === 'sale' ? (
-                        <ShoppingCart className="w-4 h-4 text-green-600 dark:text-green-400" />
-                      ) : n.type === 'low_stock' ? (
-                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      ) : (
-                        <Package className="w-4 h-4 text-red-600 dark:text-red-400" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{n.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">{n.message}</p>
-                      <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
-                    </div>
+              <div className="mt-4 flex justify-end">
+                <Button
+                  type="button"
+                  onClick={() => handleViewDetailsNavigate(selectedNotification)}
+                  className="h-9 rounded-xl px-4 text-xs font-semibold"
+                >
+                  {selectedNotification.type === 'sale' ? 'View Order' : 'View Product'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <DialogTitle className="flex items-center gap-2">
+                  <Bell className="w-5 h-5" />
+                  Notifications
+                </DialogTitle>
+                {unreadCount > 0 && (
+                  <span className="mr-8 text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                    {unreadCount} new
+                  </span>
+                )}
+              </div>
+              <div className="max-h-80 overflow-y-auto -mx-6 px-6">
+                {notifLoading ? (
+                  <div className="flex justify-center items-center py-10">
+                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                   </div>
-                ))}
+                ) : notifications.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                    <Bell className="w-10 h-10 mb-3 opacity-30" />
+                    <p className="text-sm">No new notifications</p>
+                  </div>
+                ) : (
+                  <div className="py-2 space-y-1">
+                    {notifications.map((n, i) => (
+                      <button
+                        type="button"
+                        key={i}
+                        onClick={() => handleNotificationClick(n)}
+                        className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer w-full text-left group"
+                      >
+                        <div className="shrink-0 mt-0.5">
+                          {n.type === 'sale' ? (
+                            <ShoppingCart className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          ) : n.type === 'low_stock' ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                          ) : (
+                            <Package className="w-4 h-4 text-red-600 dark:text-red-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium">{n.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">{n.message}</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                        </div>
+                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 shrink-0 self-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Details →
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </header>

@@ -167,14 +167,22 @@ const optionalProtect = async (req, res, next) => {
   }
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.tokenPayload = {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      impersonatedBy: decoded.impersonatedBy || null,
+    };
     req.user = await User.findById(decoded.id).select("-password");
     if (!req.user || !req.user.isActive) {
       req.user = undefined;
+      req.tokenPayload = undefined;
     } else if (req.user && CUSTOMER_LIKE_ROLES.includes(req.user.role)) {
       setImmediate(() => touchLastActiveThrottled(req.user._id));
     }
   } catch (error) {
     req.user = undefined;
+    req.tokenPayload = undefined;
   }
   next();
 };

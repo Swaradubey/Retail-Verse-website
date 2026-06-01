@@ -13,6 +13,8 @@ export interface InventoryItem {
   category: string;
   price: number;
   stock: number;
+  minStock?: number;
+  lowStockThreshold?: number;
   updatedAt: string;
   client?: InventoryClientInfo | null;
 }

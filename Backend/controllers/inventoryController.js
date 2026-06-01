@@ -422,6 +422,16 @@ const updateInventoryItem = async (req, res) => {
       }
     }
 
+    // Track low-stock transition when stock is being updated
+    let wasLowStock = false;
+    let oldUpdatedAt = null;
+    if (updatePayload.stock !== undefined) {
+      const oldStockVal = Number(item.stock || 0);
+      const threshold = Number(item.lowStockThreshold || item.minStock || 10);
+      wasLowStock = oldStockVal > 0 && oldStockVal < threshold;
+      oldUpdatedAt = item.updatedAt;
+    }
+
     Object.assign(item, updatePayload);
     const updatedItem = await item.save();
     console.log("[Backend Debug] Inventory Item After Update:", {
@@ -430,6 +440,17 @@ const updateInventoryItem = async (req, res) => {
       description: updatedItem.description,
       updatedAt: updatedItem.updatedAt,
     });
+
+    // Prevent false "new notification" if product was already low and still is low
+    if (wasLowStock && oldUpdatedAt) {
+      const newStockVal = Number(updatedItem.stock || 0);
+      const threshold = Number(updatedItem.lowStockThreshold || updatedItem.minStock || 10);
+      const isLowStock = newStockVal > 0 && newStockVal < threshold;
+      if (isLowStock) {
+        await Product.updateOne({ _id: updatedItem._id }, { $set: { updatedAt: oldUpdatedAt } });
+      }
+    }
+
     const responsePayload = {
       success: true,
       message: titleDescriptionOnlyFlow
@@ -472,8 +493,25 @@ const updateStock = async (req, res) => {
     if (stock === undefined || isNaN(Number(stock))) {
       return res.status(400).json({ success: false, message: "Valid stock count is required" });
     }
+
+    // Track low-stock transition to prevent false duplicate notifications
+    const oldStockVal = Number(existing.stock || 0);
+    const threshold = Number(existing.lowStockThreshold || existing.minStock || 10);
+    const wasLowStock = oldStockVal > 0 && oldStockVal < threshold;
+    const oldUpdatedAt = existing.updatedAt;
+
     existing.stock = Number(stock);
     const item = await existing.save({ validateBeforeSave: true });
+
+    // After save, check stock transition status
+    const newStockVal = Number(item.stock || 0);
+    const isLowStock = newStockVal > 0 && newStockVal < threshold;
+
+    // Prevent false "new notification" if product was already low and still is low
+    if (wasLowStock && isLowStock && oldUpdatedAt) {
+      await Product.updateOne({ _id: item._id }, { $set: { updatedAt: oldUpdatedAt } });
+    }
+
     const populated = await Product.findById(item._id)
       .populate({ path: "clientId", select: "companyName shopName email" })
       .lean();

@@ -155,7 +155,12 @@ export function ProductCard({
               {salePercentage}% OFF
             </span>
           )}
-          {product.stock < 10 && (
+          {product.stock === 0 && (
+            <span className="rounded-full bg-red-600 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm">
+              Out of Stock
+            </span>
+          )}
+          {product.stock > 0 && product.stock < 10 && (
             <span className="rounded-full bg-[#111111] px-3 py-1 text-[11px] font-medium text-white/90 shadow-sm">
               Only {product.stock} left
             </span>
@@ -238,7 +243,12 @@ export function ProductCard({
 
           <button
             onClick={handleAddToCart}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#111111] text-white transition-all duration-300 hover:scale-105 hover:bg-blue-600 active:scale-95"
+            disabled={product.stock === 0}
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition-all duration-300 active:scale-95 ${
+              product.stock === 0
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-[#111111] text-white hover:scale-105 hover:bg-blue-600'
+            }`}
             aria-label={`Add ${product.name} to cart`}
           >
             <ShoppingCart className="h-4.5 w-4.5" />

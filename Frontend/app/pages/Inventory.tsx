@@ -17,6 +17,7 @@ import { ProductModal } from '../components/inventory/ProductModal';
 import { ProductDetailModal } from '../components/inventory/ProductDetailModal';
 import { StoreManagerModal } from '../components/inventory/StoreManagerModal';
 import { EmployeeModal } from '../components/inventory/EmployeeModal';
+import { LowStockAlertModal } from '../components/inventory/LowStockAlertModal';
 import { SortConfig, type InventoryItem } from '../types/inventory';
 import { productApi, inventoryApi, Product } from '../api/products';
 // import { products as staticProducts } from '../data/products';
@@ -80,6 +81,7 @@ export function Inventory() {
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [assignableClients, setAssignableClients] = useState<ClientRow[]>([]);
 
+  const [isLowStockModalOpen, setIsLowStockModalOpen] = useState(false);
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [seoManagerModalOpen, setSeoManagerModalOpen] = useState(false);
@@ -194,9 +196,20 @@ export function Inventory() {
     }));
   }, [products]);
 
+  const isLowStock = useCallback((item: { stock?: number; minStock?: number; lowStockThreshold?: number }) => {
+    const stock = Number(item.stock ?? 0);
+    if (stock <= 0) return false;
+    const threshold = Number(item.minStock ?? item.lowStockThreshold ?? 10);
+    return stock < threshold;
+  }, []);
+
   const lowStockCount = useMemo(() => {
-    return inventoryItems.filter((i) => (i.stock || 0) >= 1 && (i.stock || 0) < 10).length;
-  }, [inventoryItems]);
+    return products.filter((p) => isLowStock(p)).length;
+  }, [products, isLowStock]);
+
+  const lowStockItems = useMemo(() => {
+    return products.filter((p) => isLowStock(p));
+  }, [products, isLowStock]);
 
   const outOfStockCount = useMemo(() => {
     return inventoryItems.filter((i) => (i.stock || 0) === 0).length;
@@ -219,7 +232,7 @@ export function Inventory() {
     if (stockStatus !== 'all') {
       result = result.filter((item) => {
         if (stockStatus === 'in-stock') return (item.stock || 0) >= 10;
-        if (stockStatus === 'low-stock') return (item.stock || 0) >= 1 && (item.stock || 0) < 10;
+        if (stockStatus === 'low-stock') return isLowStock(item);
         if (stockStatus === 'out-of-stock') return (item.stock || 0) === 0;
         return true;
       });
@@ -448,14 +461,9 @@ export function Inventory() {
                       <div className="flex shrink-0 items-center gap-2.5 sm:justify-end">
                         <Button
                           variant="outline"
-                          onClick={() => {
-                            if (outOfStockCount > 0) {
-                              setStockStatus('out-of-stock');
-                            } else {
-                              setStockStatus('low-stock');
-                            }
-                          }}
-                          className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
+                          type="button"
+                          onClick={() => setStockStatus(stockStatus === 'low-stock' ? 'all' : 'low-stock')}
+                          className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 cursor-pointer dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
                         >
                           View Alerts
                         </Button>
@@ -548,7 +556,11 @@ export function Inventory() {
         onCancel={() => setIsDeleteModalOpen(false)}
       />
 
-
+      <LowStockAlertModal
+        isOpen={isLowStockModalOpen}
+        items={lowStockItems}
+        onClose={() => setIsLowStockModalOpen(false)}
+      />
 
       <EmployeeModal
         isOpen={employeeModalOpen}

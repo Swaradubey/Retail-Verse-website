@@ -40,7 +40,7 @@ export function Shop() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [priceRange, setPriceRange] = useState<[number, number]>([0, 2000]);
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 50000]);
   const [sortBy, setSortBy] = useState('featured');
   const [showFilters, setShowFilters] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -78,6 +78,8 @@ export function Shop() {
   const showSaleOnly = searchParams.get('sale') === 'true';
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchDynamicProducts = async () => {
       try {
         setIsLoading(true);
@@ -88,6 +90,8 @@ export function Shop() {
         console.log("clientId sent:", clientId);
 
         const response = await productApi.getAll();
+        if (cancelled) return; // Ignore stale responses from previous auth state
+
         if (response.success && Array.isArray(response.data)) {
           const normalized = response.data.map((p: DynamicProduct) => ({
             id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
@@ -95,16 +99,18 @@ export function Shop() {
             name: p.name,
             slug: slugifyProductName(p.name),
             price: p.price,
+            originalPrice: p.originalPrice,
             description: p.description || '',
             category: p.category,
             image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
             images: [getProductImageUrl(p)].filter(Boolean),
             stock: p.stock,
-            rating: 0,
+            rating: p.rating || 0,
             reviews: 0,
-            featured: false,
+            featured: p.isFeatured || false,
             sku: p.sku
-          } as ShopProduct & { sku?: string }));
+          } as ShopProduct));
+          if (cancelled) return;
           setDynamicProducts(normalized);
           setBackendTotal(response.totalProducts || normalized.length);
           
@@ -114,29 +120,37 @@ export function Shop() {
           console.log("dynamicProducts length:", normalized.length);
           console.log("staticProducts length:", staticProducts.length);
         } else {
+          if (cancelled) return;
           console.log('[Shop] No dynamic products returned or success false');
           console.log("role:", user?.role);
           console.log("dynamicProducts length: 0");
           console.log("staticProducts length:", staticProducts.length);
         }
       } catch (err: any) {
+        if (cancelled) return;
         console.error('[Shop] API error fetching dynamic products:', err.message);
         // We don't block with error state so static products still show
         setError('Dynamic inventory could not be loaded, showing demo products.');
         console.log("dynamicProducts length: 0 (error)");
         console.log("staticProducts length:", staticProducts.length);
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchDynamicProducts();
+    
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   const allProducts = useMemo(() => {
+    // Merge dynamic (API) + static fallback products, deduplicating by ID and name,
+    // matching the same logic used by DashboardProducts (sidebar Product Catalog).
     const merged = [...dynamicProducts, ...staticProducts];
-    
-    // Deduplicate by ID and Name
     const unique: ShopProduct[] = [];
     const seenIds = new Set<string>();
     const seenNames = new Set<string>();
@@ -233,7 +247,7 @@ export function Shop() {
 
   const clearFilters = () => {
     setSearchQuery('');
-    setPriceRange([0, 2000]);
+    setPriceRange([0, 50000]);
     setSortBy('featured');
     setSearchParams({});
   };
@@ -259,7 +273,7 @@ export function Shop() {
                 Shop All Products
               </h1>
               <p className="text-base sm:text-lg font-medium text-gray-600/90">
-                {isLoading ? 'Loading products...' : `${filteredProducts.length} products found`}
+                {isLoading ? 'Loading products...' : `${allProducts.length} products found`}
               </p>
             </div>
             
@@ -374,8 +388,8 @@ export function Shop() {
                     <input
                       type="range"
                       min="0"
-                      max="2000"
-                      step="50"
+                      max="50000"
+                      step="500"
                       value={priceRange[1]}
                       onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
                       className="w-full h-2 bg-amber-100/80 rounded-lg appearance-none cursor-pointer accent-[#c9a332]"

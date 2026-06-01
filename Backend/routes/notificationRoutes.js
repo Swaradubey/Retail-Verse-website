@@ -7,7 +7,7 @@ const { getNotifications } = require("../controllers/notificationController");
 router.get(
   "/",
   protect,
-  allowRoles("super_admin", "admin", "client", "client_admin", "staff", "employee", "store_manager", "inventory_manager", "counter_manager", "seo_manager"),
+  allowRoles("super_admin", "admin", "client", "client_admin", "staff", "employee", "store_manager", "inventory_manager", "counter_manager", "seo_manager", "user"),
   tenantMiddleware,
   getNotifications
 );

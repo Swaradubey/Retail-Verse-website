@@ -63,10 +63,10 @@ async function resolveClientId(req) {
   }
 
   const userRole = normalizeRole(user?.role);
-  const isPrivileged = userRole === "super_admin" || userRole === "admin";
+  const isPrivileged = userRole === "super_admin" || userRole === "admin" || userRole === "user" || userRole === "customer";
 
   // Priority 1 & 2: User-specific client assignment — skip for privileged roles
-  // Admins/Super Admins are global and must not be scoped by user.clientId
+  // Admins/Super Admins/Users/Customers are global and must not be scoped by user.clientId
   if (!isPrivileged) {
     const uClientId = user?.clientId || user?.assignedClient;
     if (isValidObjectId(uClientId)) {
@@ -182,56 +182,60 @@ async function buildProductVisibilityFilter(req) {
   console.log("Product API Scope Check:", req.originalUrl);
   console.log("User Role (Normalized):", userRole);
   console.log("Resolved clientId:", resolvedClientId);
+  console.log("Impersonation active:", !!req.tokenPayload?.impersonatedBy);
 
-  // 1. Super Admin: Truly global by default
-  if (userRole === "super_admin") {
-    // Only scope if Admin explicitly selected a client via query param
+  // Roles that see all global products (Super Admin, Admin, User, Customer)
+  const isGlobalViewRole =
+    userRole === "super_admin" || userRole === "admin" || userRole === "user" || userRole === "customer";
+
+  // During impersonation, scope depends on the impersonated role.
+  // Global-view roles (user/customer) see all products; scoped roles see only their own.
+  if (req.tokenPayload?.impersonatedBy) {
+    if (isGlobalViewRole) {
+      console.log("Product filter (Impersonation of global-view role): {}");
+      return {};
+    }
+    // For impersonated client-scoped roles, fall through to normal scoping below
+    console.log("Product filter (Impersonation — falling through to role scoping)");
+  }
+
+  // 1. Global-view roles: Super Admin, Admin, User, Customer
+  // These roles see ALL products. Only explicit ?clientId= query param scopes results.
+  if (isGlobalViewRole) {
     const explicitClientId = req.query?.clientId || req.body?.clientId;
     const filter = isValidObjectId(explicitClientId)
       ? { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) }
       : {};
-    console.log("Product filter (Super Admin):", JSON.stringify(filter));
+    console.log(`Product filter (${userRole} — global view):`, JSON.stringify(filter));
     return filter;
   }
 
-  // 2. Admin: Global privileged role — sees ALL products exactly like Super Admin.
-  // Admin must NOT be scoped by their user.clientId or any resolved tenant clientId.
-  // Only an explicit ?clientId= query param (admin intentionally filtering) scopes results.
-  if (userRole === "admin") {
-    const explicitClientId = req.query?.clientId || req.body?.clientId;
-    const filter = isValidObjectId(explicitClientId)
-      ? { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) }
-      : {};
-    console.log("Product filter (Admin — global, same as Super Admin):", JSON.stringify(filter));
-    return filter;
-  }
-
-  // 3. Client-scoped roles (SEO Manager, Store Manager, Employee, etc.)
+  // 2. Client-scoped roles (SEO Manager, Store Manager, Employee, etc.)
+  // These roles MUST only see products assigned to their own tenant/client.
+  // No global fallback — other roles must not access unauthorized products.
   if (isClientScopedRole(userRole)) {
     const target = resolvedClientId || user?.clientId;
-    const orConditions = [];
-
     if (isValidObjectId(target)) {
-      orConditions.push({ clientId: new mongoose.Types.ObjectId(String(target)) });
+      const filter = { clientId: new mongoose.Types.ObjectId(String(target)) };
+      console.log(`Product filter (${userRole} — scoped to client):`, JSON.stringify(filter));
+      return filter;
     }
-
-    // Client-scoped roles also see global products in this system
-    orConditions.push({ clientId: null });
-    orConditions.push({ clientId: { $exists: false } });
-
-    // Include products created by them
+    // If no clientId is resolved, return products created by this user
     if (user?._id) {
-      orConditions.push({ createdBy: new mongoose.Types.ObjectId(String(user._id)) });
+      const filter = { createdBy: new mongoose.Types.ObjectId(String(user._id)) };
+      console.log(`Product filter (${userRole} — created by user):`, JSON.stringify(filter));
+      return filter;
     }
-
-    const filter = orConditions.length > 0 ? { $or: orConditions } : { _id: null };
-    console.log(`Product filter (${userRole}):`, JSON.stringify(filter));
-    return filter;
+    console.log(`Product filter (${userRole} — no scope found):`, { _id: null });
+    return { _id: null };
   }
 
-  // 4. For public storefront or users/customers
-  const filter = isValidObjectId(resolvedClientId) ? { clientId: new mongoose.Types.ObjectId(String(resolvedClientId)) } : {};
-  console.log("Product filter (Public/Customer):", JSON.stringify(filter));
+  // 3. Public / guest (no authenticated user, or unrecognized role)
+  // Scope to the resolved clientId (from custom domain or header), no global fallback
+  const filter = isValidObjectId(resolvedClientId)
+    ? { clientId: new mongoose.Types.ObjectId(String(resolvedClientId)) }
+    : {};
+  console.log("Product filter (Public/Guest):", JSON.stringify(filter));
   return filter;
 }
 
@@ -253,42 +257,15 @@ function buildScopeQuery(user, resolvedClientId, strict = false) {
   const role = normalizeRole(user.role);
   const isSuperAdmin = role === "super_admin";
   const isAdmin = role === "admin";
-  const isStaff = isAdmin || isClientScopedRole(role);
+  const isUserOrCustomer = role === "user" || role === "customer";
+  const isGlobalViewRole = isSuperAdmin || isAdmin || isUserOrCustomer;
 
-  // 2. Super Admin: Truly global. Analytics requirement: see everything.
-  if (isSuperAdmin) {
+  // 2. Global-view roles: Super Admin, Admin, User, Customer — see everything.
+  if (isGlobalViewRole) {
     return {};
   }
 
-  // 3. Admin: Global privileged role — same as Super Admin, sees everything.
-  // Only scope if clientId is explicitly provided (admin choosing to filter).
-  if (isAdmin) {
-    if (isValidObjectId(resolvedClientId)) {
-      return { clientId: new mongoose.Types.ObjectId(String(resolvedClientId)) };
-    }
-    return {};
-  }
-
-  // 4. Handle Customer / User (Non-staff)
-  if (!isStaff || role === "user" || role === "customer") {
-    // REQUIRE user-specific scoping for customers
-    const uId = user._id || user.id;
-    if (isValidObjectId(uId)) {
-      return { user: new mongoose.Types.ObjectId(String(uId)) };
-    }
-    // Fallback if no user id (should not happen with protect)
-    const targetClientId = resolvedClientId || user.clientId || user.linkedClientId;
-    if (isValidObjectId(targetClientId)) {
-      const cId = new mongoose.Types.ObjectId(String(targetClientId));
-      if (strict) {
-        return { clientId: cId };
-      }
-      return { $or: [{ clientId: cId }, { clientId: null }, { clientId: { $exists: false } }] };
-    }
-    return { _id: null }; // Return nothing if we can't identify the user
-  }
-
-  // 5. Client / Staff / Vendor
+  // 3. Client-scoped roles (SEO Manager, Store Manager, Employee, etc.)
   const orConditions = [];
   const uId = user._id || user.id;
   const sIdStr = isValidObjectId(uId) ? String(uId) : null;
@@ -305,14 +282,17 @@ function buildScopeQuery(user, resolvedClientId, strict = false) {
 
   if (sIdStr) {
     const sId = new mongoose.Types.ObjectId(sIdStr);
-    // For staff, we also want to see their own created items
+    // Include products created by this user
     orConditions.push({ createdBy: sId });
   }
 
+  // Client-scoped roles do NOT get the global fallback (clientId: null) in strict mode
   if (!strict) {
     orConditions.push({ clientId: null });
     orConditions.push({ clientId: { $exists: false } });
   }
+
+  if (orConditions.length === 0) return { _id: null };
 
   const uniqueOr = Array.from(new Set(orConditions.map(c => JSON.stringify(c)))).map(s => JSON.parse(s));
   // Convert back to ObjectIds after JSON parsing (JSON.stringify loses ObjectId type)
