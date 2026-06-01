@@ -141,6 +141,7 @@ const supportTicketRoutes = require("./routes/supportTicketRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
 const quoteRoutes = require("./routes/quoteRoutes");
 const searchRoutes = require("./routes/searchRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 const shiprocketService = require("./services/shiprocketService");
 
 const customDomainRoutes = require("./routes/customDomainRoutes");
@@ -173,6 +174,7 @@ app.use("/api/support/tickets", supportTicketRoutes); // Alias as per request
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {

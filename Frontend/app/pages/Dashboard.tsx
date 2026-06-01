@@ -10,7 +10,6 @@ import {
   TrendingUp,
   HelpCircle,
   Headphones,
-  PieChart as PieChartIcon,
   Warehouse,
   Heart,
   Activity,
@@ -109,7 +108,6 @@ const sidebarItems = [
   { title: "Clients", icon: Building2, href: "/super-admin/clients", superAdminOnly: true },
   { title: "Add Custom Domain", icon: Globe, href: "/super-admin/custom-domain", adminOnly: true },
   { title: "Employee", icon: UserPlus, href: "/dashboard/add-employee", staffOnly: true, hideForSuperAdmin: true, hideForUser: true },
-  { title: "Analytics", icon: PieChartIcon, href: "/dashboard/analytics", superAdminOnly: true },
   { title: "Support", icon: Headphones, href: "/dashboard/support" },
   { title: "Help Center", icon: HelpCircle, href: "/dashboard/help-center", helpCenter: true },
   { title: "POS", icon: ShoppingCart, href: "/pos", counterManagerOnly: true },
@@ -173,6 +171,7 @@ export function Dashboard() {
           d = await fetchAdminAnalytics();
         }
         setOverviewData(d);
+        console.log("Dashboard overview API response:", d);
         return { ok: true };
       } catch (e: unknown) {
         console.error('[Dashboard] Error in loadOverview:', e);

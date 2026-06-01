@@ -342,7 +342,11 @@ export function DashboardStats({
         path: '/dashboard/products',
       },
     ];
-  }, [analytics, staffView, error, superAdminOverview, userOverview]);
+      }, [analytics, staffView, error, superAdminOverview, userOverview]);
+
+  if (stats.length > 0 && stats[0].value !== '—') {
+    console.log("Mapped dashboard cards:", stats);
+  }
 
   const superAdminMonthKpis = useMemo((): StatCardConfig[] | null => {
     if (!superAdminOverview || !staffView) return null;

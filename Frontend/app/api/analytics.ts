@@ -101,15 +101,8 @@ export async function fetchAdminAnalytics(options?: any): Promise<AdminAnalytics
   if (!res.success || !res.data) {
     throw new Error(res.message || 'Failed to load analytics');
   }
+  console.log("fetchAdminAnalytics raw response:", res.data);
   return res.data as AdminAnalyticsData;
-}
-
-export async function fetchUserAnalytics(options?: any): Promise<UserAnalyticsData> {
-  const res = await ApiService.get<UserAnalyticsData>('/user/analytics', options);
-  if (!res.success || !res.data) {
-    throw new Error(res.message || 'Failed to load user analytics');
-  }
-  return res.data as UserAnalyticsData;
 }
 
 export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnalyticsData> {
@@ -118,6 +111,8 @@ export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnaly
     throw new Error(res.message || 'Failed to load super admin overview');
   }
   const d = res.data;
+
+  console.log("fetchSuperAdminOverview raw response:", d);
 
   // Map the new backend format to the existing AdminAnalyticsData interface
   // to keep the frontend components working without changes
@@ -139,7 +134,7 @@ export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnaly
       orderCount: d.totalOrdersThisMonth,
       orderCountChange: d.totalOrdersThisMonthChange || 0,
       orderCountTrend: d.totalOrdersThisMonthTrend || 'neutral',
-      avgOrderValue: d.avgOrderValue || (d.totalOrdersThisMonth > 0 ? d.totalRevenue / d.totalOrdersThisMonth : 0),
+      avgOrderValue: d.avgOrderValue != null ? d.avgOrderValue : (d.totalOrdersThisMonth > 0 ? d.totalRevenue / d.totalOrdersThisMonth : 0),
       avgOrderValueChange: d.avgOrderValueChange || 0,
       avgOrderValueTrend: d.avgOrderValueTrend || 'neutral',
       customerLifetimeValue: d.activeCustomers > 0 ? d.totalRevenue / d.activeCustomers : 0,
@@ -157,7 +152,7 @@ export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnaly
       date: s.date,
       sales: s.revenue,
       orders: s.orders
-    })).reverse(), // Reversing to show oldest to newest if backend returns newest to oldest
+    })).reverse(),
     topCategories: (d.categoryDistribution || []).map((c: any, idx: number) => ({
       name: c.category,
       value: c.totalSales,
@@ -174,5 +169,15 @@ export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnaly
     mappedData.topCategories.forEach(c => c.percent = (c.value / catTotal) * 100);
   }
 
+  console.log("fetchSuperAdminOverview mapped:", mappedData);
+
   return mappedData;
+}
+
+export async function fetchUserAnalytics(options?: any): Promise<UserAnalyticsData> {
+  const res = await ApiService.get<UserAnalyticsData>('/user/analytics', options);
+  if (!res.success || !res.data) {
+    throw new Error(res.message || 'Failed to load user analytics');
+  }
+  return res.data as UserAnalyticsData;
 }

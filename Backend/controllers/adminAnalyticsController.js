@@ -3,8 +3,6 @@ const User = require("../models/User");
 const mongoose = require("mongoose");
 const Invoice = require("../models/Invoice");
 const { 
-  resolveClientId: resolveTenant, 
-  buildScopeQuery, 
   applyScope,
   isValidObjectId
 } = require("../utils/tenantResolver");
@@ -22,31 +20,6 @@ const CUSTOMER_ROLES = ["user", "customer"];
  * - `salesThisMonth`: subset treated as fulfilled / paid-intent (see salesThisMonthForWindow).
  * - Loss uses optional `refundAmount` + `refundedAt`, and `cancelledAt` + `totalPrice` when no refund recorded.
  */
-
-function startOfMonth(d) {
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-}
-
-function addMonths(d, n) {
-  const x = new Date(d);
-  x.setMonth(x.getMonth() + n);
-  return x;
-}
-
-/** Calendar [start, end) for the month containing `ref`. */
-function monthWindowContaining(ref) {
-  const start = startOfMonth(ref);
-  const end = addMonths(start, 1);
-  return { start, end };
-}
-
-/** Previous calendar month window relative to `ref`. */
-function previousMonthWindow(ref) {
-  const thisStart = startOfMonth(ref);
-  const prevEnd = thisStart;
-  const prevStart = addMonths(thisStart, -1);
-  return { start: prevStart, end: prevEnd };
-}
 
 function trendFromChange(pct) {
   if (pct == null || Number.isNaN(pct)) return "neutral";
@@ -672,82 +645,103 @@ const getAdminAnalytics = async (req, res) => {
     const isSuperAdmin = normalizedRole === "super_admin";
     const isAdmin = normalizedRole === "admin";
 
-    let scopeQuery = {};
-    let clientStoreId = null;
+    let scopeFilter = {};
 
     if (isSuperAdmin || isAdmin) {
-      const explicitClientId = req.query?.clientId || req.body?.clientId || req.headers["x-client-id"];
-      if (isValidObjectId(explicitClientId)) {
-        scopeQuery = { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) };
-      } else {
-        scopeQuery = {};
+      const role = req.user?.role;
+      const isSuperAdminCheck =
+        role === "super_admin" ||
+        role === "Super Admin" ||
+        role === "superadmin";
+
+      const resolvedClientStoreId =
+        req.query.clientStoreId ||
+        req.query.storeId ||
+        req.query.clientId ||
+        req.user?.clientStoreId ||
+        req.user?.storeId ||
+        req.user?.assignedStoreId ||
+        req.user?.clientId ||
+        null;
+
+      if (!isSuperAdminCheck && resolvedClientStoreId) {
+        scopeFilter.$or = [
+          { clientStoreId: resolvedClientStoreId },
+          { storeId: resolvedClientStoreId },
+          { assignedStoreId: resolvedClientStoreId },
+          { clientId: resolvedClientStoreId }
+        ];
       }
     } else {
-      // Non-privileged users (like client, store_manager, employee) must be strictly isolated.
-      // We resolve the client ID ONLY from their logged-in user profile or employee record, ignoring any query/body/headers overrides.
-      if (req.user) {
-        clientStoreId = req.user.clientId || req.user.assignedClient || req.user.linkedClientId;
-      }
-      
-      // Fallback: check Employee model
-      if (!clientStoreId && req.user && (req.user.id || req.user._id)) {
-        try {
-          const Employee = require("../models/Employee");
-          const emp = await Employee.findOne({ userId: req.user.id || req.user._id }).select("clientId");
-          if (emp && emp.clientId) {
-            clientStoreId = emp.clientId;
-          }
-        } catch (err) {
-          console.error(`[AdminAnalytics] Employee fallback error: ${err.message}`);
-        }
-      }
+      const resolvedClientStoreId =
+        req.query.clientStoreId ||
+        req.query.storeId ||
+        req.query.clientId ||
+        req.user?.clientStoreId ||
+        req.user?.storeId ||
+        req.user?.assignedStoreId ||
+        req.user?.clientId ||
+        null;
 
-      if (isValidObjectId(clientStoreId)) {
-        scopeQuery = { clientId: new mongoose.Types.ObjectId(String(clientStoreId)) };
-      } else {
-        // Fallback to random non-matching ObjectId if client ID is missing to prevent displaying global/demo/admin data
-        scopeQuery = { clientId: new mongoose.Types.ObjectId() };
+      if (resolvedClientStoreId) {
+        scopeFilter.$or = [
+          { clientStoreId: resolvedClientStoreId },
+          { storeId: resolvedClientStoreId },
+          { assignedStoreId: resolvedClientStoreId },
+          { clientId: resolvedClientStoreId }
+        ];
       }
     }
 
 
     const now = new Date();
-    const cur = monthWindowContaining(now);
-    const prev = previousMonthWindow(now);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const cur = { start: startOfMonth, end: startOfNextMonth };
 
-    const isOrderPaidOrSuccessful = (order) => {
-      const status = String(order.status || order.orderStatus || "").toLowerCase().trim();
-      const paymentStatus = String(order.paymentStatus || "").toLowerCase().trim();
-      const paymentMethod = String(order.paymentMethod || "").toLowerCase().trim();
-      const orderSource = String(order.orderSource || "").toLowerCase().trim();
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prev = { start: prevStart, end: startOfMonth };
 
-      if (
-        ["cancelled", "refunded", "failed"].includes(status) ||
-        ["refunded", "failed"].includes(paymentStatus)
-      ) {
-        return false;
-      }
+    // Extract monetary amount from order using all possible field names
+    // NOTE: totalPrice is the primary field in Order schema — must be first!
+    const getOrderAmount = (order) => Number(
+      order.totalPrice ??
+      order.totalAmount ??
+      order.grandTotal ??
+      order.finalAmount ??
+      order.payableAmount ??
+      order.total ??
+      order.amount ??
+      order.pricing?.total ??
+      order.payment?.amount ??
+      0
+    );
 
-      if (orderSource === "pos" && paymentMethod === "cash") {
-        return true;
-      }
-
-      if (order.razorpayPaymentId && !["failed", "cancelled", "refunded"].includes(paymentStatus)) {
-        return true;
-      }
-
-      const successStatuses = ["paid", "completed", "success", "successful", "delivered"];
-      const successPaymentStatuses = ["paid", "completed", "success", "successful"];
-
-      if (successStatuses.includes(status) || successPaymentStatuses.includes(paymentStatus) || order.isPaid === true) {
-        if (status === "unpaid" || status === "pending" || paymentStatus === "unpaid" || paymentStatus === "pending") {
-          return false;
-        }
-        return true;
-      }
-
-      return false;
+    // Extract order items array using all possible field names
+    const getOrderItems = (order) => {
+      return order.items || order.orderItems || order.products || order.cartItems || order.productItems || [];
     };
+
+    // Returns true if the order is cancelled, refunded, or failed (should be excluded from sales)
+    const isCancelledOrFailed = (order) => {
+      const values = [
+        order.status,
+        order.orderStatus,
+        order.paymentStatus,
+        order.payment_status,
+        order.payment?.status
+      ].filter(Boolean).map(v => String(v).toLowerCase());
+      return values.some(v =>
+        ["cancelled", "canceled", "refunded", "failed", "rejected"].includes(v)
+      );
+    };
+
+    // Valid sales order = any order that is NOT cancelled/refunded/failed.
+    // This includes COD, pending payment, confirmed, placed, shipped, delivered.
+    const isValidSalesOrder = (order) => !!order && !isCancelledOrFailed(order);
+
+    // isRevenueOrder kept as alias for invoice/category helpers
+    const isRevenueOrder = isValidSalesOrder;
 
     const isInvoicePaidOrSuccessful = (invoice) => {
       const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
@@ -791,30 +785,30 @@ const getAdminAnalytics = async (req, res) => {
       const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
 
       let revenue = 0;
-      let paidOrdersCount = 0;
-      const paidOrderIds = [];
-      const paidOrderIdsSet = new Set();
+      let validOrdersCount = 0;
+      const validOrderIdsSet = new Set();
+      const validOrderIds = [];
 
       for (const order of ordersInWindow) {
-        // Only count non-deleted, paid/successful orders for BOTH orderCount AND revenue.
-        // Cancelled, refunded, and failed orders are excluded from both metrics.
-        if (isOrderPaidOrSuccessful(order)) {
-          const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+        // Count all non-cancelled/refunded/failed orders for BOTH orderCount AND revenue.
+        if (isValidSalesOrder(order)) {
+          const amt = getOrderAmount(order);
           revenue += amt;
-          paidOrdersCount++;
+          validOrdersCount++;
           const oid = order.orderId || String(order._id || "");
           if (oid) {
-            paidOrderIdsSet.add(String(oid).trim().toLowerCase());
-            paidOrderIds.push(String(oid).trim());
+            validOrderIdsSet.add(String(oid).trim().toLowerCase());
+            validOrderIds.push(String(oid).trim());
           }
         }
       }
 
-      // orderCount is the SAME set as revenue — only paid/successful non-deleted orders.
-      // This ensures "Orders This Month" and "Total Revenue" are always derived from
-      // identical records, preventing the count/revenue mismatch.
-      const orderCount = paidOrdersCount;
-      const avgOrderValue = paidOrdersCount > 0 ? revenue / paidOrdersCount : 0;
+      // orderCount = all valid (non-cancelled) orders this month
+      const orderCount = validOrdersCount;
+      const paidOrdersCount = validOrdersCount; // kept for backward-compat logs
+      const paidOrderIdsSet = validOrderIdsSet;
+      const paidOrderIds = validOrderIds;
+      const avgOrderValue = validOrdersCount > 0 ? revenue / validOrdersCount : 0;
 
       return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet, paidOrderIds };
     };
@@ -867,11 +861,13 @@ const getAdminAnalytics = async (req, res) => {
 
       const processItems = (ordersInWindow, invoicesInWindow, paidIds, map, isCur) => {
         for (const order of ordersInWindow) {
-          if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
-            for (const item of order.items) {
-              const name = String(item.name || "").trim();
+          if (isRevenueOrder(order)) {
+            const orderItems = getOrderItems(order);
+            if (!Array.isArray(orderItems)) continue;
+            for (const item of orderItems) {
+              const name = String(item.productName || item.name || item.title || (item.product && item.product.name) || "").trim();
               if (!name) continue;
-              const qty = Number(item.quantity) || 0;
+              const qty = Number(item.quantity || item.qty || 1) || 0;
               const price = Number(item.price) || 0;
               const itemRev = qty * price;
               const image = item.image || "";
@@ -892,7 +888,7 @@ const getAdminAnalytics = async (req, res) => {
           if (isInvoicePaidOrSuccessful(invoice)) {
             const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
             const matchingOrder = allOrders.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
-            if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+            if (matchingOrder && isRevenueOrder(matchingOrder)) {
               continue;
             }
 
@@ -952,8 +948,10 @@ const getAdminAnalytics = async (req, res) => {
       const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
 
       for (const order of ordersInWindow) {
-        if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
-          for (const item of order.items) {
+        if (isRevenueOrder(order)) {
+          const orderItems = getOrderItems(order);
+          if (!Array.isArray(orderItems)) continue;
+          for (const item of orderItems) {
             const cat = String(item.category || "Uncategorized").trim() || "Uncategorized";
             const qty = Number(item.quantity) || 0;
             const price = Number(item.price) || 0;
@@ -968,7 +966,7 @@ const getAdminAnalytics = async (req, res) => {
         if (isInvoicePaidOrSuccessful(invoice)) {
           const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
           const matchingOrder = allOrders.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
-          if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+          if (matchingOrder && isRevenueOrder(matchingOrder)) {
             continue;
           }
           if (Array.isArray(invoice.items)) {
@@ -1025,30 +1023,26 @@ const getAdminAnalytics = async (req, res) => {
     };
 
     // Include cancelled/refunded/failed orders so calculateLossThisMonth sees them.
-    // Exclude ALL soft-deleted orders (isDeleted=true OR deletedAt exists OR status="deleted").
-    // isOrderPaidOrSuccessful() handles revenue exclusion for cancelled/refunded orders.
+    // isRevenueOrder() handles revenue exclusion for cancelled/refunded orders.
+    // No date filter — same approach as getOrders() so dashboard counts the same orders.
     const allOrders = await Order.find({
-      ...scopeQuery,
+      ...scopeFilter,
       isDeleted: { $ne: true },
-      deletedAt: { $exists: false },
-      status: { $nin: ["deleted"] },
-      orderStatus: { $nin: ["deleted"] },
-      $or: [
-        { createdAt: { $gte: prev.start } },
-        { orderDate: { $gte: prev.start } },
-        { paidAt: { $gte: prev.start } },
-        { cancelledAt: { $gte: prev.start } },
-        { refundedAt: { $gte: prev.start } }
-      ]
     }).lean();
 
+    // Debug: inspect actual field names/values from database for first 3 orders
+    if (allOrders.length > 0) {
+      console.log("SAMPLE ORDER:", JSON.stringify(allOrders[0], null, 2));
+      for (let i = 0; i < Math.min(3, allOrders.length); i++) {
+        const o = allOrders[i];
+        console.log(`[AdminAnalytics Order #${i}] _id=${o._id} status="${o.status}" orderStatus="${o.orderStatus}" paymentStatus="${String(o.paymentStatus || o.payment_status)}" isPaid=${o.isPaid} paidAt=${o.paidAt} paymentMethod="${o.paymentMethod}" orderSource="${o.orderSource}" totalPrice=${o.totalPrice} isCancelled=${isCancelledOrFailed(o)} isValid=${isValidSalesOrder(o)} resolvedAmount=${getOrderAmount(o)} createdAt=${o.createdAt}`);
+      }
+    } else {
+      console.log("[AdminAnalytics] No orders found in query.");
+    }
+
     const allInvoices = await Invoice.find({
-      ...scopeQuery,
-      $or: [
-        { createdAt: { $gte: prev.start } },
-        { invoiceDate: { $gte: prev.start } },
-        { paidAt: { $gte: prev.start } }
-      ]
+      ...scopeFilter,
     }).lean();
 
     const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders);
@@ -1058,16 +1052,22 @@ const getAdminAnalytics = async (req, res) => {
     const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
     const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
 
-    // ── Requirement 16: Safe backend logs ─────────────────────────────────────
-    console.log("[AdminDashboard] Orders counted for dashboard:", curStats.orderCount);
-    console.log("[AdminDashboard] Order IDs counted:", curStats.paidOrderIds);
-    console.log("[AdminDashboard] Paid orders counted:", curStats.paidOrdersCount);
-    console.log("[AdminDashboard] Revenue calculated from those orders: ₹" + (Math.round(curStats.revenue * 100) / 100));
-    // ──────────────────────────────────────────────────────────────────────────
+    // Safe backend logs
+    const ordersInCurrentMonth = allOrders.filter(o => isDateInWindow(o, cur.start, cur.end)).length;
+    const cancelledThisMonth = allOrders.filter(o => isDateInWindow(o, cur.start, cur.end) && isCancelledOrFailed(o)).length;
+    const validOrdersFound = curStats.paidOrdersCount;
 
-    const calculateConversionRate = async (start, end, scopeQuery) => {
+    console.log("[AdminDashboard] totalOrdersFound:", allOrders.length);
+    console.log("[AdminDashboard] ordersInCurrentMonth:", ordersInCurrentMonth);
+    console.log("[AdminDashboard] cancelledThisMonth:", cancelledThisMonth);
+    console.log("[AdminDashboard] validOrdersFound:", validOrdersFound);
+    console.log("[AdminDashboard] totalRevenueCalculated:", Math.round(curStats.revenue * 100) / 100);
+    console.log("[AdminDashboard] topProductFound:", (calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, [], 1)[0]?.name || "None"));
+    console.log("[AdminDashboard] Order IDs counted:", curStats.paidOrderIds);
+
+    const calculateConversionRate = async (start, end, filter) => {
       const userQuery = { role: { $in: CUSTOMER_ROLES } };
-      applyScope(userQuery, scopeQuery);
+      applyScope(userQuery, filter);
       const registered = await User.countDocuments(userQuery);
       if (registered === 0) return { rate: 0, registered };
 
@@ -1075,7 +1075,7 @@ const getAdminAnalytics = async (req, res) => {
         createdAt: { $gte: start, $lt: end },
         user: { $exists: true, $ne: null },
       };
-      applyScope(orderQuery, scopeQuery);
+      applyScope(orderQuery, filter);
 
       const withUser = await Order.distinct("user", orderQuery);
       const purchasers = withUser.filter((id) => id != null).length;
@@ -1083,33 +1083,33 @@ const getAdminAnalytics = async (req, res) => {
       return { rate, registered };
     };
 
-    const conversionRateCur = await calculateConversionRate(cur.start, cur.end, scopeQuery);
-    const conversionRatePrev = await calculateConversionRate(prev.start, prev.end, scopeQuery);
+    const conversionRateCur = await calculateConversionRate(cur.start, cur.end, scopeFilter);
+    const conversionRatePrev = await calculateConversionRate(prev.start, prev.end, scopeFilter);
 
-    const activeCustCur = await activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeQuery);
-    const activeCustPrev = await activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeQuery);
+    const activeCustCur = await activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeFilter);
+    const activeCustPrev = await activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeFilter);
 
     const newCustCur = await User.countDocuments({
       role: { $in: CUSTOMER_ROLES },
       createdAt: { $gte: cur.start, $lt: cur.end },
-      ...scopeQuery
+      ...scopeFilter
     });
     const newCustPrev = await User.countDocuments({
       role: { $in: CUSTOMER_ROLES },
       createdAt: { $gte: prev.start, $lt: prev.end },
-      ...scopeQuery
+      ...scopeFilter
     });
 
-    const clv = await customerLifetimeValueAllTime(scopeQuery);
+    const clv = await customerLifetimeValueAllTime(scopeFilter);
 
     const [mrpCur, mrpPrev] = await Promise.all([
-      monthlyRevenuePerPayer(cur.start, cur.end, scopeQuery),
-      monthlyRevenuePerPayer(prev.start, prev.end, scopeQuery),
+      monthlyRevenuePerPayer(cur.start, cur.end, scopeFilter),
+      monthlyRevenuePerPayer(prev.start, prev.end, scopeFilter),
     ]);
 
     const [mauCur, mauPrev] = await Promise.all([
-      monthlyActiveCustomers(cur.start, cur.end, scopeQuery),
-      monthlyActiveCustomers(prev.start, prev.end, scopeQuery),
+      monthlyActiveCustomers(cur.start, cur.end, scopeFilter),
+      monthlyActiveCustomers(prev.start, prev.end, scopeFilter),
     ]);
 
     const revenueFlow = calculateRevenueFlow(allOrders, allInvoices);
@@ -1128,7 +1128,7 @@ const getAdminAnalytics = async (req, res) => {
 
     console.log("[Admin Dashboard Stats LOG]:", {
       loggedInRole: userRole,
-      scopeFilter: clientStoreId ? String(clientStoreId) : (Object.keys(scopeQuery).length ? "client-scoped" : "Global (All Data)"),
+      scopeLabel: scopeFilter && Object.keys(scopeFilter).length ? "client-scoped" : "Global (All Data)",
       totalNonDeletedOrdersFound,
       paidNonDeletedOrdersFound,
       deletedOrCancelledOrdersExcluded,
@@ -1140,7 +1140,7 @@ const getAdminAnalytics = async (req, res) => {
 
     console.log("[Dashboard Isolation Log]:", {
       loggedInRole: userRole,
-      clientStoreIdUsed: clientStoreId ? String(clientStoreId) : (scopeQuery.clientId ? String(scopeQuery.clientId) : "Global (All Data)"),
+      scopeUsed: scopeFilter && Object.keys(scopeFilter).length ? "client-scoped" : "Global (All Data)",
       totalNonDeletedOrdersFound,
       paidNonDeletedOrdersFound,
       deletedOrCancelledOrdersExcluded,

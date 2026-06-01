@@ -7,7 +7,10 @@ import {
   User as UserIcon, 
   ChevronDown,
   Settings,
-  Loader2
+  Loader2,
+  ShoppingCart,
+  AlertTriangle,
+  Package
 } from 'lucide-react';
 import { 
   DropdownMenu, 
@@ -21,9 +24,28 @@ import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Input } from './ui/input';
 import { useAuth } from '../context/AuthContext';
-import { accountRoleSubtitle } from '../utils/staffRoles';
+import { accountRoleSubtitle, hasFullAdminPrivileges } from '../utils/staffRoles';
 import { SidebarTrigger } from './ui/sidebar';
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from './ui/dialog';
 import ApiService from '../api/apiService';
+
+function timeAgo(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
 
 type DashboardNavbarProps = {
   /** Premium styling when viewing Dashboard Overview only */
@@ -38,6 +60,10 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -141,6 +167,37 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
     }
   };
 
+  const fetchNotifications = async () => {
+    setNotifLoading(true);
+    try {
+      const res = await ApiService.get<{ success: boolean; notifications: any[]; unreadCount: number }>(
+        "/notifications",
+        { pageName: "Notifications" }
+      );
+      if (res.success && res.notifications) {
+        setNotifications(res.notifications);
+        setUnreadCount(res.unreadCount ?? 0);
+      } else {
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    } catch {
+      setNotifications([]);
+      setUnreadCount(0);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const handleNotifClick = () => {
+    setNotifOpen(true);
+    fetchNotifications();
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
   return (
     <header
       className={
@@ -235,13 +292,19 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
           <Button
             variant="ghost"
             size="icon"
+            onClick={handleNotifClick}
             className={
               premiumOverview
-                ? 'rounded-full transition-all duration-300 hover:bg-amber-500/10 dark:hover:bg-amber-400/10'
-                : 'rounded-full hover:bg-gray-100 dark:hover:bg-white/10'
+                ? 'rounded-full transition-all duration-300 hover:bg-amber-500/10 dark:hover:bg-amber-400/10 relative'
+                : 'rounded-full hover:bg-gray-100 dark:hover:bg-white/10 relative'
             }
           >
             <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-sm ring-2 ring-white dark:ring-zinc-950 leading-none">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Button>
 
           <DropdownMenu>
@@ -300,16 +363,20 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
               >
                 <UserIcon className="w-4 h-4" /> Profile
               </DropdownMenuItem>
+              {hasFullAdminPrivileges(user?.role) && (
+                <DropdownMenuItem
+                  onClick={() => navigate('/dashboard/settings')}
+                  className={
+                    premiumOverview
+                      ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
+                      : 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-400'
+                  }
+                >
+                  <Settings className="w-4 h-4" /> Settings
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
-                className={
-                  premiumOverview
-                    ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
-                    : 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-400'
-                }
-              >
-                <Settings className="w-4 h-4" /> Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem
+                onClick={handleNotifClick}
                 className={
                   premiumOverview
                     ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
@@ -329,6 +396,58 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
           </DropdownMenu>
         </div>
       </div>
+
+      <Dialog open={notifOpen} onOpenChange={setNotifOpen}>
+        <DialogContent className={premiumOverview ? 'sm:max-w-md border-amber-200/40 dark:border-amber-900/30' : 'sm:max-w-md'}>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              Notifications
+            </DialogTitle>
+            {unreadCount > 0 && (
+              <span className="mr-8 text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                {unreadCount} new
+              </span>
+            )}
+          </div>
+          <div className="max-h-80 overflow-y-auto -mx-6 px-6">
+            {notifLoading ? (
+              <div className="flex justify-center items-center py-10">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                <Bell className="w-10 h-10 mb-3 opacity-30" />
+                <p className="text-sm">No new notifications</p>
+              </div>
+            ) : (
+              <div className="py-2 space-y-1">
+                {notifications.map((n, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  >
+                    <div className="shrink-0 mt-0.5">
+                      {n.type === 'sale' ? (
+                        <ShoppingCart className="w-4 h-4 text-green-600 dark:text-green-400" />
+                      ) : n.type === 'low_stock' ? (
+                        <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <Package className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{n.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{n.message}</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

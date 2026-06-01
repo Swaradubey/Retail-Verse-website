@@ -470,28 +470,12 @@ const getClientCustomers = async (req, res) => {
 const getOverview = async (req, res) => {
   try {
     const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const cur = { start: startOfMonth, end: startOfNextMonth };
 
-    // Helper functions for date calculations
-    const startOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
-    const addMonths = (d, n) => {
-      const x = new Date(d);
-      x.setMonth(x.getMonth() + n);
-      return x;
-    };
-    const monthWindowContaining = (ref) => {
-      const start = startOfMonth(ref);
-      const end = addMonths(start, 1);
-      return { start, end };
-    };
-    const previousMonthWindow = (ref) => {
-      const thisStart = startOfMonth(ref);
-      const prevEnd = thisStart;
-      const prevStart = addMonths(thisStart, -1);
-      return { start: prevStart, end: prevEnd };
-    };
-
-    const cur = monthWindowContaining(now);
-    const prev = previousMonthWindow(now);
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prev = { start: prevStart, end: startOfMonth };
 
     const trendFromChange = (pct) => {
       if (pct == null || Number.isNaN(pct)) return "neutral";
@@ -508,40 +492,46 @@ const getOverview = async (req, res) => {
       return ((current - previous) / previous) * 100;
     };
 
-    // Robust status overrides and filtering helpers
-    const isOrderPaidOrSuccessful = (order) => {
-      const status = String(order.status || order.orderStatus || "").toLowerCase().trim();
-      const paymentStatus = String(order.paymentStatus || "").toLowerCase().trim();
-      const paymentMethod = String(order.paymentMethod || "").toLowerCase().trim();
-      const orderSource = String(order.orderSource || "").toLowerCase().trim();
+    // Extract monetary amount from order using all possible field names
+    // NOTE: totalPrice is the primary field in Order schema — must be first!
+    const getOrderAmount = (order) => Number(
+      order.totalPrice ??
+      order.totalAmount ??
+      order.grandTotal ??
+      order.finalAmount ??
+      order.payableAmount ??
+      order.total ??
+      order.amount ??
+      order.pricing?.total ??
+      order.payment?.amount ??
+      0
+    );
 
-      if (
-        ["cancelled", "refunded", "failed"].includes(status) ||
-        ["refunded", "failed"].includes(paymentStatus)
-      ) {
-        return false;
-      }
-
-      if (orderSource === "pos" && paymentMethod === "cash") {
-        return true;
-      }
-
-      if (order.razorpayPaymentId && !["failed", "cancelled", "refunded"].includes(paymentStatus)) {
-        return true;
-      }
-
-      const successStatuses = ["paid", "completed", "success", "successful", "delivered"];
-      const successPaymentStatuses = ["paid", "completed", "success", "successful"];
-
-      if (successStatuses.includes(status) || successPaymentStatuses.includes(paymentStatus) || order.isPaid === true) {
-        if (status === "unpaid" || status === "pending" || paymentStatus === "unpaid" || paymentStatus === "pending") {
-          return false;
-        }
-        return true;
-      }
-
-      return false;
+    // Extract order items array using all possible field names
+    const getOrderItems = (order) => {
+      return order.items || order.orderItems || order.products || order.cartItems || order.productItems || [];
     };
+
+    // Returns true if the order is cancelled, refunded, or failed (should be excluded from sales)
+    const isCancelledOrFailed = (order) => {
+      const values = [
+        order.status,
+        order.orderStatus,
+        order.paymentStatus,
+        order.payment_status,
+        order.payment?.status
+      ].filter(Boolean).map(v => String(v).toLowerCase());
+      return values.some(v =>
+        ["cancelled", "canceled", "refunded", "failed", "rejected"].includes(v)
+      );
+    };
+
+    // Valid sales order = any order that is NOT cancelled/refunded/failed.
+    // This includes COD, pending payment, confirmed, placed, shipped, delivered.
+    const isValidSalesOrder = (order) => !!order && !isCancelledOrFailed(order);
+
+    // Keep isRevenueOrder as alias for backward compat with invoice/category helpers
+    const isRevenueOrder = isValidSalesOrder;
 
     const isInvoicePaidOrSuccessful = (invoice) => {
       const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
@@ -583,19 +573,19 @@ const getOverview = async (req, res) => {
     // Calculate core revenue stats for a given time window
     const calculateStatsForWindow = (start, end, allOrders, allInvoices) => {
       const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
-      const invoicesInWindow = allInvoices.filter(i => isDateInWindow(i, start, end));
+      const invoicesInWindow = (allInvoices || []).filter(i => isDateInWindow(i, start, end));
 
       let revenue = 0;
-      let paidOrdersCount = 0;
-      const paidOrderIdsSet = new Set();
+      let validOrdersCount = 0;
+      const validOrderIdsSet = new Set();
 
       for (const order of ordersInWindow) {
-        if (isOrderPaidOrSuccessful(order)) {
-          const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
+        if (isValidSalesOrder(order)) {
+          const amt = getOrderAmount(order);
           revenue += amt;
-          paidOrdersCount++;
+          validOrdersCount++;
           if (order.orderId) {
-            paidOrderIdsSet.add(String(order.orderId).trim().toLowerCase());
+            validOrderIdsSet.add(String(order.orderId).trim().toLowerCase());
           }
         }
       }
@@ -603,20 +593,23 @@ const getOverview = async (req, res) => {
       for (const invoice of invoicesInWindow) {
         if (isInvoicePaidOrSuccessful(invoice)) {
           const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
-          if (invOrderId && paidOrderIdsSet.has(invOrderId)) {
+          if (invOrderId && validOrderIdsSet.has(invOrderId)) {
             continue;
           }
           const amt = invoice.totalAmount || invoice.subtotal || 0;
           revenue += amt;
-          paidOrdersCount++;
+          validOrdersCount++;
           if (invOrderId) {
-            paidOrderIdsSet.add(invOrderId);
+            validOrderIdsSet.add(invOrderId);
           }
         }
       }
 
-      const orderCount = ordersInWindow.length;
-      const avgOrderValue = paidOrdersCount > 0 ? revenue / paidOrdersCount : 0;
+      const orderCount = validOrdersCount;
+      // paidOrdersCount kept for backward-compat log references
+      const paidOrdersCount = validOrdersCount;
+      const paidOrderIdsSet = validOrderIdsSet;
+      const avgOrderValue = validOrdersCount > 0 ? revenue / validOrdersCount : 0;
 
       return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet };
     };
@@ -668,7 +661,7 @@ const getOverview = async (req, res) => {
     if (isValidObjectId(explicitClientId)) {
       scopeQuery = { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) };
     } else {
-      scopeQuery = { clientId: { $ne: null } }; // Global across all clients
+      scopeQuery = {}; // Global across ALL clients — match adminAnalyticsController behavior
     }
 
     // Load active registered customers and storefront users
@@ -677,31 +670,27 @@ const getOverview = async (req, res) => {
       ...scopeQuery
     }).lean();
 
-    // Fetch orders from start of previous month.
-    // IMPORTANT: do NOT exclude cancelled/refunded/failed — calculateLossThisMonth needs them.
-    // isOrderPaidOrSuccessful() already excludes them from revenue calculations.
+    // Fetch all non-deleted orders — same approach as getOrders() so dashboard
+    // overview counts the same orders visible in the orders page.
+    // isCancelledOrFailed / isValidSalesOrder handle in-memory filtering.
     const allOrders = await Order.find({
       ...scopeQuery,
       isDeleted: { $ne: true },
-      deletedAt: { $exists: false },
-      status: { $nin: ["deleted"] },
-      orderStatus: { $nin: ["deleted"] },
-      $or: [
-        { createdAt: { $gte: prev.start } },
-        { orderDate: { $gte: prev.start } },
-        { paidAt: { $gte: prev.start } },
-        { cancelledAt: { $gte: prev.start } },
-        { refundedAt: { $gte: prev.start } }
-      ]
     }).populate("user").lean();
+
+    // Log sample order so we can see actual field names from DB
+    if (allOrders.length > 0) {
+      console.log("SAMPLE ORDER:", JSON.stringify(allOrders[0], null, 2));
+      for (let i = 0; i < Math.min(3, allOrders.length); i++) {
+        const o = allOrders[i];
+        console.log(`[SuperAdmin Order #${i}] _id=${o._id} status="${o.status}" orderStatus="${o.orderStatus}" paymentStatus="${String(o.paymentStatus || o.payment_status)}" isPaid=${o.isPaid} paidAt=${o.paidAt} paymentMethod="${o.paymentMethod}" orderSource="${o.orderSource}" totalPrice=${o.totalPrice} totalAmount=${o.totalAmount} grandTotal=${o.grandTotal} amount=${o.amount} isCancelled=${isCancelledOrFailed(o)} isValid=${isValidSalesOrder(o)} resolvedAmount=${getOrderAmount(o)} createdAt=${o.createdAt}`);
+      }
+    } else {
+      console.log("[SuperAdmin] No orders found in query.");
+    }
 
     const allInvoices = await Invoice.find({
       ...scopeQuery,
-      $or: [
-        { createdAt: { $gte: prev.start } },
-        { invoiceDate: { $gte: prev.start } },
-        { paidAt: { $gte: prev.start } }
-      ]
     }).lean();
 
     // Compute month-over-month statistics
@@ -908,8 +897,10 @@ const getOverview = async (req, res) => {
       const invoicesInWindow = invoicesList.filter(i => isDateInWindow(i, start, end));
 
       for (const order of ordersInWindow) {
-        if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
-          for (const item of order.items) {
+        if (isRevenueOrder(order)) {
+          const orderItems = getOrderItems(order);
+          if (!Array.isArray(orderItems)) continue;
+          for (const item of orderItems) {
             const cat = String(item.category || "Uncategorized").trim() || "Uncategorized";
             const qty = Number(item.quantity) || 0;
             const price = Number(item.price) || 0;
@@ -929,7 +920,7 @@ const getOverview = async (req, res) => {
         if (isInvoicePaidOrSuccessful(invoice)) {
           const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
           const matchingOrder = ordersList.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
-          if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+          if (matchingOrder && isRevenueOrder(matchingOrder)) {
             continue;
           }
           if (Array.isArray(invoice.items)) {
@@ -973,11 +964,13 @@ const getOverview = async (req, res) => {
 
       const processItems = (ordersInWindow, invoicesInWindow, map, isCur) => {
         for (const order of ordersInWindow) {
-          if (isOrderPaidOrSuccessful(order) && Array.isArray(order.items)) {
-            for (const item of order.items) {
-              const name = String(item.name || "").trim();
+          if (isRevenueOrder(order)) {
+            const orderItems = getOrderItems(order);
+            if (!Array.isArray(orderItems)) continue;
+            for (const item of orderItems) {
+              const name = String(item.productName || item.name || item.title || (item.product && item.product.name) || "").trim();
               if (!name) continue;
-              const qty = Number(item.quantity) || 0;
+              const qty = Number(item.quantity || item.qty || 1) || 0;
               const price = Number(item.price) || 0;
               const itemRev = qty * price;
               const image = item.image || "";
@@ -998,7 +991,7 @@ const getOverview = async (req, res) => {
           if (isInvoicePaidOrSuccessful(invoice)) {
             const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
             const matchingOrder = ordersList.find(o => String(o.orderId).trim().toLowerCase() === invOrderId);
-            if (matchingOrder && isOrderPaidOrSuccessful(matchingOrder)) {
+            if (matchingOrder && isRevenueOrder(matchingOrder)) {
               continue;
             }
 
@@ -1082,17 +1075,22 @@ const getOverview = async (req, res) => {
       }
     });
 
-    // Requirement 15: Safe backend debug logs — cancelled orders, loss amount, role filter
+    // Safe backend debug logs — all valid (non-cancelled) orders, loss amount, role filter
     const totalOrdersFound = allOrders.length;
-    const paidOrdersFound = curStats.paidOrdersCount;
-    const totalRevenueCalculated = curStats.revenue;
+    const validOrdersFound = curStats.paidOrdersCount; // paidOrdersCount = validOrdersCount
+    const paidOrdersFound = validOrdersFound;
+    const totalRevenueCalculated = Math.round(curStats.revenue * 100) / 100;
     const topProductFound = topProducts[0]?.name || "None";
+    const ordersInCurrentMonth = allOrders.filter(o => isDateInWindow(o, cur.start, cur.end)).length;
+    const cancelledThisMonth = allOrders.filter(o => isDateInWindow(o, cur.start, cur.end) && isCancelledOrFailed(o)).length;
 
     console.log("[SuperAdmin Dashboard Stats LOG]:", {
       roleFilter: "super_admin",
       scopeFilter: isValidObjectId(explicitClientId) ? String(explicitClientId) : "Global (All Clients)",
       totalOrdersFound,
-      paidOrdersFound,
+      ordersInCurrentMonth,
+      cancelledThisMonth,
+      validOrdersFound,
       totalRevenueCalculated,
       lossThisMonth,
       profitThisMonth,
