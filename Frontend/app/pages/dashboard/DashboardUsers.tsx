@@ -77,7 +77,6 @@ export function DashboardUsers() {
         page,
         limit,
         search: appliedSearch.trim() || undefined,
-        role: selectedRole || undefined,
       }, { pageName: 'Users & roles' });
       if (!res.success || !res.data) {
         throw new Error(res.message || 'Could not load users');
@@ -100,7 +99,7 @@ export function DashboardUsers() {
 
   useEffect(() => {
     void load();
-  }, [load, selectedRole]);
+  }, [load]);
 
   const handleOpenRolePanel = async (u: PlatformUserRow) => {
     const cfg = getRoleOpenPanelConfig(u.role);
@@ -222,6 +221,21 @@ export function DashboardUsers() {
     }
   };
 
+  const searchTerm = appliedSearch.trim().toLowerCase();
+  const filteredUsers = users.filter((user) => {
+    const matchesSearch =
+      !searchTerm ||
+      user.name?.toLowerCase().includes(searchTerm) ||
+      user.email?.toLowerCase().includes(searchTerm) ||
+      user.phone?.toLowerCase().includes(searchTerm);
+
+    const matchesRole =
+      !selectedRole ||
+      user.role?.trim().toLowerCase() === selectedRole.trim().toLowerCase();
+
+    return matchesSearch && matchesRole;
+  });
+
   return (
 
     <div className="space-y-6">
@@ -246,7 +260,7 @@ export function DashboardUsers() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Directory</CardTitle>
-          <CardDescription>{total.toLocaleString()} user(s) match filters</CardDescription>
+          <CardDescription>{filteredUsers.length.toLocaleString()} user(s) match filters</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
@@ -319,14 +333,14 @@ export function DashboardUsers() {
                       Loading…
                     </td>
                   </tr>
-                ) : users.length === 0 ? (
+                ) : filteredUsers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-10 text-center text-muted-foreground">
                       No users found.
                     </td>
                   </tr>
                 ) : (
-                  (users || []).map((u) => {
+                  filteredUsers.map((u) => {
                     const id = u._id;
                     const safeRole = u.role || 'Unknown Role';
                     const safeName = u.name || u.email || 'Unnamed User';

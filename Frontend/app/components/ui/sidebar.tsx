@@ -156,6 +156,7 @@ function Sidebar({
   variant = "sidebar",
   collapsible = "offcanvas",
   className,
+  style,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
@@ -173,6 +174,7 @@ function Sidebar({
           "bg-sidebar text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col",
           className,
         )}
+        style={style}
         {...props}
       >
         {children}
@@ -181,6 +183,8 @@ function Sidebar({
   }
 
   if (isMobile) {
+    const isImpersonating = style != null;
+    const bannerTop = isImpersonating ? '150px' : undefined;
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
@@ -191,8 +195,10 @@ function Sidebar({
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
+              ...(bannerTop ? { top: bannerTop, height: `calc(100dvh - ${bannerTop})` } : {}),
             } as React.CSSProperties
           }
+          overlayStyle={bannerTop ? { top: bannerTop } : undefined}
           side={side}
         >
           <SheetHeader className="sr-only">
@@ -239,6 +245,7 @@ function Sidebar({
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}
+        style={style}
         {...props}
       >
         <div

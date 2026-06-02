@@ -40,15 +40,15 @@ import { wishlistApi } from '../api/wishlist';
 import { useAuth } from '../context/AuthContext';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
 import type { Product as ShopProduct } from '../types/product';
- import {
-   slugifyProductName,
-   buildWishlistKeyForProduct,
-   buildWishlistRemoveParams,
-   buildWishlistToggleBody,
- } from '../utils/wishlistPayload';
- import { createOrder, type OrderPayload } from '../api/orders';
- import { loadPosProductsCache, savePosProductsCache } from '../lib/posProductCache';
- import { formatINR } from '../utils/formatINR';
+import {
+  slugifyProductName,
+  buildWishlistKeyForProduct,
+  buildWishlistRemoveParams,
+  buildWishlistToggleBody,
+} from '../utils/wishlistPayload';
+import { createOrder, type OrderPayload } from '../api/orders';
+import { loadPosProductsCache, savePosProductsCache } from '../lib/posProductCache';
+import { formatINR } from '../utils/formatINR';
 import {
   getPendingOfflinePosOrdersCount,
   newOfflineOrderId,
@@ -76,11 +76,11 @@ const POS_PAYMENT_OPTIONS: {
   label: string;
   icon: typeof Banknote;
 }[] = [
-  { value: 'cod', label: 'Cash on Delivery (COD)', icon: Banknote },
-  { value: 'card', label: 'Card Payment', icon: CreditCard },
-  { value: 'upi', label: 'UPI Payment', icon: Smartphone },
-  { value: 'swipe', label: 'Cash', icon: CreditCard },
-];
+    { value: 'cod', label: 'Cash on Delivery (COD)', icon: Banknote },
+    { value: 'card', label: 'Card Payment', icon: CreditCard },
+    { value: 'upi', label: 'UPI Payment', icon: Smartphone },
+    { value: 'swipe', label: 'Cash', icon: CreditCard },
+  ];
 
 type PaymentFieldKey = 'cardholderName' | 'cardNumber' | 'expiryDate' | 'cvv' | 'upiId';
 
@@ -199,6 +199,8 @@ export function Pos() {
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailInputValue, setEmailInputValue] = useState('');
   const [emailInputError, setEmailInputError] = useState('');
+  const [showAddedToast, setShowAddedToast] = useState(false);
+  const addedToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const wishlistPool = useMemo(
     () => products.map(posProductToShopProduct),
@@ -289,7 +291,7 @@ export function Pos() {
       } as Product));
 
       const merged = [...dbProducts, ...normalizedStatic];
-      
+
       // Deduplicate by Name (case insensitive) or SKU
       const unique: Product[] = [];
       const seenNames = new Set<string>();
@@ -298,7 +300,7 @@ export function Pos() {
       merged.forEach(p => {
         const nameKey = p.name.toLowerCase().trim();
         const skuKey = p.sku?.toLowerCase().trim() || '';
-        
+
         if (!seenNames.has(nameKey) && (!skuKey || !seenSkus.has(skuKey))) {
           unique.push(p);
           seenNames.add(nameKey);
@@ -308,7 +310,7 @@ export function Pos() {
 
       setProducts(unique);
       if (unique.length === 0) setProductSource('none');
-      
+
     } catch (err: unknown) {
       console.error('POS fetchProducts error:', err);
       // Fallback to static only on major error
@@ -445,15 +447,15 @@ export function Pos() {
   }, [selectedCartItemId]);
 
   const filteredProducts = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
-    
+    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
+
     if (!matchSearch) return false;
 
     if (showSaleOnly) {
-      const isDiscounted = 
-        p.isOnSale || 
-        (p.salePercentage && p.salePercentage > 0) || 
+      const isDiscounted =
+        p.isOnSale ||
+        (p.salePercentage && p.salePercentage > 0) ||
         (p.originalPrice && p.originalPrice > p.price) ||
         // @ts-ignore: if product data has salePrice instead
         (p.salePrice && p.salePrice < p.price);
@@ -539,8 +541,8 @@ export function Pos() {
           toast.error('Cannot exceed available stock');
           return prev;
         }
-        return prev.map(item => 
-          item._id === product._id 
+        return prev.map(item =>
+          item._id === product._id
             ? { ...item, cartQuantity: item.cartQuantity + 1 }
             : item
         );
@@ -551,6 +553,13 @@ export function Pos() {
       }
       return [...prev, { ...product, cartQuantity: 1 }];
     });
+
+    setShowAddedToast(true);
+    if (addedToastTimer.current) clearTimeout(addedToastTimer.current);
+    addedToastTimer.current = setTimeout(() => {
+      setShowAddedToast(false);
+      addedToastTimer.current = null;
+    }, 1800);
   };
 
   const updateQuantity = (id: string, delta: number) => {
@@ -587,7 +596,7 @@ export function Pos() {
       setCart([]);
       setCheckoutComplete(true);
     }
-    
+
     setPaymentModalOpen(open);
     if (!open) {
       setSelectedPaymentMethod(null);
@@ -686,10 +695,10 @@ export function Pos() {
     setLastCheckoutOffline(isOffline);
     setPaymentValidationMessage(null);
     setSelectedPaymentMethod(null);
-    
+
     // Refresh products to show updated stock immediately
     void fetchProducts();
-    
+
     if (isOffline) {
       // For offline orders, we don't have a backend invoice yet.
       // We'll generate a preview from the order data.
@@ -716,23 +725,23 @@ export function Pos() {
     } else {
       setIsFetchingInvoice(true);
       setModalStep('invoice');
-      
+
       try {
         // Try to fetch the invoice from the backend
         // We might need to retry a few times as it's generated asynchronously
         let retryCount = 0;
         let foundInvoice = null;
-        
+
         while (retryCount < 3 && !foundInvoice) {
           if (retryCount > 0) await new Promise(resolve => setTimeout(resolve, 1000));
-          
+
           const res = await ApiService.get('/invoices');
           if (res.success && Array.isArray(res.data)) {
             foundInvoice = res.data.find((i: any) => i.orderId === order.orderId);
           }
           retryCount++;
         }
-        
+
         if (foundInvoice) {
           setLatestInvoiceData(foundInvoice);
         } else {
@@ -1164,8 +1173,8 @@ export function Pos() {
     }
   };
 
-/** Handler for "Send via Email" button click. */
-    const handleSendInvoiceEmail = () => {
+  /** Handler for "Send via Email" button click. */
+  const handleSendInvoiceEmail = () => {
     // Try to use the customer email from the invoice / payment form
     const autoEmail =
       latestInvoiceData?.customerEmail?.trim() ||
@@ -1181,11 +1190,11 @@ export function Pos() {
       setEmailInputError('');
       setEmailModalOpen(true);
     }
-   };
+  };
 
-/** Handler for "Download PDF" button click. */
-    const handleDownloadPDF = () => {
-     try {
+  /** Handler for "Download PDF" button click. */
+  const handleDownloadPDF = () => {
+    try {
       setIsDownloading(true);
 
       const doc = new jsPDF("p", "mm", "a4");
@@ -1351,1118 +1360,1118 @@ export function Pos() {
     <>
       <ImpersonationBanner />
       <div className="flex flex-col lg:flex-row lg:h-[calc(100vh-84px)] bg-[#f7f6f2] lg:overflow-hidden">
-      {/* Products Section */}
-      <div className="flex-1 flex flex-col lg:h-full border-b lg:border-b-0 lg:border-r border-black/10 lg:overflow-hidden">
-        <div className="p-4 sm:p-6 bg-white/50 backdrop-blur-sm border-b border-black/10">
-          <Link 
-            to="/" 
-            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-[#111111] transition-colors mb-3"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span>Back to Menu</span>
-          </Link>
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
-            <h1 className="text-2xl font-bold text-[#111111]">Point of Sale</h1>
-            <div className="flex flex-col items-start sm:items-end gap-1.5">
-              <div
-                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full w-fit ${
-                  networkOnline
+        {/* Products Section */}
+        <div className="flex-1 flex flex-col lg:h-full border-b lg:border-b-0 lg:border-r border-black/10 lg:overflow-hidden">
+          <div className="p-4 sm:p-6 bg-white/50 backdrop-blur-sm border-b border-black/10">
+            <Link
+              to="/"
+              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-[#111111] transition-colors mb-3"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Menu</span>
+            </Link>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
+              <h1 className="text-2xl font-bold text-[#111111]">Point of Sale</h1>
+              <div className="flex flex-col items-start sm:items-end gap-1.5">
+                <div
+                  className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full w-fit ${networkOnline
                     ? 'bg-emerald-50 text-emerald-800 border border-emerald-200/80'
                     : 'bg-amber-50 text-amber-900 border border-amber-200/80'
-                }`}
+                    }`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {networkOnline ? (
+                    <Wifi className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  ) : (
+                    <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  )}
+                  {networkOnline
+                    ? 'Online Mode'
+                    : productSource === 'cache'
+                      ? 'Offline Mode — cached products'
+                      : 'Offline Mode'}
+                </div>
+                {pendingOfflineCount > 0 ? (
+                  <span
+                    className="text-[11px] font-medium text-amber-900/90 whitespace-nowrap"
+                    title="Orders waiting to sync to the server"
+                  >
+                    {pendingOfflineCount} offline order{pendingOfflineCount === 1 ? '' : 's'} pending sync
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            {productSource === 'cache' && (
+              <p className="text-xs text-amber-800/90 bg-amber-50/90 border border-amber-200/60 rounded-lg px-3 py-2 mb-3">
+                Showing last synced products
+              </p>
+            )}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search products by name or SKU..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black/20 bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 lg:overflow-y-auto p-4 sm:p-6">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-40">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
+              </div>
+            ) : productSource === 'none' && products.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center max-w-md mx-auto h-48 px-4">
+                <Package2 className="w-10 h-10 text-gray-300 mb-3" aria-hidden />
+                {!networkOnline ? (
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    You are offline. No cached POS products are available yet. Please connect to the internet once to
+                    sync products.
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    No products could be loaded. Check your connection and try again.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {filteredProducts.map((product) => {
+                  const shop = posProductToShopProduct(product);
+                  const wKey = buildWishlistKeyForProduct(shop, wishlistPool);
+                  const inWishlist = !!(user && wishlistKeySet.has(wKey));
+                  return (
+                    <div
+                      key={product._id}
+                      className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col"
+                      onClick={() => addToCart(product)}
+                    >
+                      <div className="relative aspect-square bg-gray-50 rounded-xl mb-3 flex items-center justify-center overflow-hidden group/card">
+                        <button
+                          type="button"
+                          onClick={(e) => void handlePosWishlist(e, product)}
+                          disabled={wishlistBusyKey === wKey}
+                          aria-pressed={inWishlist}
+                          title={
+                            user
+                              ? inWishlist
+                                ? 'Remove from wishlist'
+                                : 'Add to wishlist'
+                              : 'Sign in to use wishlist'
+                          }
+                          className={`absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-all duration-300 hover:scale-105 disabled:opacity-60 ${inWishlist
+                            ? 'border-red-200/90 bg-red-50/95 text-red-600'
+                            : 'border-white/80 bg-white/90 text-[#111111]'
+                            }`}
+                        >
+                          <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
+                        </button>
+                        {getProductImageUrl(product) ? (
+                          <img src={getFullImageUrl(getProductImageUrl(product))} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]" />
+                        ) : (
+                          <Package2 className="w-10 h-10 text-gray-300" />
+                        )}
+                        {/* Quick-add button */}
+                        <button
+                          type="button"
+                          title={product.stock > 0 ? 'Add to Cart' : 'Out of stock'}
+                          aria-label={`Add ${product.name} to cart`}
+                          disabled={product.stock < 1}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addToCart(product);
+                          }}
+                          className={`absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition-all duration-200 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${product.stock > 0
+                            ? 'bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500'
+                            : 'cursor-not-allowed bg-gray-300 text-gray-500'
+                            }`}
+                        >
+                          <Plus className="h-4 w-4" strokeWidth={2.5} />
+                        </button>
+                      </div>
+                      <h3 className="font-semibold text-sm line-clamp-2 text-[#111111] mb-1">{product.name}</h3>
+                      <div className="text-xs text-gray-500 mb-2">{product.category}</div>
+
+                      <div className="mt-auto flex items-center justify-between">
+                        <span className="font-bold text-[#111111]">{formatINR(product.price)}</span>
+                        <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${product.stock <= 0
+                          ? 'bg-red-100 text-red-700'
+                          : product.stock < 10
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-green-100 text-green-700'
+                          }`}>
+                          {product.stock <= 0
+                            ? 'Out of stock'
+                            : product.stock < 10
+                              ? 'Low Stock'
+                              : `${product.stock} in stock`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cart Section */}
+        <div className="w-full lg:w-[350px] xl:w-[400px] flex flex-col bg-white lg:h-full shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
+          <div className="p-5 border-b border-black/5 bg-[#111111] text-white">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5" />
+              Current Order
+            </h2>
+          </div>
+
+          <div className="flex-1 lg:overflow-y-auto p-5">
+            {checkoutComplete && cart.length === 0 ? (
+              <div
+                className="h-full min-h-[200px] flex flex-col items-center justify-center text-center px-2"
                 role="status"
                 aria-live="polite"
               >
-                {networkOnline ? (
-                  <Wifi className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                ) : (
-                  <WifiOff className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                )}
-                {networkOnline
-                  ? 'Online Mode'
-                  : productSource === 'cache'
-                    ? 'Offline Mode — cached products'
-                    : 'Offline Mode'}
-              </div>
-              {pendingOfflineCount > 0 ? (
-                <span
-                  className="text-[11px] font-medium text-amber-900/90 whitespace-nowrap"
-                  title="Orders waiting to sync to the server"
-                >
-                  {pendingOfflineCount} offline order{pendingOfflineCount === 1 ? '' : 's'} pending sync
-                </span>
-              ) : null}
-            </div>
-          </div>
-          {productSource === 'cache' && (
-            <p className="text-xs text-amber-800/90 bg-amber-50/90 border border-amber-200/60 rounded-lg px-3 py-2 mb-3">
-              Showing last synced products
-            </p>
-          )}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Search products by name or SKU..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black/20 bg-white"
-            />
-          </div>
-        </div>
-
-        <div className="flex-1 lg:overflow-y-auto p-4 sm:p-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-40">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-            </div>
-          ) : productSource === 'none' && products.length === 0 ? (
-            <div className="flex flex-col items-center justify-center text-center max-w-md mx-auto h-48 px-4">
-              <Package2 className="w-10 h-10 text-gray-300 mb-3" aria-hidden />
-              {!networkOnline ? (
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  You are offline. No cached POS products are available yet. Please connect to the internet once to
-                  sync products.
-                </p>
-              ) : (
-                <p className="text-sm text-gray-600 leading-relaxed">
-                  No products could be loaded. Check your connection and try again.
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {filteredProducts.map((product) => {
-                const shop = posProductToShopProduct(product);
-                const wKey = buildWishlistKeyForProduct(shop, wishlistPool);
-                const inWishlist = !!(user && wishlistKeySet.has(wKey));
-                return (
-                <div 
-                  key={product._id} 
-                  className="bg-white rounded-2xl p-4 border border-black/5 shadow-sm hover:shadow-md transition-shadow cursor-pointer flex flex-col"
-                  onClick={() => addToCart(product)}
-                >
-                  <div className="relative aspect-square bg-gray-50 rounded-xl mb-3 flex items-center justify-center overflow-hidden group/card">
-                    <button
-                      type="button"
-                      onClick={(e) => void handlePosWishlist(e, product)}
-                      disabled={wishlistBusyKey === wKey}
-                      aria-pressed={inWishlist}
-                      title={
-                        user
-                          ? inWishlist
-                            ? 'Remove from wishlist'
-                            : 'Add to wishlist'
-                          : 'Sign in to use wishlist'
-                      }
-                      className={`absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-all duration-300 hover:scale-105 disabled:opacity-60 ${
-                        inWishlist
-                          ? 'border-red-200/90 bg-red-50/95 text-red-600'
-                          : 'border-white/80 bg-white/90 text-[#111111]'
-                      }`}
-                    >
-                      <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
-                    </button>
-                    {getProductImageUrl(product) ? (
-                      <img src={getFullImageUrl(getProductImageUrl(product))} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]" />
-                    ) : (
-                      <Package2 className="w-10 h-10 text-gray-300" />
-                    )}
-                    {/* Quick-add button */}
-                    <button
-                      type="button"
-                      title={product.stock > 0 ? 'Add to Cart' : 'Out of stock'}
-                      aria-label={`Add ${product.name} to cart`}
-                      disabled={product.stock < 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addToCart(product);
-                      }}
-                      className={`absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition-all duration-200 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
-                        product.stock > 0
-                          ? 'bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500'
-                          : 'cursor-not-allowed bg-gray-300 text-gray-500'
-                      }`}
-                    >
-                      <Plus className="h-4 w-4" strokeWidth={2.5} />
-                    </button>
+                <div className="w-full max-w-[320px] rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/90 to-white p-6 shadow-sm">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                    <CheckCircle2 className="h-8 w-8" aria-hidden />
                   </div>
-                  <h3 className="font-semibold text-sm line-clamp-2 text-[#111111] mb-1">{product.name}</h3>
-                  <div className="text-xs text-gray-500 mb-2">{product.category}</div>
-
-                   <div className="mt-auto flex items-center justify-between">
-                     <span className="font-bold text-[#111111]">{formatINR(product.price)}</span>
-                     <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${
-                       product.stock <= 0
-                         ? 'bg-red-100 text-red-700'
-                         : product.stock < 10
-                           ? 'bg-amber-100 text-amber-700'
-                           : 'bg-green-100 text-green-700'
-                     }`}>
-                       {product.stock <= 0
-                         ? 'Out of stock'
-                         : product.stock < 10
-                           ? 'Low Stock'
-                           : `${product.stock} in stock`}
-                     </span>
-                   </div>
-                </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Cart Section */}
-      <div className="w-full lg:w-[350px] xl:w-[400px] flex flex-col bg-white lg:h-full shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
-        <div className="p-5 border-b border-black/5 bg-[#111111] text-white">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <ShoppingCart className="w-5 h-5" />
-            Current Order
-          </h2>
-        </div>
-
-        <div className="flex-1 lg:overflow-y-auto p-5">
-          {checkoutComplete && cart.length === 0 ? (
-            <div
-              className="h-full min-h-[200px] flex flex-col items-center justify-center text-center px-2"
-              role="status"
-              aria-live="polite"
-            >
-              <div className="w-full max-w-[280px] rounded-2xl border border-emerald-200/80 bg-gradient-to-b from-emerald-50/90 to-white p-6 shadow-sm">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-                  <CheckCircle2 className="h-8 w-8" aria-hidden />
-                </div>
-                <p className="text-base font-semibold text-[#111111]">
-                  {lastCheckoutOffline ? 'Offline order saved' : 'Order placed successfully'}
-                </p>
-                <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
-                  {lastCheckoutOffline
-                    ? 'This order is stored on this device and will sync to the server when you are back online.'
-                    : 'Thank you. You can start a new order whenever you are ready.'}
-                </p>
-                <Button
-                  type="button"
-                  className="mt-5 w-full h-11 text-sm font-semibold bg-[#111111] hover:bg-black text-white rounded-xl"
-                  onClick={handleContinueShopping}
-                >
-                  Continue Shopping
-                </Button>
-              </div>
-            </div>
-          ) : cart.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 space-y-3">
-              <ShoppingCart className="w-12 h-12 opacity-20" />
-              <p className="text-sm font-medium text-gray-500">Cart is empty</p>
-              <p className="text-xs">Click on products to add them to the order</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {currentOrderPreviewItem ? (
-                <div
-                  className="rounded-xl border border-black/10 bg-gray-50/90 p-3 shadow-sm transition-shadow"
-                  aria-live="polite"
-                >
-                  <div className="flex h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-white/80">
-                    {getProductImageUrl(currentOrderPreviewItem) && !previewImageFailed ? (
-                      <img
-                        src={getFullImageUrl(getProductImageUrl(currentOrderPreviewItem))}
-                        alt=""
-                        className="max-h-full max-w-full object-contain"
-                        onError={() => setPreviewImageFailed(true)}
-                      />
-                    ) : (
-                      <div className="flex flex-col items-center justify-center gap-2 text-gray-400">
-                        <Package2 className="h-12 w-12 opacity-50" aria-hidden />
-                        <span className="text-xs font-medium text-gray-500">No image</span>
-                      </div>
-                    )}
-                  </div>
-                   <div className="mt-3 space-y-0.5 px-0.5">
-                     <p className="line-clamp-2 text-sm font-semibold text-[#111111]">
-                       {currentOrderPreviewItem.name}
-                     </p>
-                     <p className="text-sm text-gray-600">{formatINR(currentOrderPreviewItem.price)}</p>
-                   </div>
-
-                </div>
-              ) : null}
-              <div className="space-y-3">
-                {cart.map(item => {
-                  const isSelected = item._id === selectedCartItemId;
-                  return (
-                    <div
-                      key={item._id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedCartItemId(item._id ?? null)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setSelectedCartItemId(item._id ?? null);
-                        }
-                      }}
-                      className={`flex cursor-pointer gap-3 items-center rounded-xl p-2 -mx-2 transition-all duration-200 group outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-2 ${
-                        isSelected
-                          ? 'bg-gray-50 ring-1 ring-black/12 shadow-sm'
-                          : 'hover:bg-gray-50/90'
-                      }`}
-                      aria-pressed={isSelected}
-                      aria-label={`${item.name}, ${isSelected ? 'selected' : 'select for preview'}`}
-                    >
-                      <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center border border-black/5">
-                        {getProductImageUrl(item) ? (
-                          <img
-                            src={getFullImageUrl(getProductImageUrl(item))}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <Package2 className="w-5 h-5 text-gray-300" aria-hidden />
-                        )}
-                      </div>
-                         <div className="flex-1 min-w-0">
-                           <div className="font-medium text-[#111111] text-sm line-clamp-1">{item.name}</div>
-                           <div className="text-sm text-gray-500">{formatINR(item.price)}</div>
-                         </div>
-
-                      <div
-                        className="flex items-center gap-2 bg-gray-50 rounded-lg p-1 border border-gray-100 shrink-0"
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (item.cartQuantity === 1) {
-                              removeFromCart(item._id!);
-                            } else {
-                              updateQuantity(item._id!, -1);
-                            }
-                          }}
-                          className="w-7 h-7 flex items-center justify-center rounded bg-white shadow-sm text-gray-600 hover:text-black hover:bg-gray-100 transition-colors"
-                          aria-label={item.cartQuantity === 1 ? `Remove ${item.name} from cart` : `Decrease ${item.name} quantity`}
-                        >
-                          <Minus className="w-3.5 h-3.5" />
-                        </button>
-                        <span className="w-6 text-center text-sm font-semibold">{item.cartQuantity}</span>
-                        <button
-                          type="button"
-                          onClick={() => updateQuantity(item._id!, 1)}
-                          className="w-7 h-7 flex items-center justify-center rounded bg-white shadow-sm text-gray-600 hover:text-black hover:bg-gray-100 transition-colors"
-                          aria-label={`Increase ${item.name} quantity`}
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="p-5 bg-gray-50 border-t border-black/5 space-y-4">
-          <div className="flex justify-between items-center text-gray-500 text-sm">
-            <span>Subtotal</span>
-            <span>{formatINR(calculateTotal())}</span>
-          </div>
-          <div className="flex justify-between items-center text-gray-500 text-sm">
-            <span>Tax (0%)</span>
-            <span>{formatINR(0)}</span>
-          </div>
-          <div className="h-px bg-black/10 w-full my-2"></div>
-          <div className="flex justify-between items-center text-[#111111] text-xl font-bold">
-            <span>Total</span>
-            <span>{formatINR(calculateTotal())}</span>
-          </div>
-
-          <Button
-            className="w-full h-12 text-base font-bold bg-[#111111] hover:bg-black text-white rounded-xl shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={openPaymentStep}
-            disabled={cart.length === 0 || orderPlacing || paymentModalOpen}
-          >
-            Checkout • {formatINR(calculateTotal())}
-          </Button>
-        </div>
-      </div>
-
-      <Dialog open={paymentModalOpen} onOpenChange={handlePaymentDialogOpenChange}>
-        <DialogContent className="max-w-md flex flex-col gap-0 overflow-hidden max-h-[90vh] sm:max-h-[95vh] rounded-2xl border-black/10 bg-white p-0 sm:max-w-md [&_[data-slot=dialog-close]]:text-gray-500 [&_[data-slot=dialog-close]]:hover:text-[#111111] [&_[data-slot=dialog-close]]:top-5 [&_[data-slot=dialog-close]]:right-5">
-          <div className="shrink-0 px-6 pt-6 pb-4 border-b border-black/5 bg-white z-10">
-            <DialogHeader className="text-left pr-6">
-              <DialogTitle className="text-xl font-bold text-[#111111]">
-                {modalStep === 'cod-shipping'
-                  ? ''
-                  : modalStep === 'card-shipping'
-                    ? 'Shipping address'
-                    : modalStep === 'card-payment'
-                      ? 'Card payment'
-                    : modalStep === 'invoice'
-                      ? 'Invoice Generated'
-                      : 'Payment method'}
-              </DialogTitle>
-              <DialogDescription className="text-sm text-gray-600">
-                {modalStep === 'cod-shipping'
-                  ? 'Cash on Delivery — enter the delivery address. Required fields must be completed before placing the order.'
-                  : modalStep === 'card-shipping'
-                    ? 'Card payment — enter the delivery address, then continue to card details.'
-                    : modalStep === 'card-payment'
-                      ? 'Enter valid card details, then place the order. Only the last four digits and name are stored with the order.'
-                      : modalStep === 'invoice'
-                        ? 'Your order has been placed. You can now preview, print or download your invoice.'
-                        : 'Choose how the customer will pay, then place the order.'}
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-6 pt-4 pb-8 space-y-4">
-
-          {modalStep === 'invoice' ? (
-            <div className="space-y-6">
-              {isFetchingInvoice ? (
-                <div className="flex flex-col items-center justify-center py-12 space-y-4">
-                  <div className="relative">
-                    <Loader2 className="h-10 w-10 animate-spin text-[#b89146]" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="h-4 w-4 bg-[#b89146]/20 rounded-full animate-pulse"></div>
-                    </div>
-                  </div>
-                  <p className="text-sm font-medium text-gray-500">Preparing your premium invoice...</p>
-                </div>
-              ) : latestInvoiceData ? (
-                  <div 
-                    id="pos-invoice-content" 
-                    ref={posInvoiceRef}
-                    className="invoice-pdf-content bg-[#fffcf5] rounded-2xl border border-[#e6d5b8] p-6 shadow-xl relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-white"
+                  <p className="text-base font-semibold text-[#111111]">
+                    {lastCheckoutOffline ? 'Offline order saved' : 'Order placed successfully'}
+                  </p>
+                  <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">
+                    {lastCheckoutOffline
+                      ? 'This order is stored on this device and will sync to the server when you are back online.'
+                      : 'Thank you. You can start a new order whenever you are ready.'}
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-5 w-full h-12 text-sm font-semibold bg-[#111111] hover:bg-black text-white rounded-xl"
+                    onClick={handleContinueShopping}
                   >
-                  {/* Premium Accent Corner */}
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-[#b89146]/5 -mr-16 -mt-16 rounded-full blur-2xl print:hidden"></div>
-                  
-                  {/* Invoice Header */}
-                  <div className="flex justify-between items-start mb-8 pb-6 border-b border-[#e6d5b8]/50 relative z-10">
-                    <div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-8 w-1.5 bg-[#b89146] rounded-full"></div>
-                        <h3 className="text-3xl font-black text-[#111111] tracking-tight">INVOICE</h3>
-                      </div>
-                      <p className="text-sm text-[#b89146] font-bold tracking-wider">{latestInvoiceData.invoiceNumber}</p>
-                      <div className="flex items-center gap-2 mt-2">
-                        <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Order ID:</p>
-                        <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5">{latestInvoiceData.orderId}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-4">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {latestInvoiceData.paymentStatus === 'Paid' || latestInvoiceData.paymentStatus === 'Completed' ? 'Payment Success' : latestInvoiceData.paymentStatus}
-                      </div>
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Date</p>
-                      <p className="text-sm font-bold text-[#111111]">
-                        {new Date(latestInvoiceData.createdAt || Date.now()).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'long',
-                          year: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Customer Info */}
-                  <div className="grid grid-cols-2 gap-8 mb-8 relative z-10">
-                    <div className="space-y-3">
-                      <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Billed To</p>
-                      <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30">
-                        <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.customerName}</p>
-                        {latestInvoiceData.customerEmail && (
-                          <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1.5 italic">
-                            {latestInvoiceData.customerEmail}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right space-y-3">
-                      <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Payment Method</p>
-                      <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30 inline-block min-w-[140px]">
-                        <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.paymentMethod}</p>
-                        <p className="text-[10px] text-emerald-600 mt-1 font-bold uppercase tracking-tight">Verified Transaction</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Items Table */}
-                  <div className="mb-8 overflow-hidden rounded-2xl border border-[#e6d5b8]/50 bg-white/40 backdrop-blur-sm relative z-10">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-[#b89146]/5 text-[#b89146]">
-                          <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest">Item Description</th>
-                          <th className="px-5 py-3 text-center text-[10px] font-black uppercase tracking-widest">Qty</th>
-                          <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Price</th>
-                          <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#e6d5b8]/20">
-                        {latestInvoiceData.items?.map((item: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-white/40 transition-colors">
-                            <td className="px-5 py-4 font-bold text-[#111111]">{item.name}</td>
-                            <td className="px-5 py-4 text-center text-gray-600 font-medium">{item.quantity}</td>
-                            <td className="px-5 py-4 text-right text-gray-600 font-medium">{formatINR(item.price)}</td>
-                            <td className="px-5 py-4 text-right font-bold text-[#111111]">{formatINR(item.subtotal)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Totals Section */}
-                  <div className="flex justify-end relative z-10">
-                    <div className="w-full max-w-[240px] space-y-3 p-4 bg-[#b89146]/5 rounded-2xl border border-[#e6d5b8]/30">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-bold text-gray-500 uppercase tracking-tighter">Subtotal</span>
-                        <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.subtotal)}</span>
-                      </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="font-bold text-gray-500 uppercase tracking-tighter">GST / Tax (0%)</span>
-                        <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.tax || 0)}</span>
-                      </div>
-                      <div className="pt-3 border-t border-[#b89146]/20 flex justify-between items-center">
-                        <span className="text-[10px] font-black text-[#b89146] uppercase tracking-widest">Grand Total</span>
-                        <span className="text-xl font-black text-[#111111] drop-shadow-sm">{formatINR(latestInvoiceData.totalAmount)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Footer Note */}
-                  <div className="mt-8 text-center">
-                    <p className="text-[10px] text-gray-400 font-medium italic">Thank you for your business. We hope to see you again soon!</p>
-                  </div>
+                    Continue Shopping
+                  </Button>
                 </div>
-              ) : (
-                <div className="text-center py-12 bg-[#fffcf5] rounded-2xl border border-dashed border-[#e6d5b8]">
-                  <AlertCircle className="h-8 w-8 text-[#b89146] mx-auto mb-3 opacity-50" />
-                  <p className="text-sm font-medium text-gray-500">Could not retrieve invoice details.</p>
-                </div>
-              )}
-
-{/* Action Buttons */}
-               <div className="flex flex-col gap-3 pt-2 print:hidden">
-                 <div className="grid grid-cols-3 gap-2">
-                   <Button 
-                     variant="outline"
-                     type="button"
-                     disabled={isDownloading}
-                     className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
-                     onClick={handleDownloadPDF}
-                   >
-                     {isDownloading ? (
-                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                     ) : (
-                       <Download className="h-4 w-4 shrink-0" />
-                     )}
-                     {isDownloading ? 'Downloading...' : 'Download PDF'}
-                   </Button>
-                   <Button 
-                     variant="outline"
-                     type="button"
-                     className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
-                     onClick={() => window.print()}
-                   >
-                     <Printer className="h-4 w-4 shrink-0" />
-                     Print
-                   </Button>
-                   <Button 
-                     variant="outline"
-                     type="button"
-                     disabled={emailSending}
-                     className="h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
-                     onClick={handleSendInvoiceEmail}
-                   >
-                     {emailSending ? (
-                       <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                     ) : (
-                       <Mail className="h-4 w-4 shrink-0" />
-                     )}
-                     {emailSending ? 'Sending…' : 'Email'}
-                   </Button>
-                 </div>
-                <Button 
-                  type="button"
-                  className="w-full h-12 rounded-xl bg-[#111111] hover:bg-black text-white font-bold shadow-lg shadow-black/10 transition-all active:scale-[0.98]"
-                  onClick={() => {
-                    handlePaymentDialogOpenChange(false);
-                    setLatestOrderData(null);
-                    setLatestInvoiceData(null);
-                  }}
-                >
-                  Continue Shopping
-                </Button>
               </div>
-
-              {/* Email Input Modal — shown when no customer email is available */}
-              {emailModalOpen && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-                  <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl border border-[#e6d5b8] shadow-2xl p-6 animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
-                    <button
-                      type="button"
-                      className="absolute right-3 top-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                      onClick={() => {
-                        setEmailModalOpen(false);
-                        setEmailInputValue('');
-                        setEmailInputError('');
-                      }}
-                      aria-label="Close"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                    <div className="flex items-center gap-2.5 mb-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b89146]/10 text-[#b89146]">
-                        <Mail className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-base font-bold text-[#111111]">Send Invoice via Email</h4>
-                        <p className="text-xs text-gray-500">Enter the customer's email address</p>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Input
-                        type="email"
-                        autoFocus
-                        placeholder="customer@example.com"
-                        value={emailInputValue}
-                        onChange={(e) => {
-                          setEmailInputValue(e.target.value);
-                          if (emailInputError) setEmailInputError('');
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !emailSending) {
-                            e.preventDefault();
-                            const v = emailInputValue.trim();
-                            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-                              setEmailInputError('Please enter a valid email address.');
-                            } else {
-                              setEmailInputError('');
-                              void sendInvoiceToEmail(v);
-                            }
-                          }
-                        }}
-                        disabled={emailSending}
-                        aria-invalid={Boolean(emailInputError)}
-                        className="h-11 rounded-xl border-black/15 bg-[#f7f6f2]/50 text-sm"
-                      />
-                      {emailInputError && (
-                        <p className="text-xs font-medium text-red-600">{emailInputError}</p>
+            ) : cart.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-gray-400 space-y-3">
+                <ShoppingCart className="w-12 h-12 opacity-20" />
+                <p className="text-sm font-medium text-gray-500">Cart is empty</p>
+                <p className="text-xs">Click on products to add them to the order</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {currentOrderPreviewItem ? (
+                  <div
+                    className="rounded-xl border border-black/10 bg-gray-50/90 p-3 shadow-sm transition-shadow"
+                    aria-live="polite"
+                  >
+                    <div className="flex h-[200px] w-full items-center justify-center overflow-hidden rounded-lg bg-white/80">
+                      {getProductImageUrl(currentOrderPreviewItem) && !previewImageFailed ? (
+                        <img
+                          src={getFullImageUrl(getProductImageUrl(currentOrderPreviewItem))}
+                          alt=""
+                          className="max-h-full max-w-full object-contain"
+                          onError={() => setPreviewImageFailed(true)}
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center gap-2 text-gray-400">
+                          <Package2 className="h-12 w-12 opacity-50" aria-hidden />
+                          <span className="text-xs font-medium text-gray-500">No image</span>
+                        </div>
                       )}
                     </div>
-                    <div className="flex gap-2 mt-4">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="flex-1 h-10 rounded-xl border-black/15 font-semibold text-sm"
-                        disabled={emailSending}
-                        onClick={() => {
-                          setEmailModalOpen(false);
-                          setEmailInputValue('');
-                          setEmailInputError('');
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        className="flex-1 h-10 rounded-xl bg-[#b89146] hover:bg-[#a07d3a] text-white font-semibold text-sm gap-2 disabled:opacity-60"
-                        disabled={emailSending || !emailInputValue.trim()}
-                        onClick={() => {
-                          const v = emailInputValue.trim();
-                          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-                            setEmailInputError('Please enter a valid email address.');
-                          } else {
-                            setEmailInputError('');
-                            void sendInvoiceToEmail(v);
+                    <div className="mt-3 space-y-0.5 px-0.5">
+                      <p className="line-clamp-2 text-sm font-semibold text-[#111111]">
+                        {currentOrderPreviewItem.name}
+                      </p>
+                      <p className="text-sm text-gray-600">{formatINR(currentOrderPreviewItem.price)}</p>
+                    </div>
+
+                  </div>
+                ) : null}
+                <div className="space-y-3">
+                  {cart.map(item => {
+                    const isSelected = item._id === selectedCartItemId;
+                    return (
+                      <div
+                        key={item._id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedCartItemId(item._id ?? null)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedCartItemId(item._id ?? null);
                           }
                         }}
+                        className={`flex cursor-pointer gap-3 items-center rounded-xl p-2 -mx-2 transition-all duration-200 group outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-2 ${isSelected
+                          ? 'bg-gray-50 ring-1 ring-black/12 shadow-sm'
+                          : 'hover:bg-gray-50/90'
+                          }`}
+                        aria-pressed={isSelected}
+                        aria-label={`${item.name}, ${isSelected ? 'selected' : 'select for preview'}`}
+                      >
+                        <div className="h-10 w-10 shrink-0 rounded-lg overflow-hidden bg-gray-100 flex items-center justify-center border border-black/5">
+                          {getProductImageUrl(item) ? (
+                            <img
+                              src={getFullImageUrl(getProductImageUrl(item))}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <Package2 className="w-5 h-5 text-gray-300" aria-hidden />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-[#111111] text-sm line-clamp-1">{item.name}</div>
+                          <div className="text-sm text-gray-500">{formatINR(item.price)}</div>
+                        </div>
+
+                        <div
+                          className="flex items-center gap-2 bg-gray-50 rounded-lg p-1 border border-gray-100 shrink-0"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (item.cartQuantity === 1) {
+                                removeFromCart(item._id!);
+                              } else {
+                                updateQuantity(item._id!, -1);
+                              }
+                            }}
+                            className="w-7 h-7 flex items-center justify-center rounded bg-white shadow-sm text-gray-600 hover:text-black hover:bg-gray-100 transition-colors"
+                            aria-label={item.cartQuantity === 1 ? `Remove ${item.name} from cart` : `Decrease ${item.name} quantity`}
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="w-6 text-center text-sm font-semibold">{item.cartQuantity}</span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item._id!, 1)}
+                            className="w-7 h-7 flex items-center justify-center rounded bg-white shadow-sm text-gray-600 hover:text-black hover:bg-gray-100 transition-colors"
+                            aria-label={`Increase ${item.name} quantity`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="p-5 bg-gray-50 border-t border-black/5 space-y-4">
+            <div className="flex justify-between items-center text-gray-500 text-sm">
+              <span>Subtotal</span>
+              <span>{formatINR(calculateTotal())}</span>
+            </div>
+            <div className="flex justify-between items-center text-gray-500 text-sm">
+              <span>Tax (0%)</span>
+              <span>{formatINR(0)}</span>
+            </div>
+            <div className="h-px bg-black/10 w-full my-2"></div>
+            <div className="flex justify-between items-center text-[#111111] text-xl font-bold">
+              <span>Total</span>
+              <span>{formatINR(calculateTotal())}</span>
+            </div>
+
+            <Button
+              className="w-full h-12 text-base font-bold bg-[#111111] hover:bg-black text-white rounded-xl shadow-lg mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={openPaymentStep}
+              disabled={cart.length === 0 || orderPlacing || paymentModalOpen}
+            >
+              Checkout • {formatINR(calculateTotal())}
+            </Button>
+          </div>
+        </div>
+
+        <Dialog open={paymentModalOpen} onOpenChange={handlePaymentDialogOpenChange}>
+          <DialogContent className="max-w-md flex flex-col gap-0 overflow-hidden max-h-[90vh] sm:max-h-[95vh] rounded-2xl border-black/10 bg-white p-0 sm:max-w-md [&_[data-slot=dialog-close]]:text-gray-500 [&_[data-slot=dialog-close]]:hover:text-[#111111] [&_[data-slot=dialog-close]]:top-5 [&_[data-slot=dialog-close]]:right-5">
+            <div className="shrink-0 px-6 pt-6 pb-4 border-b border-black/5 bg-white z-10">
+              <DialogHeader className="text-left pr-6">
+                <DialogTitle className="text-xl font-bold text-[#111111]">
+                  {modalStep === 'cod-shipping'
+                    ? ''
+                    : modalStep === 'card-shipping'
+                      ? 'Shipping address'
+                      : modalStep === 'card-payment'
+                        ? 'Card payment'
+                        : modalStep === 'invoice'
+                          ? 'Invoice Generated'
+                          : 'Payment method'}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-gray-600">
+                  {modalStep === 'cod-shipping'
+                    ? 'Cash on Delivery — enter the delivery address. Required fields must be completed before placing the order.'
+                    : modalStep === 'card-shipping'
+                      ? 'Card payment — enter the delivery address, then continue to card details.'
+                      : modalStep === 'card-payment'
+                        ? 'Enter valid card details, then place the order. Only the last four digits and name are stored with the order.'
+                        : modalStep === 'invoice'
+                          ? 'Your order has been placed. You can now preview, print or download your invoice.'
+                          : 'Choose how the customer will pay, then place the order.'}
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 pt-4 pb-8 space-y-4">
+
+              {modalStep === 'invoice' ? (
+                <div className="space-y-6">
+                  {isFetchingInvoice ? (
+                    <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                      <div className="relative">
+                        <Loader2 className="h-10 w-10 animate-spin text-[#b89146]" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="h-4 w-4 bg-[#b89146]/20 rounded-full animate-pulse"></div>
+                        </div>
+                      </div>
+                      <p className="text-sm font-medium text-gray-500">Preparing your premium invoice...</p>
+                    </div>
+                  ) : latestInvoiceData ? (
+                    <div
+                      id="pos-invoice-content"
+                      ref={posInvoiceRef}
+                      className="invoice-pdf-content bg-[#fffcf5] rounded-2xl border border-[#e6d5b8] p-6 shadow-xl relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-white"
+                    >
+                      {/* Premium Accent Corner */}
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[#b89146]/5 -mr-16 -mt-16 rounded-full blur-2xl print:hidden"></div>
+
+                      {/* Invoice Header */}
+                      <div className="flex justify-between items-start mb-8 pb-6 border-b border-[#e6d5b8]/50 relative z-10">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-8 w-1.5 bg-[#b89146] rounded-full"></div>
+                            <h3 className="text-3xl font-black text-[#111111] tracking-tight">INVOICE</h3>
+                          </div>
+                          <p className="text-sm text-[#b89146] font-bold tracking-wider">{latestInvoiceData.invoiceNumber}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Order ID:</p>
+                            <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5">{latestInvoiceData.orderId}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-4">
+                            <CheckCircle2 className="h-3 w-3" />
+                            {latestInvoiceData.paymentStatus === 'Paid' || latestInvoiceData.paymentStatus === 'Completed' ? 'Payment Success' : latestInvoiceData.paymentStatus}
+                          </div>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Date</p>
+                          <p className="text-sm font-bold text-[#111111]">
+                            {new Date(latestInvoiceData.createdAt || Date.now()).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'long',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Customer Info */}
+                      <div className="grid grid-cols-2 gap-8 mb-8 relative z-10">
+                        <div className="space-y-3">
+                          <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Billed To</p>
+                          <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30">
+                            <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.customerName}</p>
+                            {latestInvoiceData.customerEmail && (
+                              <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1.5 italic">
+                                {latestInvoiceData.customerEmail}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right space-y-3">
+                          <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Payment Method</p>
+                          <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30 inline-block min-w-[140px]">
+                            <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.paymentMethod}</p>
+                            <p className="text-[10px] text-emerald-600 mt-1 font-bold uppercase tracking-tight">Verified Transaction</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Items Table */}
+                      <div className="mb-8 overflow-hidden rounded-2xl border border-[#e6d5b8]/50 bg-white/40 backdrop-blur-sm relative z-10">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-[#b89146]/5 text-[#b89146]">
+                              <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest">Item Description</th>
+                              <th className="px-5 py-3 text-center text-[10px] font-black uppercase tracking-widest">Qty</th>
+                              <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Price</th>
+                              <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#e6d5b8]/20">
+                            {latestInvoiceData.items?.map((item: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-white/40 transition-colors">
+                                <td className="px-5 py-4 font-bold text-[#111111]">{item.name}</td>
+                                <td className="px-5 py-4 text-center text-gray-600 font-medium">{item.quantity}</td>
+                                <td className="px-5 py-4 text-right text-gray-600 font-medium">{formatINR(item.price)}</td>
+                                <td className="px-5 py-4 text-right font-bold text-[#111111]">{formatINR(item.subtotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Totals Section */}
+                      <div className="flex justify-end relative z-10">
+                        <div className="w-full max-w-[240px] space-y-3 p-4 bg-[#b89146]/5 rounded-2xl border border-[#e6d5b8]/30">
+                          <div className="flex justify-between text-xs">
+                            <span className="font-bold text-gray-500 uppercase tracking-tighter">Subtotal</span>
+                            <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.subtotal)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="font-bold text-gray-500 uppercase tracking-tighter">GST / Tax (0%)</span>
+                            <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.tax || 0)}</span>
+                          </div>
+                          <div className="pt-3 border-t border-[#b89146]/20 flex justify-between items-center">
+                            <span className="text-[10px] font-black text-[#b89146] uppercase tracking-widest">Grand Total</span>
+                            <span className="text-xl font-black text-[#111111] drop-shadow-sm">{formatINR(latestInvoiceData.totalAmount)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Note */}
+                      <div className="mt-8 text-center">
+                        <p className="text-[10px] text-gray-400 font-medium italic">Thank you for your business. We hope to see you again soon!</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 bg-[#fffcf5] rounded-2xl border border-dashed border-[#e6d5b8]">
+                      <AlertCircle className="h-8 w-8 text-[#b89146] mx-auto mb-3 opacity-50" />
+                      <p className="text-sm font-medium text-gray-500">Could not retrieve invoice details.</p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col gap-3 pt-2 print:hidden">
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={isDownloading}
+                        className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
+                        onClick={handleDownloadPDF}
+                      >
+                        {isDownloading ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4 shrink-0" />
+                        )}
+                        {isDownloading ? 'Downloading...' : 'Download PDF'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
+                        onClick={() => window.print()}
+                      >
+                        <Printer className="h-4 w-4 shrink-0" />
+                        Print
+                      </Button>
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={emailSending}
+                        className="h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
+                        onClick={handleSendInvoiceEmail}
                       >
                         {emailSending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
                         ) : (
-                          <Mail className="h-4 w-4" />
+                          <Mail className="h-4 w-4 shrink-0" />
                         )}
-                        {emailSending ? 'Sending…' : 'Send Invoice'}
+                        {emailSending ? 'Sending…' : 'Email'}
                       </Button>
                     </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <>
-          <div className="rounded-xl border border-black/10 bg-[#f7f6f2]/80 px-4 py-3">
-            <div className="flex items-center justify-between text-sm text-gray-600">
-              <span>Order total</span>
-              <span className="text-lg font-bold text-[#111111]">{formatINR(calculateTotal())}</span>
-            </div>
-          </div>
-
-          <div className="space-y-1.5 rounded-xl border border-dashed border-black/15 bg-white/70 px-4 py-3">
-            <Label htmlFor="pos-customer-email" className="text-sm text-[#111111]">
-              Registered customer email <span className="font-normal text-gray-500">(optional)</span>
-            </Label>
-            <Input
-              id="pos-customer-email"
-              type="email"
-              autoComplete="email"
-              placeholder="customer@example.com"
-              value={posCustomerEmail}
-              onChange={e => setPosCustomerEmail(e.target.value)}
-              disabled={orderPlacing}
-              className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-            />
-            <p className="text-[11px] text-gray-500 leading-relaxed">
-              If the buyer has a store account, enter their email so this sale counts in the admin customer directory. Leave
-              blank for anonymous walk-in sales.
-            </p>
-          </div>
-
-          {modalStep === 'cod-shipping' || modalStep === 'card-shipping' ? (
-            <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Payment method:{' '}
-                <span className="font-semibold text-[#111111]">
-                  {modalStep === 'cod-shipping' ? 'Cash on Delivery (COD)' : 'Card Payment'}
-                </span>
-              </p>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-cod-full-name" className="text-sm text-[#111111]">
-                  Full name
-                </Label>
-                <Input
-                  id="pos-cod-full-name"
-                  autoComplete="name"
-                  placeholder="Customer name"
-                  value={codFullName}
-                  onChange={e => setCodFullName(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(shippingFieldErrors.fullName)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {shippingFieldErrors.fullName ? (
-                  <p className="text-xs font-medium text-red-600">{shippingFieldErrors.fullName}</p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-cod-phone" className="text-sm text-[#111111]">
-                  Phone
-                </Label>
-                <Input
-                  id="pos-cod-phone"
-                  type="tel"
-                  autoComplete="tel"
-                  placeholder="Mobile number"
-                  value={codPhone}
-                  onChange={e => setCodPhone(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(shippingFieldErrors.phone)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {shippingFieldErrors.phone ? (
-                  <p className="text-xs font-medium text-red-600">{shippingFieldErrors.phone}</p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-cod-email" className="text-sm text-[#111111]">
-                  Customer email <span className="font-normal text-gray-500">(optional)</span>
-                </Label>
-                <Input
-                  id="pos-cod-email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Store account email — links this sale in Admin › Customers"
-                  value={codEmail}
-                  onChange={e => setCodEmail(e.target.value)}
-                  disabled={orderPlacing}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                <p className="text-[11px] text-gray-500 leading-relaxed">
-                  If the buyer has a website account, enter the same email as their login so POS orders count with their online orders.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-cod-addr1" className="text-sm text-[#111111]">
-                  Address line 1
-                </Label>
-                <Input
-                  id="pos-cod-addr1"
-                  autoComplete="address-line1"
-                  placeholder="Street, building, unit"
-                  value={codAddressLine1}
-                  onChange={e => setCodAddressLine1(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(shippingFieldErrors.addressLine1)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {shippingFieldErrors.addressLine1 ? (
-                  <p className="text-xs font-medium text-red-600">{shippingFieldErrors.addressLine1}</p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-cod-addr2" className="text-sm text-[#111111]">
-                  Address line 2 <span className="font-normal text-gray-500">(optional)</span>
-                </Label>
-                <Input
-                  id="pos-cod-addr2"
-                  autoComplete="address-line2"
-                  placeholder="Apt, suite, etc."
-                  value={codAddressLine2}
-                  onChange={e => setCodAddressLine2(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(shippingFieldErrors.addressLine2)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {shippingFieldErrors.addressLine2 ? (
-                  <p className="text-xs font-medium text-red-600">{shippingFieldErrors.addressLine2}</p>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-cod-city" className="text-sm text-[#111111]">
-                    City
-                  </Label>
-                  <Input
-                    id="pos-cod-city"
-                    autoComplete="address-level2"
-                    placeholder="City"
-                    value={codCity}
-                    onChange={e => setCodCity(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(shippingFieldErrors.city)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {shippingFieldErrors.city ? (
-                    <p className="text-xs font-medium text-red-600">{shippingFieldErrors.city}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-cod-state" className="text-sm text-[#111111]">
-                    State / region
-                  </Label>
-                  <Input
-                    id="pos-cod-state"
-                    autoComplete="address-level1"
-                    placeholder="State"
-                    value={codState}
-                    onChange={e => setCodState(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(shippingFieldErrors.state)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {shippingFieldErrors.state ? (
-                    <p className="text-xs font-medium text-red-600">{shippingFieldErrors.state}</p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-cod-postal" className="text-sm text-[#111111]">
-                    Postal code
-                  </Label>
-                  <Input
-                    id="pos-cod-postal"
-                    autoComplete="postal-code"
-                    placeholder="ZIP / postal"
-                    value={codPostalCode}
-                    onChange={e => setCodPostalCode(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(shippingFieldErrors.postalCode)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {shippingFieldErrors.postalCode ? (
-                    <p className="text-xs font-medium text-red-600">{shippingFieldErrors.postalCode}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-cod-country" className="text-sm text-[#111111]">
-                    Country
-                  </Label>
-                  <Input
-                    id="pos-cod-country"
-                    autoComplete="country-name"
-                    placeholder="Country"
-                    value={codCountry}
-                    onChange={e => setCodCountry(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(shippingFieldErrors.country)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {shippingFieldErrors.country ? (
-                    <p className="text-xs font-medium text-red-600">{shippingFieldErrors.country}</p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : modalStep === 'card-payment' ? (
-            <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Card details are validated here only. Only the last four digits and name are stored with the order.
-              </p>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-card-name" className="text-sm text-[#111111]">
-                  Cardholder name
-                </Label>
-                <Input
-                  id="pos-card-name"
-                  autoComplete="cc-name"
-                  placeholder="Name on card"
-                  value={cardholderName}
-                  onChange={e => setCardholderName(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(paymentFieldErrors.cardholderName)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {paymentFieldErrors.cardholderName ? (
-                  <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cardholderName}</p>
-                ) : null}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="pos-card-number" className="text-sm text-[#111111]">
-                  Card number
-                </Label>
-                <Input
-                  id="pos-card-number"
-                  inputMode="numeric"
-                  autoComplete="cc-number"
-                  placeholder="•••• •••• •••• ••••"
-                  value={cardNumber}
-                  onChange={e => setCardNumber(e.target.value)}
-                  disabled={orderPlacing}
-                  aria-invalid={Boolean(paymentFieldErrors.cardNumber)}
-                  className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                />
-                {paymentFieldErrors.cardNumber ? (
-                  <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cardNumber}</p>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-card-expiry" className="text-sm text-[#111111]">
-                    Expiry date
-                  </Label>
-                  <Input
-                    id="pos-card-expiry"
-                    inputMode="numeric"
-                    autoComplete="cc-exp"
-                    placeholder="MM/YY"
-                    value={expiryDate}
-                    onChange={e => setExpiryDate(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(paymentFieldErrors.expiryDate)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {paymentFieldErrors.expiryDate ? (
-                    <p className="text-xs font-medium text-red-600">{paymentFieldErrors.expiryDate}</p>
-                  ) : null}
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="pos-card-cvv" className="text-sm text-[#111111]">
-                    CVV
-                  </Label>
-                  <Input
-                    id="pos-card-cvv"
-                    type="password"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    placeholder="•••"
-                    value={cvv}
-                    onChange={e => setCvv(e.target.value)}
-                    disabled={orderPlacing}
-                    aria-invalid={Boolean(paymentFieldErrors.cvv)}
-                    className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
-                  />
-                  {paymentFieldErrors.cvv ? (
-                    <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cvv}</p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="grid gap-2" role="radiogroup" aria-label="Payment method">
-                {POS_PAYMENT_OPTIONS.map(({ value, label, icon: Icon }) => {
-                  const selected = selectedPaymentMethod === value;
-                  return (
-                    <button
-                      key={value}
+                    <Button
                       type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      disabled={orderPlacing}
+                      className="w-full h-12 rounded-xl bg-[#111111] hover:bg-black text-white font-bold shadow-lg shadow-black/10 transition-all active:scale-[0.98]"
                       onClick={() => {
-                        setPaymentValidationMessage(null);
-                        setPaymentFieldErrors({});
-                        setShippingFieldErrors({});
-                        if (value === 'cod') {
-                          setSelectedPaymentMethod('cod');
-                          setModalStep('cod-shipping');
-                          setSwipePaymentStatus('idle');
-                        } else if (value === 'card') {
-                          setSelectedPaymentMethod('card');
-                          setModalStep('card-shipping');
-                          setSwipePaymentStatus('idle');
-                        } else {
-                          setSelectedPaymentMethod(value);
-                          setModalStep('payment');
-                          if (value === 'swipe') {
-                            setSwipePaymentStatus('waiting');
-                          } else {
-                            setSwipePaymentStatus('idle');
-                          }
-                        }
+                        handlePaymentDialogOpenChange(false);
+                        setLatestOrderData(null);
+                        setLatestInvoiceData(null);
                       }}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
-                        selected
-                          ? 'border-[#111111] bg-gray-50 ring-2 ring-[#111111]/15'
-                          : 'border-black/10 bg-white hover:border-black/20 hover:bg-gray-50/80'
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
-                      <span
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
-                          selected ? 'border-[#111111]/20 bg-white text-[#111111]' : 'border-black/10 bg-gray-50 text-gray-600'
-                        }`}
-                      >
-                        <Icon className="h-5 w-5" aria-hidden />
-                      </span>
-                      <span className="font-semibold text-[#111111] text-sm">{label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                      Continue Shopping
+                    </Button>
+                  </div>
 
-              {selectedPaymentMethod === 'upi' ? (
-                <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
-                  <p className="text-xs text-gray-500 leading-relaxed">
-                    Enter the customer&apos;s UPI ID (e.g. name@upi).
-                  </p>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="pos-upi-id" className="text-sm text-[#111111]">
-                      UPI ID
+                  {/* Email Input Modal — shown when no customer email is available */}
+                  {emailModalOpen && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                      <div className="relative w-full max-w-sm mx-4 bg-white rounded-2xl border border-[#e6d5b8] shadow-2xl p-6 animate-in zoom-in-95 slide-in-from-bottom-2 duration-300">
+                        <button
+                          type="button"
+                          className="absolute right-3 top-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                          onClick={() => {
+                            setEmailModalOpen(false);
+                            setEmailInputValue('');
+                            setEmailInputError('');
+                          }}
+                          aria-label="Close"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                        <div className="flex items-center gap-2.5 mb-4">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#b89146]/10 text-[#b89146]">
+                            <Mail className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-bold text-[#111111]">Send Invoice via Email</h4>
+                            <p className="text-xs text-gray-500">Enter the customer's email address</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Input
+                            type="email"
+                            autoFocus
+                            placeholder="customer@example.com"
+                            value={emailInputValue}
+                            onChange={(e) => {
+                              setEmailInputValue(e.target.value);
+                              if (emailInputError) setEmailInputError('');
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !emailSending) {
+                                e.preventDefault();
+                                const v = emailInputValue.trim();
+                                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+                                  setEmailInputError('Please enter a valid email address.');
+                                } else {
+                                  setEmailInputError('');
+                                  void sendInvoiceToEmail(v);
+                                }
+                              }
+                            }}
+                            disabled={emailSending}
+                            aria-invalid={Boolean(emailInputError)}
+                            className="h-11 rounded-xl border-black/15 bg-[#f7f6f2]/50 text-sm"
+                          />
+                          {emailInputError && (
+                            <p className="text-xs font-medium text-red-600">{emailInputError}</p>
+                          )}
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="flex-1 h-10 rounded-xl border-black/15 font-semibold text-sm"
+                            disabled={emailSending}
+                            onClick={() => {
+                              setEmailModalOpen(false);
+                              setEmailInputValue('');
+                              setEmailInputError('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            className="flex-1 h-10 rounded-xl bg-[#b89146] hover:bg-[#a07d3a] text-white font-semibold text-sm gap-2 disabled:opacity-60"
+                            disabled={emailSending || !emailInputValue.trim()}
+                            onClick={() => {
+                              const v = emailInputValue.trim();
+                              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+                                setEmailInputError('Please enter a valid email address.');
+                              } else {
+                                setEmailInputError('');
+                                void sendInvoiceToEmail(v);
+                              }
+                            }}
+                          >
+                            {emailSending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Mail className="h-4 w-4" />
+                            )}
+                            {emailSending ? 'Sending…' : 'Send Invoice'}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-black/10 bg-[#f7f6f2]/80 px-4 py-3">
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Order total</span>
+                      <span className="text-lg font-bold text-[#111111]">{formatINR(calculateTotal())}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 rounded-xl border border-dashed border-black/15 bg-white/70 px-4 py-3">
+                    <Label htmlFor="pos-customer-email" className="text-sm text-[#111111]">
+                      Registered customer email <span className="font-normal text-gray-500">(optional)</span>
                     </Label>
                     <Input
-                      id="pos-upi-id"
-                      autoComplete="off"
-                      placeholder="customer@upi"
-                      value={upiId}
-                      onChange={e => setUpiId(e.target.value)}
+                      id="pos-customer-email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="customer@example.com"
+                      value={posCustomerEmail}
+                      onChange={e => setPosCustomerEmail(e.target.value)}
                       disabled={orderPlacing}
-                      aria-invalid={Boolean(paymentFieldErrors.upiId)}
                       className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
                     />
-                    {paymentFieldErrors.upiId ? (
-                      <p className="text-xs font-medium text-red-600">{paymentFieldErrors.upiId}</p>
-                    ) : null}
+                    <p className="text-[11px] text-gray-500 leading-relaxed">
+                      If the buyer has a store account, enter their email so this sale counts in the admin customer directory. Leave
+                      blank for anonymous walk-in sales.
+                    </p>
                   </div>
-                </div>
-              ) : null}
 
-{selectedPaymentMethod === 'swipe' ? (
-                 <div className="space-y-4 rounded-xl border border-black/10 bg-white p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2">
-                   <div className="flex items-center justify-between">
-                     <p className="text-sm font-bold text-[#111111] flex items-center gap-2">
-                       <CreditCard className="w-5 h-5 text-blue-600" />
-                       Cash Payment
-                     </p>
-                     <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
-                       {swipePaymentStatus === 'waiting' && (
-                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-                           <span className="relative flex h-2 w-2">
-                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                             <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
-                           </span>
-                           Waiting for Payment
-                         </span>
-                       )}
-                       {swipePaymentStatus === 'processing' && (
-                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                           <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                           Processing...
-                         </span>
-                       )}
-                       {swipePaymentStatus === 'success' && (
-                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
-                           <CheckCircle2 className="h-2.5 w-2.5" />
-                           Payment Successful
-                         </span>
-                       )}
-                       {swipePaymentStatus === 'failed' && (
-                         <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">
-                           <AlertCircle className="h-2.5 w-2.5" />
-                           Payment Failed
-                         </span>
-                       )}
-                     </div>
-                   </div>
-                   <p className="text-xs text-gray-600 leading-relaxed">
-                     Cash payment received. Click &quot;Confirm Payment&quot; to finalize the order.
-                   </p>
-               
-                   {swipePaymentStatus === 'success' && (
-                     <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50/50 border border-emerald-100 p-2.5 text-emerald-800 text-xs animate-in zoom-in-95 duration-300">
-                       <CheckCircle2 className="h-4 w-4 shrink-0" />
-                       <p>Cash payment verified. Order finalized.</p>
-                     </div>
-                   )}
-                 </div>
-               ) : null}
-            </>
-          )}
+                  {modalStep === 'cod-shipping' || modalStep === 'card-shipping' ? (
+                    <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        Payment method:{' '}
+                        <span className="font-semibold text-[#111111]">
+                          {modalStep === 'cod-shipping' ? 'Cash on Delivery (COD)' : 'Card Payment'}
+                        </span>
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-cod-full-name" className="text-sm text-[#111111]">
+                          Full name
+                        </Label>
+                        <Input
+                          id="pos-cod-full-name"
+                          autoComplete="name"
+                          placeholder="Customer name"
+                          value={codFullName}
+                          onChange={e => setCodFullName(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(shippingFieldErrors.fullName)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {shippingFieldErrors.fullName ? (
+                          <p className="text-xs font-medium text-red-600">{shippingFieldErrors.fullName}</p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-cod-phone" className="text-sm text-[#111111]">
+                          Phone
+                        </Label>
+                        <Input
+                          id="pos-cod-phone"
+                          type="tel"
+                          autoComplete="tel"
+                          placeholder="Mobile number"
+                          value={codPhone}
+                          onChange={e => setCodPhone(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(shippingFieldErrors.phone)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {shippingFieldErrors.phone ? (
+                          <p className="text-xs font-medium text-red-600">{shippingFieldErrors.phone}</p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-cod-email" className="text-sm text-[#111111]">
+                          Customer email <span className="font-normal text-gray-500">(optional)</span>
+                        </Label>
+                        <Input
+                          id="pos-cod-email"
+                          type="email"
+                          autoComplete="email"
+                          placeholder="Store account email — links this sale in Admin › Customers"
+                          value={codEmail}
+                          onChange={e => setCodEmail(e.target.value)}
+                          disabled={orderPlacing}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        <p className="text-[11px] text-gray-500 leading-relaxed">
+                          If the buyer has a website account, enter the same email as their login so POS orders count with their online orders.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-cod-addr1" className="text-sm text-[#111111]">
+                          Address line 1
+                        </Label>
+                        <Input
+                          id="pos-cod-addr1"
+                          autoComplete="address-line1"
+                          placeholder="Street, building, unit"
+                          value={codAddressLine1}
+                          onChange={e => setCodAddressLine1(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(shippingFieldErrors.addressLine1)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {shippingFieldErrors.addressLine1 ? (
+                          <p className="text-xs font-medium text-red-600">{shippingFieldErrors.addressLine1}</p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-cod-addr2" className="text-sm text-[#111111]">
+                          Address line 2 <span className="font-normal text-gray-500">(optional)</span>
+                        </Label>
+                        <Input
+                          id="pos-cod-addr2"
+                          autoComplete="address-line2"
+                          placeholder="Apt, suite, etc."
+                          value={codAddressLine2}
+                          onChange={e => setCodAddressLine2(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(shippingFieldErrors.addressLine2)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {shippingFieldErrors.addressLine2 ? (
+                          <p className="text-xs font-medium text-red-600">{shippingFieldErrors.addressLine2}</p>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-cod-city" className="text-sm text-[#111111]">
+                            City
+                          </Label>
+                          <Input
+                            id="pos-cod-city"
+                            autoComplete="address-level2"
+                            placeholder="City"
+                            value={codCity}
+                            onChange={e => setCodCity(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(shippingFieldErrors.city)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {shippingFieldErrors.city ? (
+                            <p className="text-xs font-medium text-red-600">{shippingFieldErrors.city}</p>
+                          ) : null}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-cod-state" className="text-sm text-[#111111]">
+                            State / region
+                          </Label>
+                          <Input
+                            id="pos-cod-state"
+                            autoComplete="address-level1"
+                            placeholder="State"
+                            value={codState}
+                            onChange={e => setCodState(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(shippingFieldErrors.state)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {shippingFieldErrors.state ? (
+                            <p className="text-xs font-medium text-red-600">{shippingFieldErrors.state}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-cod-postal" className="text-sm text-[#111111]">
+                            Postal code
+                          </Label>
+                          <Input
+                            id="pos-cod-postal"
+                            autoComplete="postal-code"
+                            placeholder="ZIP / postal"
+                            value={codPostalCode}
+                            onChange={e => setCodPostalCode(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(shippingFieldErrors.postalCode)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {shippingFieldErrors.postalCode ? (
+                            <p className="text-xs font-medium text-red-600">{shippingFieldErrors.postalCode}</p>
+                          ) : null}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-cod-country" className="text-sm text-[#111111]">
+                            Country
+                          </Label>
+                          <Input
+                            id="pos-cod-country"
+                            autoComplete="country-name"
+                            placeholder="Country"
+                            value={codCountry}
+                            onChange={e => setCodCountry(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(shippingFieldErrors.country)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {shippingFieldErrors.country ? (
+                            <p className="text-xs font-medium text-red-600">{shippingFieldErrors.country}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : modalStep === 'card-payment' ? (
+                    <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        Card details are validated here only. Only the last four digits and name are stored with the order.
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-card-name" className="text-sm text-[#111111]">
+                          Cardholder name
+                        </Label>
+                        <Input
+                          id="pos-card-name"
+                          autoComplete="cc-name"
+                          placeholder="Name on card"
+                          value={cardholderName}
+                          onChange={e => setCardholderName(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(paymentFieldErrors.cardholderName)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {paymentFieldErrors.cardholderName ? (
+                          <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cardholderName}</p>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="pos-card-number" className="text-sm text-[#111111]">
+                          Card number
+                        </Label>
+                        <Input
+                          id="pos-card-number"
+                          inputMode="numeric"
+                          autoComplete="cc-number"
+                          placeholder="•••• •••• •••• ••••"
+                          value={cardNumber}
+                          onChange={e => setCardNumber(e.target.value)}
+                          disabled={orderPlacing}
+                          aria-invalid={Boolean(paymentFieldErrors.cardNumber)}
+                          className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                        />
+                        {paymentFieldErrors.cardNumber ? (
+                          <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cardNumber}</p>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-card-expiry" className="text-sm text-[#111111]">
+                            Expiry date
+                          </Label>
+                          <Input
+                            id="pos-card-expiry"
+                            inputMode="numeric"
+                            autoComplete="cc-exp"
+                            placeholder="MM/YY"
+                            value={expiryDate}
+                            onChange={e => setExpiryDate(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(paymentFieldErrors.expiryDate)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {paymentFieldErrors.expiryDate ? (
+                            <p className="text-xs font-medium text-red-600">{paymentFieldErrors.expiryDate}</p>
+                          ) : null}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label htmlFor="pos-card-cvv" className="text-sm text-[#111111]">
+                            CVV
+                          </Label>
+                          <Input
+                            id="pos-card-cvv"
+                            type="password"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            placeholder="•••"
+                            value={cvv}
+                            onChange={e => setCvv(e.target.value)}
+                            disabled={orderPlacing}
+                            aria-invalid={Boolean(paymentFieldErrors.cvv)}
+                            className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                          />
+                          {paymentFieldErrors.cvv ? (
+                            <p className="text-xs font-medium text-red-600">{paymentFieldErrors.cvv}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid gap-2" role="radiogroup" aria-label="Payment method">
+                        {POS_PAYMENT_OPTIONS.map(({ value, label, icon: Icon }) => {
+                          const selected = selectedPaymentMethod === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              disabled={orderPlacing}
+                              onClick={() => {
+                                setPaymentValidationMessage(null);
+                                setPaymentFieldErrors({});
+                                setShippingFieldErrors({});
+                                if (value === 'cod') {
+                                  setSelectedPaymentMethod('cod');
+                                  setModalStep('cod-shipping');
+                                  setSwipePaymentStatus('idle');
+                                } else if (value === 'card') {
+                                  setSelectedPaymentMethod('card');
+                                  setModalStep('card-shipping');
+                                  setSwipePaymentStatus('idle');
+                                } else {
+                                  setSelectedPaymentMethod(value);
+                                  setModalStep('payment');
+                                  if (value === 'swipe') {
+                                    setSwipePaymentStatus('waiting');
+                                  } else {
+                                    setSwipePaymentStatus('idle');
+                                  }
+                                }
+                              }}
+                              className={`flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all ${selected
+                                ? 'border-[#111111] bg-gray-50 ring-2 ring-[#111111]/15'
+                                : 'border-black/10 bg-white hover:border-black/20 hover:bg-gray-50/80'
+                                } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              <span
+                                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${selected ? 'border-[#111111]/20 bg-white text-[#111111]' : 'border-black/10 bg-gray-50 text-gray-600'
+                                  }`}
+                              >
+                                <Icon className="h-5 w-5" aria-hidden />
+                              </span>
+                              <span className="font-semibold text-[#111111] text-sm">{label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-          {modalStep === 'payment' && paymentValidationMessage ? (
-            <p className="text-sm font-medium text-red-600" role="alert">
-              {paymentValidationMessage}
-            </p>
-          ) : null}
-          </>
-          )}
-          </div>
+                      {selectedPaymentMethod === 'upi' ? (
+                        <div className="space-y-3 rounded-xl border border-black/10 bg-white p-4 shadow-sm">
+                          <p className="text-xs text-gray-500 leading-relaxed">
+                            Enter the customer&apos;s UPI ID (e.g. name@upi).
+                          </p>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="pos-upi-id" className="text-sm text-[#111111]">
+                              UPI ID
+                            </Label>
+                            <Input
+                              id="pos-upi-id"
+                              autoComplete="off"
+                              placeholder="customer@upi"
+                              value={upiId}
+                              onChange={e => setUpiId(e.target.value)}
+                              disabled={orderPlacing}
+                              aria-invalid={Boolean(paymentFieldErrors.upiId)}
+                              className="h-10 rounded-xl border-black/15 bg-[#f7f6f2]/50"
+                            />
+                            {paymentFieldErrors.upiId ? (
+                              <p className="text-xs font-medium text-red-600">{paymentFieldErrors.upiId}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
 
-          {modalStep !== 'invoice' && (
-            <div className="shrink-0 border-t border-black/5 bg-white px-6 py-4 z-10">
-              <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full rounded-xl border-black/15 sm:w-auto"
-                disabled={orderPlacing}
-                onClick={() => {
-                  if (modalStep === 'cod-shipping' || modalStep === 'card-shipping') {
-                    goBackFromShippingStep();
-                  } else if (modalStep === 'card-payment') {
-                    goBackFromCardPaymentStep();
-                  } else {
-                    handlePaymentDialogOpenChange(false);
-                  }
-                }}
-              >
-                Back
-              </Button>
-              <Button
-                type="button"
-                className="w-full rounded-xl bg-[#111111] font-semibold text-white hover:bg-black sm:w-auto"
-                disabled={orderPlacing}
-                onClick={handlePlaceOrder}
-              >
-                {orderPlacing
-                  ? 'Placing order…'
-                  : modalStep === 'card-shipping'
-                    ? 'Continue'
-                    : selectedPaymentMethod === 'swipe'
-                      ? 'Confirm Payment'
-                      : 'Place Order'}
-              </Button>
-              </DialogFooter>
+                      {selectedPaymentMethod === 'swipe' ? (
+                        <div className="space-y-4 rounded-xl border border-black/10 bg-white p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-bold text-[#111111] flex items-center gap-2">
+                              <CreditCard className="w-5 h-5 text-blue-600" />
+                              Cash Payment
+                            </p>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                              {swipePaymentStatus === 'waiting' && (
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                  </span>
+                                  Waiting for Payment
+                                </span>
+                              )}
+                              {swipePaymentStatus === 'processing' && (
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                                  <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                  Processing...
+                                </span>
+                              )}
+                              {swipePaymentStatus === 'success' && (
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                  Payment Successful
+                                </span>
+                              )}
+                              {swipePaymentStatus === 'failed' && (
+                                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">
+                                  <AlertCircle className="h-2.5 w-2.5" />
+                                  Payment Failed
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-600 leading-relaxed">
+                            Cash payment received. Click &quot;Confirm Payment&quot; to finalize the order.
+                          </p>
+
+                          {swipePaymentStatus === 'success' && (
+                            <div className="mt-2 flex items-center gap-2 rounded-lg bg-emerald-50/50 border border-emerald-100 p-2.5 text-emerald-800 text-xs animate-in zoom-in-95 duration-300">
+                              <CheckCircle2 className="h-4 w-4 shrink-0" />
+                              <p>Cash payment verified. Order finalized.</p>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+
+                  {modalStep === 'payment' && paymentValidationMessage ? (
+                    <p className="text-sm font-medium text-red-600" role="alert">
+                      {paymentValidationMessage}
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+
+            {modalStep !== 'invoice' && (
+              <div className="shrink-0 border-t border-black/5 bg-white px-6 py-4 z-10">
+                <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end sm:gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-xl border-black/15 sm:w-auto"
+                    disabled={orderPlacing}
+                    onClick={() => {
+                      if (modalStep === 'cod-shipping' || modalStep === 'card-shipping') {
+                        goBackFromShippingStep();
+                      } else if (modalStep === 'card-payment') {
+                        goBackFromCardPaymentStep();
+                      } else {
+                        handlePaymentDialogOpenChange(false);
+                      }
+                    }}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    className="w-full rounded-xl bg-[#111111] font-semibold text-white hover:bg-black sm:w-auto"
+                    disabled={orderPlacing}
+                    onClick={handlePlaceOrder}
+                  >
+                    {orderPlacing
+                      ? 'Placing order…'
+                      : modalStep === 'card-shipping'
+                        ? 'Continue'
+                        : selectedPaymentMethod === 'swipe'
+                          ? 'Confirm Payment'
+                          : 'Place Order'}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {showAddedToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-[#111111] text-white px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-2 transition-all duration-300">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          Added to cart
+        </div>
+      )}
     </>
   );
 }
