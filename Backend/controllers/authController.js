@@ -499,8 +499,8 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour
     await user.save();
 
-    // Build reset link using FRONTEND_URL from env (never hardcoded localhost in production)
-    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+    // Build reset link using FRONTEND_URL or CLIENT_URL from env (never hardcoded localhost in production)
+    const frontendUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
     const resetLink = `${frontendUrl}/reset-password/${rawToken}`;
     console.log(`[ForgotPassword] FRONTEND_URL resolved to: ${frontendUrl}`);
 
@@ -515,7 +515,19 @@ const forgotPassword = async (req, res) => {
         text: `Reset your RetailVerse password by visiting this link: ${resetLink}\n\nThis link expires in 1 hour. If you did not request this, please ignore this email.`,
       });
     } catch (emailErr) {
-      console.error("[ForgotPassword] Email send failed:", emailErr);
+      console.error("[ForgotPassword] Email send failed:", emailErr.message);
+      if (emailErr.code === "EAUTH" || emailErr.responseCode === 535 || (emailErr.message && (emailErr.message.toLowerCase().includes("authentication") || emailErr.message.toLowerCase().includes("credentials") || emailErr.message.toLowerCase().includes("invalid login")))) {
+        return res.status(500).json({
+          success: false,
+          message: "Email credentials are invalid. Use Gmail App Password.",
+        });
+      }
+      if (emailErr.code === "ETIMEDOUT" || emailErr.code === "ECONNREFUSED" || emailErr.code === "ENETUNREACH" || emailErr.code === "ESOCKET" || emailErr.code === "ECONNECTION") {
+        return res.status(500).json({
+          success: false,
+          message: "SMTP connection failed. Possible network or SMTP port issue.",
+        });
+      }
       return res.status(500).json({
         success: false,
         message: "Failed to send reset email. Please try again later.",
@@ -527,7 +539,12 @@ const forgotPassword = async (req, res) => {
       message: "If an account exists with this email, a password reset link has been sent.",
     });
   } catch (error) {
-    console.error("[ForgotPassword] Error:", error.message);
+    console.error("Forgot password error:", error);
+    console.log("[ForgotPassword] Env check — FRONTEND_URL exists:", !!process.env.FRONTEND_URL);
+    console.log("[ForgotPassword] Env check — CLIENT_URL exists:", !!process.env.CLIENT_URL);
+    console.log("[ForgotPassword] Env check — SMTP_HOST exists:", !!process.env.SMTP_HOST);
+    console.log("[ForgotPassword] Env check — SMTP_USER exists:", !!(process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER));
+    console.log("[ForgotPassword] Env check — SMTP_PASS exists:", !!(process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS));
     return res.status(500).json({ success: false, message: "Server error. Please try again later." });
   }
 };

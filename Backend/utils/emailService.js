@@ -30,10 +30,10 @@ let _transporterVerified = false;
  */
 function _smtpConfigHash() {
   return [
-    process.env.SMTP_HOST,
-    process.env.SMTP_PORT,
-    process.env.SMTP_USER,
-    process.env.SMTP_PASS,
+    process.env.SMTP_HOST || "smtp.gmail.com",
+    process.env.SMTP_PORT || "587",
+    process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER,
+    process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS,
     process.env.SMTP_FROM || process.env.EMAIL_FROM,
   ].join("|");
 }
@@ -47,41 +47,34 @@ function getTransporter() {
   const currentHash = _smtpConfigHash();
   if (_transporter && _transporterConfigHash === currentHash) return _transporter;
 
-  const host = process.env.SMTP_HOST;
-  const rawPort = process.env.SMTP_PORT;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const rawPort = process.env.SMTP_PORT || "587";
+  const user = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER;
+  const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS;
   const from = process.env.SMTP_FROM || process.env.EMAIL_FROM;
 
-  // Task 9 & 5: Diagnostic log — NEVER log SMTP_PASS
   console.log("=== [emailService] SMTP Config Check ===");
-  console.log(`SMTP_HOST: ${host || "(missing)"}`);
-  console.log(`SMTP_PORT: ${rawPort || "(missing)"}`);
+  console.log(`SMTP_HOST: ${host}`);
+  console.log(`SMTP_PORT: ${rawPort}`);
   console.log(`SMTP_USER exists: ${!!user}`);
   console.log(`SMTP_PASS exists: ${!!pass}`);
   console.log(`SMTP_FROM exists: ${!!from}`);
+  console.log(`EMAIL_USER exists: ${!!process.env.EMAIL_USER}`);
+  console.log(`MAIL_USER exists: ${!!process.env.MAIL_USER}`);
   console.log("========================================");
 
-  // Task 10: Check missing SMTP environment variables
-  if (!host || !rawPort || !user || !pass || !from) {
+  if (!user || !pass || !from) {
     const missing = [];
-    if (!host) missing.push("SMTP_HOST");
-    if (!rawPort) missing.push("SMTP_PORT");
-    if (!user) missing.push("SMTP_USER");
-    if (!pass) missing.push("SMTP_PASS");
-    if (!from) missing.push("SMTP_FROM");
+    if (!user) missing.push("SMTP_USER / EMAIL_USER / MAIL_USER");
+    if (!pass) missing.push("SMTP_PASS / EMAIL_PASS / MAIL_PASS");
+    if (!from) missing.push("SMTP_FROM / EMAIL_FROM");
     
     const err = new Error(`SMTP configuration missing: ${missing.join(", ")}`);
     err.code = "EMISSINGCONFIG";
     throw err;
   }
 
-  // Task 5: Convert SMTP_PORT to Number
   const port = Number(rawPort);
-
-  // Task 6: Auto-derive secure mode from port number:
-  //   465 → SSL (secure: true)
-  //   587 → STARTTLS (secure: false)
   const secure = port === 465;
 
   _transporter = nodemailer.createTransport({
@@ -144,10 +137,10 @@ async function verifyTransporter() {
 async function sendEmail({ to, subject, html, text }) {
   // Task 9: Safe production logs before sending email — NEVER log SMTP_PASS
   console.log("=== [emailService] PRE-SEND SMTP DIAGNOSTICS ===");
-  console.log(`SMTP_HOST: ${process.env.SMTP_HOST || "(missing)"}`);
-  console.log(`SMTP_PORT: ${process.env.SMTP_PORT || "(missing)"}`);
-  console.log(`SMTP_USER exists: ${!!process.env.SMTP_USER}`);
-  console.log(`SMTP_PASS exists: ${!!process.env.SMTP_PASS}`);
+  console.log(`SMTP_HOST: ${process.env.SMTP_HOST || "smtp.gmail.com (default)"}`);
+  console.log(`SMTP_PORT: ${process.env.SMTP_PORT || "587 (default)"}`);
+  console.log(`SMTP_USER exists: ${!!(process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER)}`);
+  console.log(`SMTP_PASS exists: ${!!(process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS)}`);
   console.log(`SMTP_FROM exists: ${!!process.env.SMTP_FROM}`);
   console.log(`Recipient email exists: ${!!to}`);
   console.log("=================================================");
@@ -184,7 +177,7 @@ async function sendEmail({ to, subject, html, text }) {
     throw err;
   }
 
-  const fromAddr = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER;
+  const fromAddr = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER;
 
   try {
     const info = await transporter.sendMail({
