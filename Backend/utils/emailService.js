@@ -34,7 +34,7 @@ function _smtpConfigHash() {
     process.env.SMTP_PORT,
     process.env.SMTP_USER,
     process.env.SMTP_PASS,
-    process.env.SMTP_FROM,
+    process.env.SMTP_FROM || process.env.EMAIL_FROM,
   ].join("|");
 }
 
@@ -51,7 +51,7 @@ function getTransporter() {
   const rawPort = process.env.SMTP_PORT;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM;
+  const from = process.env.SMTP_FROM || process.env.EMAIL_FROM;
 
   // Task 9 & 5: Diagnostic log — NEVER log SMTP_PASS
   console.log("=== [emailService] SMTP Config Check ===");
@@ -184,7 +184,7 @@ async function sendEmail({ to, subject, html, text }) {
     throw err;
   }
 
-  const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromAddr = process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER;
 
   try {
     const info = await transporter.sendMail({
@@ -360,4 +360,65 @@ function buildInvoiceEmailHtml(invoice) {
 </html>`;
 }
 
-module.exports = { sendEmail, buildInvoiceEmailHtml, getTransporter, verifyTransporter };
+/**
+ * Build a clean HTML reset password email.
+ * @param {string} name - Recipient's name
+ * @param {string} resetLink - Full reset URL with token
+ * @returns {string} HTML string
+ */
+function buildResetPasswordEmailHtml(name, resetLink) {
+  const displayName = name || "User";
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="padding:40px 32px 32px 32px;text-align:center;background:linear-gradient(135deg,#2563eb,#1d4ed8);">
+              <h1 style="margin:0;color:#ffffff;font-size:24px;font-weight:700;">Reset Your Password</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px 32px 24px 32px;">
+              <p style="margin:0 0 16px 0;font-size:16px;color:#333;line-height:1.6;">Hello ${displayName},</p>
+              <p style="margin:0 0 16px 0;font-size:14px;color:#555;line-height:1.6;">
+                We received a request to reset the password for your account. Click the button below to set a new password.
+              </p>
+              <p style="margin:0 0 24px 0;font-size:14px;color:#555;line-height:1.6;">
+                This link will expire in <strong>1 hour</strong>. If you did not request a password reset, please ignore this email.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  <td align="center" style="background-color:#2563eb;border-radius:8px;">
+                    <a href="${resetLink}" target="_blank" style="display:inline-block;padding:14px 36px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">Reset Password</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 0 0;font-size:12px;color:#999;line-height:1.6;word-break:break-all;">
+                Or copy this link into your browser:<br>
+                <a href="${resetLink}" style="color:#2563eb;">${resetLink}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px 32px;text-align:center;border-top:1px solid #e5e7eb;background-color:#f9fafb;">
+              <p style="margin:0;font-size:12px;color:#999;">RetailVerse &mdash; All-in-one retail management platform</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+module.exports = { sendEmail, buildInvoiceEmailHtml, buildResetPasswordEmailHtml, getTransporter, verifyTransporter };

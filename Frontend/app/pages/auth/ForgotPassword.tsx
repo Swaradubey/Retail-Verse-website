@@ -1,21 +1,27 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { Mail, ArrowLeft } from 'lucide-react';
+import { Mail, ArrowLeft, AlertCircle } from 'lucide-react';
+import { authApi } from '../../api/auth';
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setError('');
 
-    // Mock an API call
-    setTimeout(() => {
+    try {
+      await authApi.forgotPassword(email);
       setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || 'Something went wrong. Please try again.');
+    } finally {
       setIsSubmitting(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -37,7 +43,7 @@ export function ForgotPassword() {
                 <h3 className="text-sm font-medium text-green-800">Email sent</h3>
                 <div className="mt-2 text-sm text-green-700">
                   <p>
-                    We've sent an email to <strong>{email}</strong> with instructions to reset your password.
+                    If an account exists with this email, a password reset link has been sent.
                   </p>
                 </div>
                 <div className="mt-6">
@@ -54,6 +60,12 @@ export function ForgotPassword() {
           </div>
         ) : (
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="rounded-md bg-red-50 p-4 border border-red-200 flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address

@@ -14,6 +14,7 @@ const {
 } = require("../utils/authConstants");
 const { validationResult } = require("express-validator");
 const crypto = require("crypto");
+const { sendEmail, buildResetPasswordEmailHtml } = require("../utils/emailService");
 
 /**
  * Generates a simple SVG CAPTCHA
@@ -463,10 +464,118 @@ const getCaptcha = async (req, res) => {
   });
 };
 
+// @desc    Forgot password — send reset link via email (works for ALL roles)
+// @route   POST /api/auth/forgot-password
+// @access  Public
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: "Please provide an email address" });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Search for user in the User model (covers all roles: super_admin, admin, user, employee, etc.)
+    const user = await User.findByNormalizedEmail(normalizedEmail);
+
+    // Always return the same generic message — do NOT reveal whether the email exists
+    if (!user) {
+      return res.json({
+        success: true,
+        message: "If an account exists with this email, a password reset link has been sent.",
+      });
+    }
+
+    // Generate secure reset token using crypto
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    // Save hashed token + expiry (1 hour) on the matched account
+    user.resetPasswordToken = hashedToken;
+    user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour
+    await user.save();
+
+    // Build reset link using FRONTEND_URL from env (never hardcoded localhost in production)
+    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+    const resetLink = `${frontendUrl}/reset-password/${rawToken}`;
+
+    // Send the email using existing nodemailer service
+    const html = buildResetPasswordEmailHtml(user.name || "User", resetLink);
+
+    try {
+      await sendEmail({
+        to: normalizedEmail,
+        subject: "Password Reset Request - RetailVerse",
+        html,
+        text: `Reset your RetailVerse password by visiting this link: ${resetLink}\n\nThis link expires in 1 hour. If you did not request this, please ignore this email.`,
+      });
+    } catch (emailErr) {
+      console.error("[ForgotPassword] Email send failed:", emailErr.message);
+      // Do NOT reveal this to the client (security)
+    }
+
+    return res.json({
+      success: true,
+      message: "If an account exists with this email, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("[ForgotPassword] Error:", error.message);
+    return res.status(500).json({ success: false, message: "Server error. Please try again later." });
+  }
+};
+
+// @desc    Reset password using token from email link
+// @route   POST /api/auth/reset-password/:token
+// @access  Public
+const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: "Password is required" });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ success: false, message: "Password must be at least 8 characters long" });
+    }
+
+    // Hash the received raw token to compare with stored hash
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    // Find user where token matches and hasn't expired
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: "Invalid or expired reset token. Please request a new password reset." });
+    }
+
+    // Update password — the User model's pre-save hook will hash it via bcrypt
+    user.password = password;
+    // Clear reset fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    return res.json({
+      success: true,
+      message: "Password has been reset successfully. You can now sign in with your new password.",
+    });
+  } catch (error) {
+    console.error("[ResetPassword] Error:", error.message);
+    return res.status(500).json({ success: false, message: "Server error. Please try again later." });
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
   loginSuperAdmin,
   getUserProfile,
   getCaptcha,
+  forgotPassword,
+  resetPassword,
 };

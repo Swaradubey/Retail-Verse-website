@@ -23,6 +23,20 @@ NODE_ENV=production
 MONGO_URI=your_mongodb_atlas_uri
 JWT_SECRET=your_secure_random_jwt_secret
 
+# ─── Forgot Password / Email (Nodemailer) ─────────────────────────────────
+# FRONTEND_URL is used in password reset email links — must be the EXACT
+# production frontend domain (no trailing slash). Example:
+FRONTEND_URL=https://your-frontend-url.vercel.app
+
+# SMTP (Nodemailer) — required for forgot-password and invoice emails
+SMTP_HOST=smtp.gmail.com              # or smtp-relay.brevo.com, etc.
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-email@gmail.com
+SMTP_PASS=your-app-password           # Gmail App Password, Brevo SMTP key, etc.
+SMTP_FROM=your-smtp-email@gmail.com   # verified sender address
+# EMAIL_FROM=your-smtp-email@gmail.com  # alternative alias for SMTP_FROM
+
 # Optional: Shiprocket credentials for tracking
 # SHIPROCKET_EMAIL=your_email
 # SHIPROCKET_PASSWORD=your_password

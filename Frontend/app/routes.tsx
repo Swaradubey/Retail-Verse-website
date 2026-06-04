@@ -22,6 +22,7 @@ import { SuperAdminDashboard } from './pages/super-admin/SuperAdminDashboard';
 import { Register } from './pages/auth/Register';
 import { GoogleAuthCallback } from './pages/auth/GoogleAuthCallback';
 import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { ResetPassword } from './pages/auth/ResetPassword';
 import { Contact } from './pages/Contact';
 import { About } from './pages/About';
 import { Inventory } from './pages/Inventory';
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
       { path: 'register', Component: Register },
       { path: 'google-auth-callback', Component: GoogleAuthCallback },
       { path: 'forgot-password', Component: ForgotPassword },
+      { path: 'reset-password/:token', Component: ResetPassword },
       { path: 'contact', Component: Contact },
       { path: 'about', Component: About },
       { path: 'privacy-policy', Component: PrivacyPolicy },

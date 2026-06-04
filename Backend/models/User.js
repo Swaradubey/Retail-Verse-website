@@ -158,6 +158,16 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    /** @desc Reset password token (hashed) for forgot-password flow. Works for all roles. */
+    resetPasswordToken: {
+      type: String,
+      default: undefined,
+    },
+    /** @desc Expiry timestamp for resetPasswordToken. */
+    resetPasswordExpires: {
+      type: Date,
+      default: undefined,
+    },
   },
   {
     timestamps: true,

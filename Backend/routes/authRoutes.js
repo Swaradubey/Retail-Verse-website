@@ -7,6 +7,8 @@ const {
   loginSuperAdmin,
   getUserProfile,
   getCaptcha,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -61,5 +63,15 @@ router.post(
 
 // Profile route - protected
 router.get("/profile", protect, getUserProfile);
+
+// Forgot password
+router.post(
+  "/forgot-password",
+  [check("email", "Please include a valid email").isEmail()],
+  forgotPassword
+);
+
+// Reset password
+router.post("/reset-password/:token", resetPassword);
 
 module.exports = router;
