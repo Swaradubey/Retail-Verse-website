@@ -51,16 +51,21 @@ function getTransporter() {
   const rawPort = process.env.SMTP_PORT || "587";
   const user = process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER;
   const pass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS;
-  const from = process.env.SMTP_FROM || process.env.EMAIL_FROM;
+  const from =
+    process.env.SMTP_FROM ||
+    process.env.EMAIL_FROM ||
+    process.env.SMTP_USER ||
+    process.env.EMAIL_USER ||
+    process.env.MAIL_USER;
 
   console.log("=== [emailService] SMTP Config Check ===");
-  console.log(`SMTP_HOST: ${host}`);
-  console.log(`SMTP_PORT: ${rawPort}`);
-  console.log(`SMTP_USER exists: ${!!user}`);
-  console.log(`SMTP_PASS exists: ${!!pass}`);
-  console.log(`SMTP_FROM exists: ${!!from}`);
+  console.log(`SMTP_HOST exists: ${!!process.env.SMTP_HOST}`);
+  console.log(`SMTP_PORT exists: ${!!process.env.SMTP_PORT}`);
+  console.log(`SMTP_USER exists: ${!!process.env.SMTP_USER}`);
   console.log(`EMAIL_USER exists: ${!!process.env.EMAIL_USER}`);
   console.log(`MAIL_USER exists: ${!!process.env.MAIL_USER}`);
+  console.log(`SMTP_PASS exists: ${!!(process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS)}`);
+  console.log(`SMTP_FROM exists: ${!!from}`);
   console.log("========================================");
 
   if (!user || !pass || !from) {
@@ -82,9 +87,9 @@ function getTransporter() {
     port,
     secure,
     auth: { user, pass },
-    // Task 7: ── Timeouts — prevent hanging on Render / cloud environments ──
-    connectionTimeout: 30000,  // 30s to establish TCP connection
-    greetingTimeout:   30000,  // 30s for SMTP greeting
+    // Timeouts — prevent hanging on Render / cloud environments
+    connectionTimeout: 20000,  // 20s to establish TCP connection
+    greetingTimeout:   20000,  // 20s for SMTP greeting
     socketTimeout:     30000,  // 30s for socket inactivity
     // TLS settings for STARTTLS (port 587 or other non-465 ports)
     ...(!secure ? { tls: { rejectUnauthorized: false } } : {}),
@@ -137,11 +142,11 @@ async function verifyTransporter() {
 async function sendEmail({ to, subject, html, text }) {
   // Task 9: Safe production logs before sending email — NEVER log SMTP_PASS
   console.log("=== [emailService] PRE-SEND SMTP DIAGNOSTICS ===");
-  console.log(`SMTP_HOST: ${process.env.SMTP_HOST || "smtp.gmail.com (default)"}`);
-  console.log(`SMTP_PORT: ${process.env.SMTP_PORT || "587 (default)"}`);
+  console.log(`SMTP_HOST exists: ${!!process.env.SMTP_HOST}`);
+  console.log(`SMTP_PORT exists: ${!!process.env.SMTP_PORT}`);
   console.log(`SMTP_USER exists: ${!!(process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER)}`);
   console.log(`SMTP_PASS exists: ${!!(process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.MAIL_PASS)}`);
-  console.log(`SMTP_FROM exists: ${!!process.env.SMTP_FROM}`);
+  console.log(`SMTP_FROM exists: ${!!(process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER || process.env.MAIL_USER)}`);
   console.log(`Recipient email exists: ${!!to}`);
   console.log("=================================================");
 

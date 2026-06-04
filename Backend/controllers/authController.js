@@ -500,9 +500,21 @@ const forgotPassword = async (req, res) => {
     await user.save();
 
     // Build reset link using FRONTEND_URL or CLIENT_URL from env (never hardcoded localhost in production)
-    const frontendUrl = (process.env.FRONTEND_URL || process.env.CLIENT_URL || "http://localhost:5173").replace(/\/+$/, "");
+    const isProduction = process.env.NODE_ENV === "production";
+    const frontendBase = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+
+    if (!frontendBase && isProduction) {
+      console.error("[ForgotPassword] FRONTEND_URL is missing in production.");
+      return res.status(500).json({
+        success: false,
+        message: "FRONTEND_URL is missing in production.",
+      });
+    }
+
+    const frontendUrl = (frontendBase || "http://localhost:5173").replace(/\/+$/, "");
     const resetLink = `${frontendUrl}/reset-password/${rawToken}`;
-    console.log(`[ForgotPassword] FRONTEND_URL resolved to: ${frontendUrl}`);
+    console.log(`[ForgotPassword] FRONTEND_URL exists: ${!!frontendBase}`);
+    console.log(`[ForgotPassword] Reset link domain: ${frontendUrl}`);
 
     // Send the email using existing nodemailer service
     const html = buildResetPasswordEmailHtml(user.name || "User", resetLink);
