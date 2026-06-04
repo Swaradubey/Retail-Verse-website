@@ -479,13 +479,16 @@ const forgotPassword = async (req, res) => {
     // Search for user in the User model (covers all roles: super_admin, admin, user, employee, etc.)
     const user = await User.findByNormalizedEmail(normalizedEmail);
 
-    // Always return the same generic message — do NOT reveal whether the email exists
+    // Debug log (server-side only): helps verify email lookup in production
     if (!user) {
+      console.log(`[ForgotPassword] No account found for email: ${normalizedEmail}`);
       return res.json({
         success: true,
         message: "If an account exists with this email, a password reset link has been sent.",
       });
     }
+
+    console.log(`[ForgotPassword] Account found for email: ${normalizedEmail} (role: ${user.role})`);
 
     // Generate secure reset token using crypto
     const rawToken = crypto.randomBytes(32).toString("hex");
@@ -499,6 +502,7 @@ const forgotPassword = async (req, res) => {
     // Build reset link using FRONTEND_URL from env (never hardcoded localhost in production)
     const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
     const resetLink = `${frontendUrl}/reset-password/${rawToken}`;
+    console.log(`[ForgotPassword] FRONTEND_URL resolved to: ${frontendUrl}`);
 
     // Send the email using existing nodemailer service
     const html = buildResetPasswordEmailHtml(user.name || "User", resetLink);
@@ -511,8 +515,11 @@ const forgotPassword = async (req, res) => {
         text: `Reset your RetailVerse password by visiting this link: ${resetLink}\n\nThis link expires in 1 hour. If you did not request this, please ignore this email.`,
       });
     } catch (emailErr) {
-      console.error("[ForgotPassword] Email send failed:", emailErr.message);
-      // Do NOT reveal this to the client (security)
+      console.error("[ForgotPassword] Email send failed:", emailErr);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send reset email. Please try again later.",
+      });
     }
 
     return res.json({

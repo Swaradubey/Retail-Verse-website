@@ -289,9 +289,27 @@ const PORT = process.env.PORT || 5000;
       const smtpUser = process.env.SMTP_USER;
       const smtpPass = process.env.SMTP_PASS;
       const smtpPort = process.env.SMTP_PORT || "587";
-      const smtpSecure = process.env.SMTP_SECURE || "false";
       if (smtpHost && smtpUser && smtpPass) {
-        console.log(`[SMTP] Email service configured — host=${smtpHost}, port=${smtpPort}, secure=${smtpSecure}, user=${smtpUser}`);
+        console.log(`[SMTP] Email service configured — host=${smtpHost}, port=${smtpPort}, user=${smtpUser}`);
+
+        // Verify SMTP connection on startup
+        const { getTransporter } = require("./utils/emailService");
+        try {
+          const transporter = getTransporter();
+          transporter.verify((verifyErr, success) => {
+            if (verifyErr) {
+              console.error("[SMTP] Connection verification FAILED:", verifyErr.message);
+            } else {
+              console.log("[SMTP] Server is ready to send emails");
+            }
+          });
+        } catch (smtpErr) {
+          if (smtpErr.code === "EMISSINGCONFIG") {
+            console.warn(`[SMTP] ${smtpErr.message}`);
+          } else {
+            console.error("[SMTP] Failed to create transporter:", smtpErr.message);
+          }
+        }
       } else {
         const missing = [];
         if (!smtpHost) missing.push("SMTP_HOST");
