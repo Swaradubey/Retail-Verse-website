@@ -17,9 +17,11 @@ import {
   buildWishlistRemoveParams,
 } from '../utils/wishlistPayload';
 import { formatINR } from '../utils/formatINR';
+import { getFullImageUrl, getProductImageUrl, FALLBACK_IMAGE } from '../utils/imageUrl';
 
 /** Map API product to shop shape (same rules as the list fetch in this page). */
 function normalizeShopProductFromApi(p: DynamicProduct): ShopProduct & { _id?: string } {
+  const imgUrl = getProductImageUrl(p);
   return {
     id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
     _id: p._id,
@@ -28,8 +30,8 @@ function normalizeShopProductFromApi(p: DynamicProduct): ShopProduct & { _id?: s
     price: p.price,
     description: p.description || '',
     category: p.category,
-    image: p.image || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
-    images: p.image ? [p.image] : [],
+    image: imgUrl || FALLBACK_IMAGE,
+    images: imgUrl ? [imgUrl] : [FALLBACK_IMAGE],
     stock: p.stock,
     rating: p.rating || 0,
     reviews: p.numReviews || 0,
@@ -333,9 +335,12 @@ export function ProductDetail() {
             <div>
               <div className="aspect-square bg-gray-100 rounded-xl overflow-hidden mb-4">
                 <img
-                  src={product.images[selectedImage]}
+                  src={getFullImageUrl(product.images[selectedImage])}
                   alt={product.name}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                  }}
                 />
               </div>
               {product.images.length > 1 && (
@@ -348,7 +353,7 @@ export function ProductDetail() {
                         selectedImage === idx ? 'border-blue-500' : 'border-gray-200'
                       }`}
                     >
-                      <img src={img} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" />
+                      <img src={getFullImageUrl(img)} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>

@@ -13,7 +13,7 @@ import {
 } from '../utils/wishlistPayload';
 import { productApi, Product as DynamicProduct } from '../api/products';
 import { formatINR } from '../utils/formatINR';
-import { getFullImageUrl, getProductImageUrl } from '../utils/imageUrl';
+import { getFullImageUrl, getProductImageUrl, FALLBACK_IMAGE } from '../utils/imageUrl';
 
 interface ProductCardProps {
   product: Product & { _id?: string };
@@ -143,6 +143,9 @@ export function ProductCard({
             src={getFullImageUrl(getProductImageUrl(product))}
             alt={product.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+            }}
           />
         ) : (
           <Package2 className="w-12 h-12 text-gray-300" />
