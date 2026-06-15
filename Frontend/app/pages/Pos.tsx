@@ -35,7 +35,6 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { productApi, Product } from '../api/products';
-import { products as staticProducts } from '../data/products';
 import { wishlistApi } from '../api/wishlist';
 import { useAuth } from '../context/AuthContext';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
@@ -150,6 +149,8 @@ export function Pos() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [sortOrder, setSortOrder] = useState<'default' | 'price-asc' | 'price-desc' | 'name-asc'>('default');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [networkOnline, setNetworkOnline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine
@@ -259,14 +260,25 @@ export function Pos() {
           const response = await productApi.getManage();
           if (response.success && Array.isArray(response.data)) {
             dbProducts = response.data as Product[];
-            setProductSource('live');
+            setProductSource(dbProducts.length > 0 ? 'live' : 'none');
             await savePosProductsCache(dbProducts, clientIdForCache);
+          } else {
+            // Try cache on unexpected response
+            const cached = await loadPosProductsCache(clientIdForCache);
+            if (cached && cached.length > 0) {
+              dbProducts = cached;
+              setProductSource('cache');
+            } else {
+              setProductSource('none');
+            }
           }
         } catch {
           const cached = await loadPosProductsCache(clientIdForCache);
           if (cached && cached.length > 0) {
             dbProducts = cached;
             setProductSource('cache');
+          } else {
+            setProductSource('none');
           }
         }
       } else {
@@ -274,57 +286,17 @@ export function Pos() {
         if (cached && cached.length > 0) {
           dbProducts = cached;
           setProductSource('cache');
+        } else {
+          setProductSource('none');
         }
       }
 
-      // Merge logic similar to Shop.tsx
-      const normalizedStatic = staticProducts.map(p => ({
-        _id: `static-${p.id}`,
-        name: p.name,
-        sku: p.sku || `SKU-${p.id}`,
-        price: p.price,
-        category: p.category,
-        stock: p.stock,
-        image: p.image,
-        isActive: true,
-        updatedAt: new Date().toISOString()
-      } as Product));
-
-      const merged = [...dbProducts, ...normalizedStatic];
-
-      // Deduplicate by Name (case insensitive) or SKU
-      const unique: Product[] = [];
-      const seenNames = new Set<string>();
-      const seenSkus = new Set<string>();
-
-      merged.forEach(p => {
-        const nameKey = p.name.toLowerCase().trim();
-        const skuKey = p.sku?.toLowerCase().trim() || '';
-
-        if (!seenNames.has(nameKey) && (!skuKey || !seenSkus.has(skuKey))) {
-          unique.push(p);
-          seenNames.add(nameKey);
-          if (skuKey) seenSkus.add(skuKey);
-        }
-      });
-
-      setProducts(unique);
-      if (unique.length === 0) setProductSource('none');
-
+      // Only use real inventory products — no static/demo product merging
+      setProducts(dbProducts);
     } catch (err: unknown) {
       console.error('POS fetchProducts error:', err);
-      // Fallback to static only on major error
-      const normalizedStatic = staticProducts.map(p => ({
-        _id: `static-${p.id}`,
-        name: p.name,
-        sku: p.sku || `SKU-${p.id}`,
-        price: p.price,
-        category: p.category,
-        stock: p.stock,
-        image: p.image,
-        isActive: true
-      } as Product));
-      setProducts(normalizedStatic);
+      // On catastrophic error, show empty state — do NOT fall back to static products
+      setProducts([]);
       setProductSource('none');
     } finally {
       setIsLoading(false);
@@ -446,24 +418,46 @@ export function Pos() {
     setPreviewImageFailed(false);
   }, [selectedCartItemId]);
 
-  const filteredProducts = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Derive unique categories from the logged-in client's inventory products
+  const inventoryCategories = useMemo(() => {
+    const cats = new Set<string>();
+    products.forEach(p => { if (p.category) cats.add(p.category); });
+    return ['All', ...Array.from(cats).sort()];
+  }, [products]);
 
-    if (!matchSearch) return false;
+  const filteredProducts = useMemo(() => {
+    let list = products.filter(p => {
+      const matchSearch =
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase()));
 
-    if (showSaleOnly) {
-      const isDiscounted =
-        p.isOnSale ||
-        (p.salePercentage && p.salePercentage > 0) ||
-        (p.originalPrice && p.originalPrice > p.price) ||
-        // @ts-ignore: if product data has salePrice instead
-        (p.salePrice && p.salePrice < p.price);
-      return !!isDiscounted;
+      if (!matchSearch) return false;
+
+      if (selectedCategory !== 'All' && p.category !== selectedCategory) return false;
+
+      if (showSaleOnly) {
+        const isDiscounted =
+          p.isOnSale ||
+          (p.salePercentage && p.salePercentage > 0) ||
+          (p.originalPrice && p.originalPrice > p.price) ||
+          // @ts-ignore: if product data has salePrice instead
+          (p.salePrice && p.salePrice < p.price);
+        return !!isDiscounted;
+      }
+
+      return true;
+    });
+
+    if (sortOrder === 'price-asc') {
+      list = [...list].sort((a, b) => a.price - b.price);
+    } else if (sortOrder === 'price-desc') {
+      list = [...list].sort((a, b) => b.price - a.price);
+    } else if (sortOrder === 'name-asc') {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    return true;
-  });
+    return list;
+  }, [products, searchQuery, selectedCategory, sortOrder, showSaleOnly]);
 
   const handlePosWishlist = useCallback(
     async (e: React.MouseEvent, product: Product) => {
@@ -1417,26 +1411,72 @@ export function Pos() {
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-black/5 focus:border-black/20 bg-white"
               />
             </div>
+            {/* Category filter + Sort row */}
+            {!isLoading && products.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-2 items-center justify-between">
+                <div className="flex flex-wrap gap-1.5">
+                  {inventoryCategories.map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat)}
+                      className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-all ${
+                        selectedCategory === cat
+                          ? 'bg-[#111111] text-white border-[#111111]'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
+                  className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-black/10 text-gray-600"
+                  aria-label="Sort products"
+                >
+                  <option value="default">Sort: Default</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="name-asc">Name: A–Z</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex-1 lg:overflow-y-auto p-4 sm:p-6">
+            {/* Dynamic product count */}
+            {!isLoading && (
+              <p className="text-xs text-gray-500 mb-3">
+                {filteredProducts.length === 0
+                  ? '0 products found'
+                  : `${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'} found`}
+              </p>
+            )}
             {isLoading ? (
               <div className="flex items-center justify-center h-40">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
               </div>
-            ) : productSource === 'none' && products.length === 0 ? (
+            ) : products.length === 0 ? (
               <div className="flex flex-col items-center justify-center text-center max-w-md mx-auto h-48 px-4">
                 <Package2 className="w-10 h-10 text-gray-300 mb-3" aria-hidden />
                 {!networkOnline ? (
                   <p className="text-sm text-gray-600 leading-relaxed">
-                    You are offline. No cached POS products are available yet. Please connect to the internet once to
-                    sync products.
+                    You are offline. No cached POS products are available yet. Please connect to the internet once to sync products.
                   </p>
                 ) : (
                   <p className="text-sm text-gray-600 leading-relaxed">
-                    No products could be loaded. Check your connection and try again.
+                    No products found. Please add products from Inventory first.
                   </p>
                 )}
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center text-center max-w-md mx-auto h-48 px-4">
+                <Search className="w-10 h-10 text-gray-300 mb-3" aria-hidden />
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  No products match your search or filter. Try a different keyword or category.
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
