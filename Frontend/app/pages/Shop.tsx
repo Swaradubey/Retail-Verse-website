@@ -88,7 +88,7 @@ export function Shop() {
         console.log("Logged in user:", user);
         console.log("clientId sent:", clientId);
 
-        const response = await productApi.getAll();
+        const response = await productApi.getAll(clientId || undefined);
         if (cancelled) return; // Ignore stale responses from previous auth state
 
         if (response.success && Array.isArray(response.data)) {

@@ -46,7 +46,8 @@ export function ProductsPreview() {
     const fetchFeatured = async () => {
       try {
         setIsLoading(true);
-        const response = await productApi.getFeatured();
+        const clientId = user?.clientId || user?.linkedClientId || localStorage.getItem("retail_verse_client_id");
+        const response = await productApi.getFeatured(clientId || undefined);
         if (cancelled) return;
 
         if (response.success && Array.isArray(response.data)) {

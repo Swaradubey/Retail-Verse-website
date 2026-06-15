@@ -39,9 +39,12 @@ export const inventoryApi = {
 };
 
 export const productApi = {
-  getAll: (filters?: any) => {
-    // Optional: Serialize filters to query string
-    return ApiService.get("/api/products");
+  getAll: (clientId?: string) => {
+    const headers: Record<string, string> = {};
+    if (clientId) {
+      headers["x-client-id"] = clientId;
+    }
+    return ApiService.get("/api/products", { headers });
   },
 
   /** Scoped inventory list for dashboard (populates `client`; Super Admin sees all). */
@@ -51,8 +54,12 @@ export const productApi = {
     return ApiService.get(`/api/products/${id}`);
   },
 
-  getFeatured: () => {
-    return ApiService.get("/api/products/featured");
+  getFeatured: (clientId?: string) => {
+    const headers: Record<string, string> = {};
+    if (clientId) {
+      headers["x-client-id"] = clientId;
+    }
+    return ApiService.get("/api/products/featured", { headers });
   },
   
   create: (payload: Product) => {

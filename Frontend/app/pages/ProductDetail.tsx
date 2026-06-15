@@ -1,7 +1,6 @@
 import { useParams, Link, useNavigate } from 'react-router';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'sonner';
-import { products as staticProducts } from '../data/products';
 import { ShoppingCart, Star, Heart, Share2, Truck, Shield, RotateCcw, ChevronLeft, MessageSquare, Loader2 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -59,7 +58,7 @@ export function ProductDetail() {
   const [hoverRating, setHoverRating] = useState<number>(0);
 
   const wishlistPool = useMemo(
-    () => [...staticProducts, ...dynamicProducts] as (ShopProduct & { _id?: string })[],
+    () => [...dynamicProducts] as (ShopProduct & { _id?: string })[],
     [dynamicProducts]
   );
 
@@ -89,7 +88,8 @@ export function ProductDetail() {
   useEffect(() => {
     const fetchDynamicProducts = async () => {
       try {
-        const response = await productApi.getAll();
+        const clientId = user?.clientId || user?.linkedClientId || localStorage.getItem("retail_verse_client_id");
+        const response = await productApi.getAll(clientId || undefined);
         if (response.success && Array.isArray(response.data)) {
           const normalized = response.data.map((p: DynamicProduct) =>
             normalizeShopProductFromApi(p)
@@ -108,16 +108,13 @@ export function ProductDetail() {
 
   useEffect(() => {
     const routeId = slug || '';
-    let p = staticProducts.find((sp) => sp.slug === routeId || sp.id?.toString() === routeId);
-    if (!p) {
-      p = dynamicProducts.find(
-        (dp) =>
-          dp._id === routeId ||
-          dp.id === routeId ||
-          dp.slug === routeId ||
-          dp.id?.toString() === routeId
-      );
-    }
+    const p = dynamicProducts.find(
+      (dp) =>
+        dp._id === routeId ||
+        dp.id === routeId ||
+        dp.slug === routeId ||
+        dp.id?.toString() === routeId
+    );
     if (!user || !p || authLoading) {
       setInWishlist(false);
       return;
@@ -139,21 +136,14 @@ export function ProductDetail() {
 
   const id = slug || '';
 
-  let product = staticProducts.find((p) => {
-    const match = p.slug === id || p.id?.toString() === id;
+  const product = dynamicProducts.find((p) => {
+    const match =
+      p._id === id ||
+      p.id === id ||
+      p.slug === id ||
+      p.id?.toString() === id;
     return match;
   });
-
-  if (!product) {
-    product = dynamicProducts.find((p) => {
-      const match =
-        p._id === id ||
-        p.id === id ||
-        p.slug === id ||
-        p.id?.toString() === id;
-      return match;
-    });
-  }
 
   useEffect(() => {
     if (product) {

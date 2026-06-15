@@ -2,7 +2,7 @@ import { Outlet, useLocation } from 'react-router';
 import { Header } from './Header';
 import { Footer } from './Footer';
 
-const SHOW_COMING_SOON = true;
+const SHOW_COMING_SOON = false;
 
 const comingSoonAllowedPathPrefixes = ["/home", "/products", "/category", "/contact"];
 
