@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useAuth, resetNavigationState } from '../../context/AuthContext';
+import { useBranding } from '../../context/BrandingContext';
 import { resolvePostLoginPath } from '../../utils/staffRoles';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, Shield } from 'lucide-react';
 
@@ -12,6 +13,7 @@ export function SuperAdminLogin() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { loginSuperAdmin, user } = useAuth();
+  const { brandName } = useBranding();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export function SuperAdminLogin() {
           <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
             <Shield className="w-5 h-5 text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">Daizy Homes</span>
+          <span className="text-white font-bold text-xl tracking-tight">{brandName}</span>
         </div>
 
         <div className="relative z-10">
@@ -82,7 +84,7 @@ export function SuperAdminLogin() {
         </div>
 
         <p className="relative z-10 text-white/30 text-xs">
-          © {new Date().getFullYear()} Daizy Homes. Super Admin access is audited.
+          © {new Date().getFullYear()} {brandName}. Super Admin access is audited.
         </p>
       </div>
 

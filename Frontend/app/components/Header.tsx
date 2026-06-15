@@ -3,6 +3,7 @@ import { ShoppingCart, Menu, X, ArrowRight, Package, ShoppingBag } from 'lucide-
 import { useCart } from '../context/CartContext';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useBranding } from '../context/BrandingContext';
 import { canAccessInventoryEditor } from '../utils/inventoryPermissions';
 import { accountRoleBadgeText, accountRoleSubtitle, isCustomerAccountRole, isStaffRole, isSuperAdminRole, normalizeRole } from '../utils/staffRoles';
 
@@ -23,16 +24,15 @@ export function Header() {
   const shouldHideHeaderNav = normalizedRole && HIDDEN_HEADER_ROLES.includes(normalizedRole);
   const hideStorefrontNavForSuperAdmin = Boolean(user && isSuperAdminRole(user.role));
 
-  /** Dynamic brand name: client sees their own business name, super_admin sees "Daizy Homes" */
+  /** Dynamic brand name: super_admin always sees default; client user uses businessName; otherwise BrandingContext or default */
+  const { brandName: brandingBrandName, isLoading: brandingLoading } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
-  const brandName = !user
+  const brandName = isSuperAdmin
     ? 'Daizy Homes'
-    : isSuperAdmin
-      ? 'Daizy Homes'
-      : isClientUser && user.businessName
-        ? user.businessName
-        : 'Daizy Homes';
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Daizy Homes';
   const brandSubtitle = !user
     ? 'Premium Commerce'
     : isSuperAdmin

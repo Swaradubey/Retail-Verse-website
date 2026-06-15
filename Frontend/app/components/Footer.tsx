@@ -8,18 +8,18 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useBranding } from '../context/BrandingContext';
 
 export function Footer() {
   const { user } = useAuth();
+  const { brandName: brandingBrandName, footerText, isLoading: brandingLoading } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
-  const brandName = !user
+  const brandName = isSuperAdmin
     ? 'Daizy Homes'
-    : isSuperAdmin
-      ? 'Daizy Homes'
-      : isClientUser && user.businessName
-        ? user.businessName
-        : 'Daizy Homes';
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Daizy Homes';
   const brandSubtitle = !user
     ? 'Smart Living Store'
     : isSuperAdmin
@@ -213,7 +213,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="flex flex-col items-center justify-between gap-4 pt-6 text-sm text-white/40 md:flex-row">
           <p>
-            © 2026 {brandName}. All rights reserved. | Powered by{' '}
+            {footerText} | Powered by{' '}
             <a
               href="https://hexerve.com"
               target="_blank"

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useBranding } from '../context/BrandingContext';
 import {
   LayoutDashboard,
   Package,
@@ -138,14 +139,13 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  /** Dynamic brand name: client sees their own business name, super_admin/admin sees "Daizy Homes" */
-  const dsBrandName = !user
+  /** Dynamic brand name: from BrandingContext (pre-login), then user businessName, then default */
+  const { brandName: dsBrandName, footerText } = useBranding();
+  const dsFinalBrandName = isSuperAdminRole(user?.role)
     ? 'Daizy Homes'
-    : isSuperAdminRole(user?.role)
-      ? 'Daizy Homes'
-      : user.role === 'client' && user.businessName
-        ? user.businessName
-        : 'Daizy Homes';
+    : user?.role === 'client' && user?.businessName
+      ? user.businessName
+      : dsBrandName;
 
   const restrictedInventoryDashboardRole = isRestrictedInventoryDashboardRole(user?.role);
   const staff = isStaffRole(user?.role);
@@ -462,7 +462,7 @@ export function Dashboard() {
           <div className="p-8 space-y-6">
             <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-gray-100 dark:border-zinc-700">
               <p className="text-sm text-gray-600 dark:text-gray-400 text-center font-medium">
-                To continue using <span className="text-indigo-600 font-bold">Daizy Homes</span>, please contact the Super Admin to extend your trial or upgrade your plan.
+                To continue using <span className="text-indigo-600 font-bold">{dsFinalBrandName}</span>, please contact the Super Admin to extend your trial or upgrade your plan.
               </p>
             </div>
             <div className="flex flex-col gap-3">
@@ -526,7 +526,7 @@ export function Dashboard() {
                 >
                   <span className="font-bold text-lg">E</span>
                 </div>
-                <span className="font-bold text-xl tracking-tight flex-1">{dsBrandName}</span>
+                <span className="font-bold text-xl tracking-tight flex-1">{dsFinalBrandName}</span>
                 <SidebarTrigger className="size-7" />
               </div>
               {/* Collapsed header - centered toggle */}
@@ -880,7 +880,7 @@ export function Dashboard() {
                       : 'mt-12 pt-8 border-t border-gray-100 dark:border-white/5 flex flex-col md:flex-row items-center justify-between text-muted-foreground text-sm pb-8'
                   }
                 >
-                  <p>© 2026 {dsBrandName}. All rights reserved.</p>
+                  <p>{footerText}</p>
                   <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-6 mt-4 md:mt-0">
                     <Link
                       to="/privacy-policy"

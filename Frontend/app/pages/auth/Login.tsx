@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useAuth, resetNavigationState } from '../../context/AuthContext';
+import { useBranding } from '../../context/BrandingContext';
 import { resolvePostLoginPath } from '../../utils/staffRoles';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShoppingBag } from 'lucide-react';
 
@@ -13,6 +14,7 @@ export function Login() {
   const [acceptTerms, setAcceptTerms] = useState(false);
 
   const { login } = useAuth();
+  const { brandName, updateBranding } = useBranding();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -36,6 +38,12 @@ export function Login() {
 
     try {
       const data = await login(email, password);
+      if (data.role === 'client' && data.businessName) {
+        updateBranding({
+          businessName: data.businessName,
+          clientId: data.clientId || undefined,
+        });
+      }
       resetNavigationState();
       navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
     } catch (err: unknown) {
@@ -71,7 +79,7 @@ export function Login() {
           <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
             <ShoppingBag className="w-5 h-5 text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">daizy homes</span>
+          <span className="text-white font-bold text-xl tracking-tight">{brandName}</span>
         </div>
 
         {/* Headline */}
@@ -99,7 +107,7 @@ export function Login() {
 
         {/* Bottom quote */}
         <p className="relative z-10 text-white/30 text-xs">
-          © {new Date().getFullYear()} Daizy Homes. All rights reserved.
+          © {new Date().getFullYear()} {brandName}. All rights reserved.
         </p>
       </div>
 
@@ -111,7 +119,7 @@ export function Login() {
             <div className="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center">
               <ShoppingBag className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-xl text-gray-900 tracking-tight">daizy homes</span>
+            <span className="font-bold text-xl text-gray-900 tracking-tight">{brandName.toLowerCase()}</span>
           </div>
 
           <div className="mb-8">

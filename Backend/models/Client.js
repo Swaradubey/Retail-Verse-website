@@ -25,6 +25,11 @@ const clientSchema = new mongoose.Schema(
     trialEndDate: { type: Date, default: null },
     trialStatus: { type: String, enum: ["active", "expired"], default: "active" },
     isTrialExpired: { type: Boolean, default: false },
+    /** Branding Fields */
+    brandingName: { type: String, trim: true, default: "" },
+    footerText: { type: String, trim: true, default: "" },
+    logo: { type: String, trim: true, default: "" },
+    primaryColor: { type: String, trim: true, default: "" },
   },
   { timestamps: true }
 );

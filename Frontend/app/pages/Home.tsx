@@ -37,7 +37,7 @@ export function Home() {
             >
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100/60 border border-amber-200/50 text-amber-900 text-xs font-bold uppercase tracking-widest mb-6 -mt-12">
                 <Star className="w-3 h-3 fill-amber-600 text-amber-600" />
-                daizy homes
+                Retail Verse
               </div>
 
               <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-[#111111] leading-[1.05] mb-8">

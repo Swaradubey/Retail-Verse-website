@@ -37,6 +37,10 @@ const createClient = async (req, res) => {
   const permanentAddress = String(req.body.permanentAddress).trim();
   const shopName = String(req.body.shopName).trim();
   const password = String(req.body.password);
+  const brandingName = String(req.body.brandingName || "").trim();
+  const footerText = String(req.body.footerText || "").trim();
+  const logo = String(req.body.logo || "").trim();
+  const primaryColor = String(req.body.primaryColor || "").trim();
 
   if (!GSTIN_RE.test(gstNorm)) {
     return res.status(400).json({
@@ -102,6 +106,10 @@ const createClient = async (req, res) => {
       trialEndDate,
       trialStatus: "active",
       isTrialExpired: false,
+      brandingName,
+      footerText,
+      logo,
+      primaryColor,
     });
     createdClientId = client._id;
 
@@ -196,4 +204,59 @@ const deleteClient = async (req, res) => {
   }
 };
 
-module.exports = { createClient, listClients, deleteClient };
+// @desc    Get public branding for a client (no auth required)
+// @route   GET /api/public/branding/:clientId
+// @route   GET /api/public/branding?domain=xxx
+// @access  Public
+const getClientBranding = async (req, res) => {
+  try {
+    let client = null;
+
+    if (req.query.domain) {
+      const domain = String(req.query.domain).toLowerCase().replace(/^www\./, "").split(":")[0];
+      const CustomDomain = require("../models/CustomDomain");
+      const domainRecord = await CustomDomain.findOne({
+        $or: [
+          { domainName: domain },
+          { domainName: `www.${domain}` },
+          { domain: domain },
+          { domain: `www.${domain}` },
+        ],
+      });
+      if (domainRecord) {
+        client = await Client.findById(domainRecord.clientId);
+      }
+    } else if (req.params.clientId) {
+      if (!isValidObjectId(req.params.clientId)) {
+        return res.status(400).json({ success: false, message: "Invalid client ID" });
+      }
+      client = await Client.findById(req.params.clientId);
+    } else {
+      return res.status(400).json({ success: false, message: "Provide clientId param or domain query" });
+    }
+
+    if (!client) {
+      return res.status(404).json({ success: false, message: "Branding not found" });
+    }
+
+    const brandName = client.brandingName || client.shopName || client.companyName || "";
+    const defaultFooter = `© ${new Date().getFullYear()} ${brandName}. All rights reserved.`;
+
+    return res.json({
+      success: true,
+      branding: {
+        clientId: client._id,
+        businessName: brandName,
+        brandingName: client.brandingName || "",
+        footerText: client.footerText || defaultFooter,
+        logo: client.logo || "",
+        primaryColor: client.primaryColor || "",
+      },
+    });
+  } catch (error) {
+    console.error("[Branding] getClientBranding error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+module.exports = { createClient, listClients, deleteClient, getClientBranding };

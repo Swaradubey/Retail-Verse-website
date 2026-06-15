@@ -145,6 +145,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const shiprocketService = require("./services/shiprocketService");
 
 const customDomainRoutes = require("./routes/customDomainRoutes");
+const brandingRoutes = require("./routes/brandingRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -175,6 +176,7 @@ app.use("/api/invoices", invoiceRoutes);
 app.use("/api/quotes", quoteRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/public", brandingRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {
