@@ -17,9 +17,8 @@ import {
   Gamepad2,
   TabletSmartphone
 } from 'lucide-react';
- import { productApi, Product as DynamicProduct } from '../api/products';
- import { products as staticProducts } from '../data/products';
- import { Product as ShopProduct } from '../types/product';
+import { productApi, Product as DynamicProduct } from '../api/products';
+import { Product as ShopProduct } from '../types/product';
  import { useAuth } from '../context/AuthContext';
  import { wishlistApi } from '../api/wishlist';
  import { slugifyProductName } from '../utils/wishlistPayload';
@@ -114,25 +113,19 @@ export function Shop() {
           setDynamicProducts(normalized);
           setBackendTotal(response.totalProducts || normalized.length);
           
-          // Requested debug logs
           console.log("role:", user?.role);
           console.log("clientId sent:", clientId);
           console.log("dynamicProducts length:", normalized.length);
-          console.log("staticProducts length:", staticProducts.length);
         } else {
           if (cancelled) return;
           console.log('[Shop] No dynamic products returned or success false');
           console.log("role:", user?.role);
           console.log("dynamicProducts length: 0");
-          console.log("staticProducts length:", staticProducts.length);
         }
       } catch (err: any) {
         if (cancelled) return;
         console.error('[Shop] API error fetching dynamic products:', err.message);
-        // We don't block with error state so static products still show
-        setError('Dynamic inventory could not be loaded, showing demo products.');
         console.log("dynamicProducts length: 0 (error)");
-        console.log("staticProducts length:", staticProducts.length);
       } finally {
         if (!cancelled) {
           setIsLoading(false);
@@ -147,28 +140,7 @@ export function Shop() {
     };
   }, [user]);
 
-  const allProducts = useMemo(() => {
-    // Merge dynamic (API) + static fallback products, deduplicating by ID and name,
-    // matching the same logic used by DashboardProducts (sidebar Product Catalog).
-    const merged = [...dynamicProducts, ...staticProducts];
-    const unique: ShopProduct[] = [];
-    const seenIds = new Set<string>();
-    const seenNames = new Set<string>();
-
-    merged.forEach(p => {
-      const id = (p._id || p.id)?.toString() || '';
-      const name = p.name?.toLowerCase().trim() || '';
-      
-      if (id && !seenIds.has(id) && name && !seenNames.has(name)) {
-        unique.push(p);
-        seenIds.add(id);
-        seenNames.add(name);
-      }
-    });
-
-    console.log("finalProducts length:", unique.length);
-    return unique;
-  }, [dynamicProducts]);
+  const allProducts = useMemo(() => dynamicProducts, [dynamicProducts]);
 
   const categories = useMemo(() => {
     const cats = new Set(['All Products']);
@@ -519,7 +491,7 @@ export function Shop() {
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">No products found</h3>
                   <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto leading-relaxed">
-                    We couldn&apos;t find any products matching your criteria. Try adjusting your filters.
+                    Add products from Inventory to see them here.
                   </p>
                   <button
                     type="button"

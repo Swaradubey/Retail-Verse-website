@@ -14,8 +14,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { productApi, Product as DynamicProduct } from '../../api/products';
-import { products as staticProducts } from '../../data/products';
+import { inventoryApi, Product as DynamicProduct } from '../../api/products';
 import { Product as ShopProduct } from '../../types/product';
 import { ProductCard } from '../../components/ProductCard';
 import { useAuth } from '../../context/AuthContext';
@@ -61,7 +60,7 @@ export function DashboardProducts() {
     const fetchDynamicProducts = async () => {
       try {
         setIsLoading(true);
-        const response = await productApi.getAll();
+        const response = await inventoryApi.getManage();
         if (response.success && Array.isArray(response.data)) {
           const normalized = response.data.map((p: DynamicProduct) => ({
             id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
@@ -93,25 +92,7 @@ export function DashboardProducts() {
     fetchDynamicProducts();
   }, []);
 
-  const allProducts = useMemo(() => {
-    const merged = [...dynamicProducts, ...staticProducts];
-    const unique: ShopProduct[] = [];
-    const seenIds = new Set<string>();
-    const seenNames = new Set<string>();
-
-    merged.forEach(p => {
-      const id = (p._id || p.id)?.toString() || '';
-      const name = p.name?.toLowerCase().trim() || '';
-      
-      if (id && !seenIds.has(id) && name && !seenNames.has(name)) {
-        unique.push(p);
-        seenIds.add(id);
-        seenNames.add(name);
-      }
-    });
-
-    return unique;
-  }, [dynamicProducts]);
+  const allProducts = useMemo(() => dynamicProducts, [dynamicProducts]);
 
   const categories = useMemo(() => {
     const cats = new Set(['All Products']);
@@ -286,9 +267,24 @@ export function DashboardProducts() {
                     </div>
                   ))}
                 </motion.div>
-              ) : (
+              ) : allProducts.length === 0 ? (
                 <motion.div
                   key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex flex-col items-center justify-center py-24 text-center"
+                >
+                  <div className="w-16 h-16 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-4">
+                    <Package className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <h3 className="text-lg font-bold">No products found</h3>
+                  <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">
+                    Add products from Inventory to see them here.
+                  </p>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="no-match"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="flex flex-col items-center justify-center py-24 text-center"

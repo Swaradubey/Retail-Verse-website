@@ -85,12 +85,6 @@ export function Header() {
               >
                 Products
               </Link>
-              <Link
-                to="/shop?category=Resources"
-                className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
-              >
-                Category
-              </Link>
               {!hidePricing && (
                 <Link
                   to="/shop?category=Pricing"
@@ -242,15 +236,7 @@ export function Header() {
                    Products
                  </Link>
 
-                <Link
-                  to="/shop?category=Resources"
-                  onClick={closeMobileMenu}
-                  className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                >
-                  Resources
-                </Link>
-
-                {!hidePricing && (
+                  {!hidePricing && (
                   <Link
                     to="/shop?category=Pricing"
                     onClick={closeMobileMenu}

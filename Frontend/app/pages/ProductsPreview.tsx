@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router';
 import { ProductCard } from '../components/ProductCard';
 import { Loader2, ArrowRight, Package, Star } from 'lucide-react';
 import { productApi, Product as DynamicProduct } from '../api/products';
-import { products as staticProducts } from '../data/products';
 import { Product as ShopProduct } from '../types/product';
 import { useAuth } from '../context/AuthContext';
 import { wishlistApi } from '../api/wishlist';
@@ -85,20 +84,6 @@ export function ProductsPreview() {
     return () => { cancelled = true; };
   }, []);
 
-  const displayProducts = useMemo(() => {
-    if (dynamicFeatured.length > 0) return dynamicFeatured;
-
-    const fallback = staticProducts
-      .filter(p => p.featured)
-      .slice(0, FEATURED_COUNT)
-      .map(p => ({
-        ...p,
-        slug: p.slug || slugifyProductName(p.name),
-        image: p.image || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
-      }));
-    return fallback;
-  }, [dynamicFeatured]);
-
   return (
     <div className="min-h-screen relative overflow-x-hidden"
       style={{ background: 'linear-gradient(135deg, #fdfcfb, #f8f3e8, #f1e6d6)' }}
@@ -131,13 +116,13 @@ export function ProductsPreview() {
             <Loader2 className="w-10 h-10 text-[#b8860b] animate-spin mb-4" />
             <p className="text-gray-600 font-semibold">Loading products...</p>
           </div>
-        ) : displayProducts.length > 0 ? (
+        ) : dynamicFeatured.length > 0 ? (
           <>
             <div
               className="grid gap-6"
               style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
             >
-              {displayProducts.map((product) => (
+              {dynamicFeatured.map((product) => (
                 <div
                   key={product.id}
                   className="group rounded-3xl border border-white/80 bg-white/70 shadow-md shadow-amber-900/[0.07] transition-all duration-300 ease-out backdrop-blur-[10px] hover:scale-[1.03] hover:shadow-xl hover:shadow-amber-900/12 overflow-hidden"
@@ -175,9 +160,9 @@ export function ProductsPreview() {
               <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#f5e6c8] via-[#e8c87a]/90 to-[#c9a332] shadow-lg shadow-amber-900/15">
                 <Package className="w-10 h-10 text-gray-900/85" strokeWidth={1.75} />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">No featured products</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">No products found</h3>
               <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto leading-relaxed">
-                Check back soon for our latest featured products.
+                Add products from Inventory to see them here.
               </p>
               <Link
                 to="/products/all"
