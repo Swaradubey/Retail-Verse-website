@@ -80,7 +80,7 @@ export function Header() {
           {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
             <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
               <Link
-                to="/shop"
+                to="/products"
                 className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
               >
                 Products
@@ -234,13 +234,13 @@ export function Header() {
            <div className="mx-auto max-w-[88rem] px-4 pb-6 pt-5 sm:px-6">
              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
               <nav className="flex flex-col gap-2">
-                <Link
-                  to="/shop"
-                  onClick={closeMobileMenu}
-                  className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                >
-                  Products
-                </Link>
+                 <Link
+                   to="/products"
+                   onClick={closeMobileMenu}
+                   className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
+                 >
+                   Products
+                 </Link>
 
                 <Link
                   to="/shop?category=Resources"

@@ -10,6 +10,7 @@ import { HelpCenterRoute } from './components/HelpCenterRoute';
 import { SupportRoute } from './components/SupportRoute';
 import { Home } from './pages/Home';
 import { Shop } from './pages/Shop';
+import { ProductsPreview } from './pages/ProductsPreview';
 import { ProductDetail } from './pages/ProductDetail';
 import { Cart } from './pages/Cart';
 import { Checkout } from './pages/Checkout';
@@ -64,6 +65,8 @@ export const router = createBrowserRouter([
       { index: true, element: <RootRoute /> },
       { path: 'landing', Component: Home },
       { path: 'shop', Component: Shop },
+      { path: 'products', Component: ProductsPreview },
+      { path: 'products/all', Component: Shop },
       { path: 'product/:slug', Component: ProductDetail },
       { path: 'cart', Component: Cart },
       { path: 'checkout', Component: Checkout },
