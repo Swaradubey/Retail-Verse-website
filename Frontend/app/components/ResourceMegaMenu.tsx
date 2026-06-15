@@ -76,7 +76,7 @@ const middleColumnItems: MenuItem[] = [
     description: 'Collaborate securely across teams and store roles.',
   },
   {
-    title: 'Retail Verse Igniter Series',
+    title: 'daizy homes Igniter Series',
     href: '#',
     icon: Sparkles,
     description: 'Explore expert-led ideas to scale modern commerce.',
@@ -86,7 +86,7 @@ const middleColumnItems: MenuItem[] = [
 const updateCards: UpdateCard[] = [
   {
     eyebrow: 'Featured Update',
-    title: "Retail Verse Igniter Fall ’24",
+    title: "Daizy Homes Igniter Fall ’24",
     description:
       'A premium spotlight on the newest growth features, product enhancements, and merchant-focused improvements.',
     href: '#',
@@ -294,11 +294,10 @@ function UpdateCardBlock({
         delay: 0.3 + index * 0.1,
         ease: [0.23, 1, 0.32, 1],
       }}
-      className={`group relative flex h-full min-h-0 flex-col overflow-hidden rounded-[1.35rem] border p-6 transition-all duration-300 ease-out sm:p-7 ${
-        isFeatured
+      className={`group relative flex h-full min-h-0 flex-col overflow-hidden rounded-[1.35rem] border p-6 transition-all duration-300 ease-out sm:p-7 ${isFeatured
           ? 'border-white/[0.1] bg-[#141312] text-white shadow-[0_0_0_1px_rgba(212,175,55,0.12),0_28px_56px_-18px_rgba(0,0,0,0.55),0_0_80px_-24px_rgba(180,130,60,0.18)] hover:-translate-y-1 hover:shadow-[0_0_0_1px_rgba(212,175,55,0.2),0_36px_72px_-20px_rgba(0,0,0,0.6),0_0_100px_-20px_rgba(200,160,80,0.22)]'
           : 'border-stone-200/80 bg-gradient-to-b from-white to-[#faf8f5] text-[#1c1917] shadow-[0_8px_36px_-12px_rgba(28,25,23,0.08)] hover:-translate-y-1 hover:border-stone-300/90 hover:shadow-[0_20px_48px_-16px_rgba(28,25,23,0.12)]'
-      }`}
+        }`}
     >
       {isFeatured && (
         <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
@@ -313,27 +312,24 @@ function UpdateCardBlock({
       <div className="relative z-10 flex h-full min-h-0 flex-col justify-between gap-8">
         <div className="min-w-0">
           <span
-            className={`inline-flex rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${
-              isFeatured
+            className={`inline-flex rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ${isFeatured
                 ? 'bg-white/[0.08] text-white/55 ring-1 ring-white/[0.1]'
                 : 'bg-stone-100/90 text-stone-500 ring-1 ring-stone-200/80'
-            }`}
+              }`}
           >
             {card.eyebrow}
           </span>
 
           <h3
-            className={`mt-4 text-xl font-semibold leading-tight tracking-[-0.02em] sm:text-2xl ${
-              isFeatured ? 'text-white' : 'text-[#1c1917]'
-            }`}
+            className={`mt-4 text-xl font-semibold leading-tight tracking-[-0.02em] sm:text-2xl ${isFeatured ? 'text-white' : 'text-[#1c1917]'
+              }`}
           >
             {card.title}
           </h3>
 
           <p
-            className={`mt-3 text-[15px] font-medium leading-[1.6] sm:text-base ${
-              isFeatured ? 'text-white/75' : 'text-stone-600'
-            }`}
+            className={`mt-3 text-[15px] font-medium leading-[1.6] sm:text-base ${isFeatured ? 'text-white/75' : 'text-stone-600'
+              }`}
           >
             {card.description}
           </p>
@@ -341,11 +337,10 @@ function UpdateCardBlock({
 
         <div className="mt-auto shrink-0">
           <span
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] transition-all duration-300 ease-out group-hover:gap-3 ${
-              isFeatured
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.2em] transition-all duration-300 ease-out group-hover:gap-3 ${isFeatured
                 ? 'bg-white/[0.1] text-white/90 ring-1 ring-white/15 group-hover:bg-white/[0.16] group-hover:ring-white/25'
                 : 'bg-stone-100/90 text-stone-700 ring-1 ring-stone-200/90 group-hover:bg-stone-200/80 group-hover:text-stone-900'
-            }`}
+              }`}
           >
             Explore
             <ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-80 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

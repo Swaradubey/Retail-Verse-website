@@ -14,12 +14,12 @@ export function Footer() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = !user
-    ? 'Retail Verse'
+    ? 'Daizy Homes'
     : isSuperAdmin
-      ? 'Retail Verse'
+      ? 'Daizy Homes'
       : isClientUser && user.businessName
         ? user.businessName
-        : 'Retail Verse';
+        : 'Daizy Homes';
   const brandSubtitle = !user
     ? 'Smart Living Store'
     : isSuperAdmin

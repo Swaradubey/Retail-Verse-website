@@ -138,14 +138,14 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  /** Dynamic brand name: client sees their own business name, super_admin/admin sees "Retail Verse" */
+  /** Dynamic brand name: client sees their own business name, super_admin/admin sees "Daizy Homes" */
   const dsBrandName = !user
-    ? 'Retail Verse'
+    ? 'Daizy Homes'
     : isSuperAdminRole(user?.role)
-      ? 'Retail Verse'
+      ? 'Daizy Homes'
       : user.role === 'client' && user.businessName
         ? user.businessName
-        : 'Retail Verse';
+        : 'Daizy Homes';
 
   const restrictedInventoryDashboardRole = isRestrictedInventoryDashboardRole(user?.role);
   const staff = isStaffRole(user?.role);
@@ -462,7 +462,7 @@ export function Dashboard() {
           <div className="p-8 space-y-6">
             <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-gray-100 dark:border-zinc-700">
               <p className="text-sm text-gray-600 dark:text-gray-400 text-center font-medium">
-                To continue using <span className="text-indigo-600 font-bold">Retail Verse</span>, please contact the Super Admin to extend your trial or upgrade your plan.
+                To continue using <span className="text-indigo-600 font-bold">Daizy Homes</span>, please contact the Super Admin to extend your trial or upgrade your plan.
               </p>
             </div>
             <div className="flex flex-col gap-3">
@@ -482,7 +482,7 @@ export function Dashboard() {
             </div>
           </div>
           <div className="bg-gray-50 dark:bg-zinc-800/80 px-8 py-4 text-center border-t border-gray-100 dark:border-zinc-700">
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Powered by Retail Verse Platform</p>
+            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Powered by Daizy Homes Platform</p>
           </div>
         </motion.div>
       </div>

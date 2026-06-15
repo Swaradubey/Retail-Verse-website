@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router';
 import { useAuth } from '../context/AuthContext';
 import { resolvePostLoginPath } from '../utils/staffRoles';
-import { Login } from '../pages/auth/Login';
+import { Home } from '../pages/Home';
 
 export function RootRoute() {
   const { user, isLoading } = useAuth();
@@ -19,6 +19,6 @@ export function RootRoute() {
     return <Navigate to={resolvePostLoginPath(user.role, '/dashboard')} replace />;
   }
 
-  // Not logged in, show Login page directly on "/"
-  return <Login />;
+  // Not logged in, show public Home page
+  return <Home />;
 }

@@ -59,7 +59,7 @@ export function SuperAdminLogin() {
           <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
             <Shield className="w-5 h-5 text-white" />
           </div>
-          <span className="text-white font-bold text-xl tracking-tight">Retail Verse</span>
+          <span className="text-white font-bold text-xl tracking-tight">Daizy Homes</span>
         </div>
 
         <div className="relative z-10">
@@ -82,7 +82,7 @@ export function SuperAdminLogin() {
         </div>
 
         <p className="relative z-10 text-white/30 text-xs">
-          © {new Date().getFullYear()} Retail Verse. Super Admin access is audited.
+          © {new Date().getFullYear()} Daizy Homes. Super Admin access is audited.
         </p>
       </div>
 

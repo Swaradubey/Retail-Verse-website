@@ -492,7 +492,7 @@ export function TrackOrder({ variant = 'page' }: Props) {
       <div className={innerClass}>
         {variant === 'page' ? (
           <header className="mb-10 text-center sm:mb-14">
-            <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700/90">Retail Verse</p>
+            <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700/90">Daizy Homes</p>
             <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-stone-900 sm:text-4xl">
               Track Your Order
             </h1>

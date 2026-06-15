@@ -151,7 +151,7 @@ export function About() {
           >
             <div className="mb-5 inline-flex items-center rounded-full border border-black/10 bg-white/70 px-4 py-1.5 backdrop-blur-sm">
               <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-black/55">
-                About Retail Verse
+                About daizy homes
               </span>
             </div>
 

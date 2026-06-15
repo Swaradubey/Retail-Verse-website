@@ -285,7 +285,7 @@ export function InvoiceDetail() {
                       <Receipt className="h-7 w-7" />
                     </div>
                     <div>
-                      <h1 className="text-2xl font-black tracking-tight uppercase">Retail Verse</h1>
+                      <h1 className="text-2xl font-black tracking-tight uppercase">Daizy Homes</h1>
                       <p className="text-[10px] font-bold tracking-[0.2em] text-[#D4AF37]">PREMIUM E-COMMERCE</p>
                     </div>
                   </div>

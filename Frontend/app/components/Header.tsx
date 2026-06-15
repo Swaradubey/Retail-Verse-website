@@ -23,16 +23,16 @@ export function Header() {
   const shouldHideHeaderNav = normalizedRole && HIDDEN_HEADER_ROLES.includes(normalizedRole);
   const hideStorefrontNavForSuperAdmin = Boolean(user && isSuperAdminRole(user.role));
 
-  /** Dynamic brand name: client sees their own business name, super_admin sees "Retail Verse" */
+  /** Dynamic brand name: client sees their own business name, super_admin sees "Daizy Homes" */
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = !user
-    ? 'Retail Verse'
+    ? 'Daizy Homes'
     : isSuperAdmin
-      ? 'Retail Verse'
+      ? 'Daizy Homes'
       : isClientUser && user.businessName
         ? user.businessName
-        : 'Retail Verse';
+        : 'Daizy Homes';
   const brandSubtitle = !user
     ? 'Premium Commerce'
     : isSuperAdmin
