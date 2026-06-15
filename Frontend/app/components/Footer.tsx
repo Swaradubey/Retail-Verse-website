@@ -7,8 +7,26 @@ import {
   Mail,
   ArrowRight,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export function Footer() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = !user
+    ? 'Retail Verse'
+    : isSuperAdmin
+      ? 'Retail Verse'
+      : isClientUser && user.businessName
+        ? user.businessName
+        : 'Retail Verse';
+  const brandSubtitle = !user
+    ? 'Smart Living Store'
+    : isSuperAdmin
+      ? 'Smart Living Store'
+      : isClientUser
+        ? 'Store'
+        : 'Smart Living Store';
   return (
     <footer className="relative mt-auto border-t border-white/10 bg-[#0b0b0c] text-white">
       {/* Background glow */}
@@ -30,10 +48,10 @@ export function Footer() {
 
               <div className="flex-1 min-w-[140px]">
                 <span className="block text-lg sm:text-xl font-semibold tracking-tight text-white break-words leading-tight">
-                  Retail Verse
+                  {brandName}
                 </span>
                 <span className="block text-xs uppercase tracking-[0.24em] text-white/40">
-                  Smart Living Store
+                  {brandSubtitle}
                 </span>
               </div>
             </Link>
@@ -195,7 +213,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="flex flex-col items-center justify-between gap-4 pt-6 text-sm text-white/40 md:flex-row">
           <p>
-            © 2026 Retail Verse. All rights reserved. | Powered by{' '}
+            © 2026 {brandName}. All rights reserved. | Powered by{' '}
             <a
               href="https://hexerve.com"
               target="_blank"

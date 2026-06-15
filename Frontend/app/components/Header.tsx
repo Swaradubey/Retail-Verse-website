@@ -23,6 +23,24 @@ export function Header() {
   const shouldHideHeaderNav = normalizedRole && HIDDEN_HEADER_ROLES.includes(normalizedRole);
   const hideStorefrontNavForSuperAdmin = Boolean(user && isSuperAdminRole(user.role));
 
+  /** Dynamic brand name: client sees their own business name, super_admin sees "Retail Verse" */
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = !user
+    ? 'Retail Verse'
+    : isSuperAdmin
+      ? 'Retail Verse'
+      : isClientUser && user.businessName
+        ? user.businessName
+        : 'Retail Verse';
+  const brandSubtitle = !user
+    ? 'Premium Commerce'
+    : isSuperAdmin
+      ? 'Premium Commerce'
+      : isClientUser
+        ? 'Store'
+        : 'Premium Commerce';
+
   /** Pricing link is now disabled globally per requirement. */
   const hidePricing = true;
 
@@ -50,10 +68,10 @@ export function Header() {
               </div>
               <div className="flex flex-col leading-none">
                 <span className="text-lg font-bold tracking-tight text-[#111111] sm:text-xl">
-                  Retail Verse
+                  {brandName}
                 </span>
                 <span className="mt-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-black sm:text-[10px]">
-                  Premium Commerce
+                  {brandSubtitle}
                 </span>
               </div>
             </Link>

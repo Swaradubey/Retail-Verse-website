@@ -23,6 +23,7 @@ export interface ProfileUser {
   lastLoginAt?: string | null;
   trialStatus?: string;
   isTrialExpired?: boolean;
+  businessName?: string | null;
   /** Present when the JWT was issued via Super Admin impersonation (`impersonatedBy` claim). */
   impersonation?: ImpersonationInfo;
 }

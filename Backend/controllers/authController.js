@@ -366,13 +366,14 @@ const loginUser = async (req, res) => {
         token: generateToken(synced._id, synced.email, synced.role),
       };
 
-      // Add trial info for Admin/Client
+      // Add trial info + business name for Admin/Client
       if (synced.role === "admin" || synced.role === "client") {
         const Client = require("../models/Client");
         const client = await Client.findById(resolvedClientId);
         if (client) {
           loginData.trialStatus = client.trialStatus;
           loginData.isTrialExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < new Date());
+          loginData.businessName = client.companyName || client.shopName || null;
         }
       }
 

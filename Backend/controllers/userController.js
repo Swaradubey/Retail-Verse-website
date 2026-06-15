@@ -40,7 +40,7 @@ const getMe = async (req, res) => {
       };
     }
 
-    // Include trial info for Admin/Client
+    // Include trial info + business name for Admin/Client
     if (user.role === "admin" || user.role === "client") {
       if (user.clientId) {
         const client = await Client.findById(user.clientId);
@@ -48,6 +48,7 @@ const getMe = async (req, res) => {
           data.trialStatus = client.trialStatus;
           data.isTrialExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < new Date());
           data.trialEndDate = client.trialEndDate;
+          data.businessName = client.companyName || client.shopName || null;
         }
       }
     }

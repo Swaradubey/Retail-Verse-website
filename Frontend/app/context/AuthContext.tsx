@@ -17,6 +17,7 @@ export interface LoginResponseData {
   clientId?: string | null;
   managerId?: string | null;
   lastLoginAt?: string | null;
+  businessName?: string | null;
 }
 
 export interface User {
@@ -38,6 +39,7 @@ export interface User {
   managerId?: string | null;
   trialStatus?: string;
   isTrialExpired?: boolean;
+  businessName?: string | null;
   /** Super Admin impersonation session (JWT includes `impersonatedBy`). */
   impersonation?: ImpersonationInfo;
 }
@@ -112,6 +114,7 @@ function mergeProfileIntoUser(
     isSuperAdmin: fresh.role === 'super_admin',
     trialStatus: fresh.trialStatus,
     isTrialExpired: fresh.isTrialExpired,
+    businessName: fresh.businessName ?? prev.businessName ?? null,
     impersonation: fresh.impersonation,
   };
 }

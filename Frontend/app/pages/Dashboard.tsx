@@ -138,6 +138,15 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  /** Dynamic brand name: client sees their own business name, super_admin/admin sees "Retail Verse" */
+  const dsBrandName = !user
+    ? 'Retail Verse'
+    : isSuperAdminRole(user?.role)
+      ? 'Retail Verse'
+      : user.role === 'client' && user.businessName
+        ? user.businessName
+        : 'Retail Verse';
+
   const restrictedInventoryDashboardRole = isRestrictedInventoryDashboardRole(user?.role);
   const staff = isStaffRole(user?.role);
   const isOverviewPath = location.pathname === '/dashboard';
@@ -517,7 +526,7 @@ export function Dashboard() {
                 >
                   <span className="font-bold text-lg">E</span>
                 </div>
-                <span className="font-bold text-xl tracking-tight flex-1">Retail Verse</span>
+                <span className="font-bold text-xl tracking-tight flex-1">{dsBrandName}</span>
                 <SidebarTrigger className="size-7" />
               </div>
               {/* Collapsed header - centered toggle */}
@@ -871,7 +880,7 @@ export function Dashboard() {
                       : 'mt-12 pt-8 border-t border-gray-100 dark:border-white/5 flex flex-col md:flex-row items-center justify-between text-muted-foreground text-sm pb-8'
                   }
                 >
-                  <p>© 2026 Retail Verse Admin. All rights reserved.</p>
+                  <p>© 2026 {dsBrandName}. All rights reserved.</p>
                   <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-6 mt-4 md:mt-0">
                     <Link
                       to="/privacy-policy"
