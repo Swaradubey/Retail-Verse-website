@@ -261,6 +261,14 @@ export const router = createBrowserRouter([
             ),
           },
           {
+            path: 'super-admin/settings',
+            element: (
+              <SuperAdminOnlyRoute>
+                <DashboardSettings />
+              </SuperAdminOnlyRoute>
+            ),
+          },
+          {
             path: 'super-admin/clients',
             element: (
               <SuperAdminOnlyRoute>

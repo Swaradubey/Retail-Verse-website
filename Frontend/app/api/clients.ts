@@ -9,6 +9,11 @@ export type ClientRow = {
   panNo?: string;
   permanentAddress?: string;
   shopName?: string;
+  /** Optional logo stored as Base64 DataURL or URL string */
+  logo?: string;
+  brandingName?: string;
+  footerText?: string;
+  primaryColor?: string;
   createdAt?: string;
   updatedAt?: string;
   createdBy?: { _id: string; name?: string; email?: string } | null;
@@ -28,6 +33,8 @@ export type CreateClientBody = {
   permanentAddress: string;
   shopName: string;
   password: string;
+  /** Optional logo as Base64 DataURL string */
+  logo?: string;
 };
 
 export const clientsApi = {

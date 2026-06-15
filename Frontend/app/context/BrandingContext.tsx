@@ -22,8 +22,8 @@ const defaultBranding: BrandingData = {};
 const BrandingContext = createContext<BrandingContextType>({
   branding: defaultBranding,
   isLoading: false,
-  updateBranding: () => {},
-  reloadBranding: async () => {},
+  updateBranding: () => { },
+  reloadBranding: async () => { },
 });
 
 const SELECTED_CLIENT_ID_KEY = 'selectedClientId';
@@ -128,7 +128,7 @@ export function useBranding() {
     throw new Error('useBranding must be used within a BrandingProvider');
   }
 
-  const brandName = ctx.branding?.businessName || ctx.branding?.brandingName || 'Daizy Homes';
+  const brandName = ctx.branding?.businessName || ctx.branding?.brandingName || 'Business Store';
   const footerText = ctx.branding?.footerText || `© 2026 ${brandName}. All rights reserved. | Powered by Hexerve`;
   const logo = ctx.branding?.logo || '';
   const primaryColor = ctx.branding?.primaryColor || '';

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, Plus, UserPlus, Lock, Mail, Phone, MapPin, CreditCard, Building, AlertCircle, Trash2, Factory } from 'lucide-react';
+import { Building2, Plus, UserPlus, Lock, Mail, Phone, MapPin, CreditCard, Building, AlertCircle, Trash2, Factory, ImageIcon, X, Upload } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -34,7 +34,8 @@ type FieldErrors = Partial<
     | 'panNo'
     | 'permanentAddress'
     | 'shopName'
-    | 'password',
+    | 'password'
+    | 'logo',
     string
   >
 >;
@@ -50,6 +51,9 @@ const emptyForm = {
   password: '',
 };
 
+const ALLOWED_LOGO_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'];
+const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
 export function DashboardClients() {
   const { user } = useAuth();
   const [form, setForm] = useState(emptyForm);
@@ -58,6 +62,11 @@ export function DashboardClients() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [teamPanel, setTeamPanel] = useState<TeamPanelState>({ t: 'none' });
+
+  // Logo upload state
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoError, setLogoError] = useState<string>('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const loadClients = useCallback(async () => {
     setListLoading(true);
@@ -78,6 +87,38 @@ export function DashboardClients() {
   useEffect(() => {
     void loadClients();
   }, [loadClients]);
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    setLogoError('');
+    if (!file) return;
+
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) {
+      setLogoError('Invalid file type. Allowed: PNG, JPG, JPEG, WEBP, SVG.');
+      if (logoInputRef.current) logoInputRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError('File is too large. Maximum allowed size is 2 MB.');
+      if (logoInputRef.current) logoInputRef.current.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result;
+      if (typeof result === 'string') {
+        setLogoPreview(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoPreview('');
+    setLogoError('');
+    if (logoInputRef.current) logoInputRef.current.value = '';
+  };
 
   const validate = (): boolean => {
     const next: FieldErrors = {};
@@ -105,6 +146,8 @@ export function DashboardClients() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+    // Logo error is non-blocking (it's optional) but don't submit if there's a type/size error
+    if (logoError) return;
     setSubmitting(true);
     setFieldErrors({});
     try {
@@ -117,12 +160,16 @@ export function DashboardClients() {
         permanentAddress: form.permanentAddress.trim(),
         shopName: form.shopName.trim(),
         password: form.password,
+        ...(logoPreview ? { logo: logoPreview } : {}),
       });
       if (!res.success) {
         throw new Error(res.message || 'Could not create client');
       }
       toast.success(res.message || 'Client added successfully');
       setForm(emptyForm);
+      setLogoPreview('');
+      setLogoError('');
+      if (logoInputRef.current) logoInputRef.current.value = '';
       await loadClients();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Failed to add client');
@@ -235,6 +282,83 @@ export function DashboardClients() {
                       </p>
                     ) : null}
                   </div>
+                </div>
+
+                {/* ── Logo Upload ─────────────────────────────────────────── */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                    Company Logo
+                    <span className="text-xs font-normal text-muted-foreground ml-1">(Optional)</span>
+                  </Label>
+
+                  {logoPreview ? (
+                    // Preview state
+                    <div className="flex items-start gap-4 p-4 rounded-xl border border-border/60 bg-background/40 backdrop-blur-sm">
+                      <div className="w-20 h-20 rounded-xl border border-border/50 bg-white dark:bg-zinc-900 flex items-center justify-center overflow-hidden shadow-sm shrink-0">
+                        <img
+                          src={logoPreview}
+                          alt="Logo preview"
+                          className="w-full h-full object-contain p-1"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <p className="text-sm font-medium text-foreground">Logo selected</p>
+                        <p className="text-xs text-muted-foreground">Preview shown above. You can change or remove it before submitting.</p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => logoInputRef.current?.click()}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/30 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors"
+                          >
+                            <Upload className="w-3 h-3" />
+                            Change
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveLogo}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    // Upload drop-zone
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="w-full flex flex-col items-center justify-center gap-3 p-6 rounded-xl border-2 border-dashed border-border/60 hover:border-violet-400/60 dark:hover:border-violet-600/50 bg-background/30 hover:bg-violet-50/30 dark:hover:bg-violet-950/10 transition-all duration-200 cursor-pointer group"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-100 to-violet-200 dark:from-violet-900/40 dark:to-violet-800/30 flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform duration-200">
+                        <ImageIcon className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-semibold text-foreground">Click to upload logo</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Optional. Upload client/company logo for branding.</p>
+                        <p className="text-xs text-muted-foreground/70 mt-1">PNG, JPG, JPEG, WEBP or SVG · Max 2 MB</p>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Hidden file input */}
+                  <input
+                    ref={logoInputRef}
+                    id="client-logo"
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/webp,image/svg+xml"
+                    className="hidden"
+                    onChange={handleLogoChange}
+                  />
+
+                  {logoError && (
+                    <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {logoError}
+                    </p>
+                  )}
                 </div>
               </div>
 

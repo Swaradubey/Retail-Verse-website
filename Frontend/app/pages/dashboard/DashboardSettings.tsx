@@ -119,11 +119,23 @@ function clonePayload(p: SettingsPayload): SettingsPayload {
 }
 
 function normalizeSettingsPayload(raw: SettingsPayload): SettingsPayload {
-  const trimmed = String(raw.profile.countryOrRegion ?? '').trim();
+  const defaultPayload = defaultPayloadFromAuth({});
+  const safeProfile = { ...defaultPayload.profile, ...raw?.profile };
+  const safeStore = { ...defaultPayload.store, ...raw?.store };
+  const safeNotifications = { ...defaultPayload.notifications, ...raw?.notifications };
+  const safeSecurity = { ...defaultPayload.security, ...raw?.security };
+  const safeBilling = { ...defaultPayload.billing, ...raw?.billing };
+
+  const trimmed = String(safeProfile.countryOrRegion ?? '').trim();
   const countryOrRegion = trimmed || COUNTRY_OPTIONS[0];
+  safeProfile.countryOrRegion = countryOrRegion;
+
   return {
-    ...raw,
-    profile: { ...raw.profile, countryOrRegion },
+    profile: safeProfile,
+    store: safeStore,
+    notifications: safeNotifications,
+    security: safeSecurity,
+    billing: safeBilling,
   };
 }
 
