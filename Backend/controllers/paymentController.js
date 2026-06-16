@@ -21,21 +21,61 @@ const createRazorpayOrder = async (req, res) => {
       });
     }
 
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      console.error("[RAZORPAY ERROR]: Missing RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in .env");
-      return res.status(500).json({
+    // Resolve client ID from headers, JWT, body, or database lookups for Quote/Invoice
+    const { resolveClientId } = require("../utils/tenantResolver");
+    let resolvedClientId = req.clientId;
+    if (!resolvedClientId) {
+      resolvedClientId = await resolveClientId(req);
+    }
+    if (!resolvedClientId) {
+      if (quotationId) {
+        const quote = await Quote.findById(quotationId).select("clientId");
+        if (quote) resolvedClientId = quote.clientId;
+      }
+      if (!resolvedClientId && invoiceId) {
+        const invoice = await Invoice.findById(invoiceId).select("clientId");
+        if (invoice) resolvedClientId = invoice.clientId;
+      }
+    }
+
+    let razorpayKeyId = process.env.RAZORPAY_KEY_ID;
+    let razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+    let isClientSpecific = false;
+
+    if (resolvedClientId) {
+      const ClientRazorpayConfig = require("../models/ClientRazorpayConfig");
+      const clientConfig = await ClientRazorpayConfig.findOne({
+        clientId: resolvedClientId,
+        razorpayEnabled: true,
+      });
+
+      if (clientConfig && clientConfig.razorpayKeyId && clientConfig.razorpayKeySecretEncrypted) {
+        const { decrypt } = require("../utils/encryption");
+        const decryptedSecret = decrypt(clientConfig.razorpayKeySecretEncrypted);
+        if (decryptedSecret) {
+          razorpayKeyId = clientConfig.razorpayKeyId;
+          razorpayKeySecret = decryptedSecret;
+          isClientSpecific = true;
+          console.log(`[RAZORPAY CREATE ORDER] Using client-specific config for client: ${resolvedClientId}`);
+        }
+      }
+    }
+
+    if (!razorpayKeyId || !razorpayKeySecret) {
+      console.error("[RAZORPAY ERROR]: Missing Razorpay credentials (neither client nor global config exists/enabled)");
+      return res.status(400).json({
         success: false,
-        message: "Razorpay keys are missing in the server configuration. Please contact the administrator.",
+        message: "Payment gateway is currently unavailable for this store. Please contact the administrator/seller.",
       });
     }
 
     // Key ID only — never log the secret
-    console.log("[RAZORPAY CREATE ORDER] Key ID:", process.env.RAZORPAY_KEY_ID);
+    console.log("[RAZORPAY CREATE ORDER] Key ID:", razorpayKeyId, "isClientSpecific:", isClientSpecific);
     console.log("[RAZORPAY CREATE ORDER] Amount received (INR):", amount, "→ paise:", Math.round(Number(amount) * 100));
 
     const instance = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
+      key_id: razorpayKeyId,
+      key_secret: razorpayKeySecret,
     });
 
     // Frontend sends raw INR value. Backend multiplies by 100 to convert to paise.
@@ -86,7 +126,7 @@ const createRazorpayOrder = async (req, res) => {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      key_id: process.env.RAZORPAY_KEY_ID,
+      key_id: razorpayKeyId,
     });
   } catch (error) {
     console.error("[RAZORPAY CREATE ORDER ERROR]:", error);
@@ -126,8 +166,48 @@ const verifyRazorpayPayment = async (req, res) => {
       orderId,
     });
 
-    if (!process.env.RAZORPAY_KEY_SECRET) {
-      console.error("[RAZORPAY ERROR]: Missing RAZORPAY_KEY_SECRET in .env for verification");
+    // Resolve client ID from headers, JWT, body, or database lookups for Quote/Invoice/Order
+    const { resolveClientId } = require("../utils/tenantResolver");
+    let resolvedClientId = req.clientId;
+    if (!resolvedClientId) {
+      resolvedClientId = await resolveClientId(req);
+    }
+    if (!resolvedClientId) {
+      if (quotationId || internal_quote_id) {
+        const quote = await Quote.findById(quotationId || internal_quote_id).select("clientId");
+        if (quote) resolvedClientId = quote.clientId;
+      }
+      if (!resolvedClientId && invoiceId) {
+        const invoice = await Invoice.findById(invoiceId).select("clientId");
+        if (invoice) resolvedClientId = invoice.clientId;
+      }
+      if (!resolvedClientId && internal_order_id) {
+        const order = await Order.findOne({ orderId: internal_order_id }).select("clientId");
+        if (order) resolvedClientId = order.clientId;
+      }
+    }
+
+    let razorpayKeySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (resolvedClientId) {
+      const ClientRazorpayConfig = require("../models/ClientRazorpayConfig");
+      const clientConfig = await ClientRazorpayConfig.findOne({
+        clientId: resolvedClientId,
+        razorpayEnabled: true,
+      });
+
+      if (clientConfig && clientConfig.razorpayKeySecretEncrypted) {
+        const { decrypt } = require("../utils/encryption");
+        const decryptedSecret = decrypt(clientConfig.razorpayKeySecretEncrypted);
+        if (decryptedSecret) {
+          razorpayKeySecret = decryptedSecret;
+          console.log(`[RAZORPAY VERIFY] Using client-specific secret for client: ${resolvedClientId}`);
+        }
+      }
+    }
+
+    if (!razorpayKeySecret) {
+      console.error("[RAZORPAY ERROR]: Missing Razorpay key secret for verification");
       return res.status(500).json({
         success: false,
         message: "Razorpay configuration is incomplete. Verification failed.",
@@ -144,7 +224,7 @@ const verifyRazorpayPayment = async (req, res) => {
 
     // ── Exact signature verification per Razorpay docs ───────────────────────
     const generatedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .createHmac("sha256", razorpayKeySecret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 

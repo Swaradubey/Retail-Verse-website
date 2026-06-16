@@ -88,4 +88,31 @@ export const settingsApi = {
 
   updateBilling: (body: Partial<SettingsBilling>) =>
     ApiService.put<SettingsPayload>("/api/settings/billing", body),
+
+  getRazorpayConfig: () =>
+    ApiService.get<RazorpayConfigData>("/api/client/payment-settings/razorpay"),
+
+  saveRazorpayConfig: (body: {
+    razorpayEnabled: boolean;
+    razorpayKeyId: string;
+    razorpayKeySecret?: string;
+    webhookSecret?: string;
+  }) =>
+    ApiService.post<RazorpayConfigData>("/api/client/payment-settings/razorpay", body),
+
+  testRazorpayConfig: (body: {
+    razorpayKeyId: string;
+    razorpayKeySecret?: string;
+    webhookSecret?: string;
+  }) =>
+    ApiService.post<{ success: boolean; message: string }>("/api/client/payment-settings/razorpay/test", body),
 };
+
+export interface RazorpayConfigData {
+  razorpayEnabled: boolean;
+  razorpayKeyId: string;
+  razorpayKeySecret: string;
+  webhookSecret: string;
+  isConnected: boolean;
+}
+

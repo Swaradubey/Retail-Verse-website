@@ -117,7 +117,7 @@ const sidebarItems = [
 ];
 
 const secondaryItems = [
-  { title: "Settings", icon: Settings, href: "/dashboard/settings", adminOnly: true, hideForSuperAdmin: true },
+  { title: "Settings", icon: Settings, href: "/dashboard/settings", hideForSuperAdmin: true },
   { title: "Settings", icon: Settings, href: "/super-admin/settings", superAdminOnly: true },
 ];
 
@@ -368,9 +368,6 @@ export function Dashboard() {
       return false;
     }
     if (restrictedInventoryDashboardRole) {
-      return false;
-    }
-    if (isClientRole(user?.role)) {
       return false;
     }
     if ('hideForSuperAdmin' in item && item.hideForSuperAdmin && isSuperAdminRole(user?.role)) {

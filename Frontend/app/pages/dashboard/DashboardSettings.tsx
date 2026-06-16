@@ -11,12 +11,15 @@ import {
   Camera,
   Save,
   RotateCcw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Switch } from '../../components/ui/switch';
 import { useAuth } from '../../context/AuthContext';
+import { normalizeRole } from '../../utils/staffRoles';
 import {
   settingsApi,
   type SettingsPayload,
@@ -157,6 +160,17 @@ export function DashboardSettings() {
   const [security, setSecurity] = useState<SettingsSecurity | null>(null);
   const [billing, setBilling] = useState<SettingsBilling | null>(null);
 
+  // Razorpay Integration States
+  const [razorpayEnabled, setRazorpayEnabled] = useState(false);
+  const [razorpayKeyId, setRazorpayKeyId] = useState('');
+  const [razorpayKeySecret, setRazorpayKeySecret] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showKeySecret, setShowKeySecret] = useState(false);
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
+  const [razorpayBaseline, setRazorpayBaseline] = useState<any>(null);
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -205,6 +219,27 @@ export function DashboardSettings() {
           applyPayload(normalized);
         } else {
           throw new Error(res.message || 'Invalid settings response');
+        }
+
+        const normalizedRole = normalizeRole(user?.role);
+        const canSeeRazorpay = normalizedRole === 'client' || normalizedRole === 'admin' || normalizedRole === 'super_admin' || normalizedRole === 'client_admin';
+        if (canSeeRazorpay) {
+          const rzpRes = await settingsApi.getRazorpayConfig();
+          if (cancelled) return;
+          if (rzpRes.success && rzpRes.data) {
+            setRazorpayEnabled(rzpRes.data.razorpayEnabled);
+            setRazorpayKeyId(rzpRes.data.razorpayKeyId);
+            setRazorpayKeySecret(rzpRes.data.razorpayKeySecret);
+            setWebhookSecret(rzpRes.data.webhookSecret);
+            setIsConnected(rzpRes.data.isConnected);
+            setRazorpayBaseline({
+              razorpayEnabled: rzpRes.data.razorpayEnabled,
+              razorpayKeyId: rzpRes.data.razorpayKeyId,
+              razorpayKeySecret: rzpRes.data.razorpayKeySecret,
+              webhookSecret: rzpRes.data.webhookSecret,
+              isConnected: rzpRes.data.isConnected,
+            });
+          }
         }
       } catch (e: unknown) {
         if (cancelled) return;
@@ -575,6 +610,114 @@ export function DashboardSettings() {
     }
   };
 
+  const saveRazorpay = async () => {
+    if (!token) {
+      toast.error('Failed to save settings');
+      return;
+    }
+
+    if (razorpayEnabled && !razorpayKeyId.trim()) {
+      toast.error('Key ID is required when Razorpay is enabled');
+      return;
+    }
+    if (razorpayEnabled && !razorpayKeySecret.trim()) {
+      toast.error('Key Secret is required when Razorpay is enabled');
+      return;
+    }
+
+    setSavingSection('razorpay');
+    setSectionError(null);
+    try {
+      const payload: any = {
+        razorpayEnabled,
+        razorpayKeyId: razorpayKeyId.trim(),
+        razorpayKeySecret: razorpayKeySecret.trim(),
+        webhookSecret: webhookSecret.trim(),
+      };
+
+      console.log('[Settings Page] POST /api/client/payment-settings/razorpay payload', {
+        ...payload,
+        razorpayKeySecret: payload.razorpayKeySecret ? '********' : '',
+        webhookSecret: payload.webhookSecret ? '********' : '',
+      });
+
+      const res = await settingsApi.saveRazorpayConfig(payload);
+      if (res.success && res.data) {
+        setRazorpayEnabled(res.data.razorpayEnabled);
+        setRazorpayKeyId(res.data.razorpayKeyId);
+        setRazorpayKeySecret(res.data.razorpayKeySecret);
+        setWebhookSecret(res.data.webhookSecret);
+        setIsConnected(res.data.isConnected);
+        setRazorpayBaseline({
+          razorpayEnabled: res.data.razorpayEnabled,
+          razorpayKeyId: res.data.razorpayKeyId,
+          razorpayKeySecret: res.data.razorpayKeySecret,
+          webhookSecret: res.data.webhookSecret,
+          isConnected: res.data.isConnected,
+        });
+        toast.success('Razorpay settings saved successfully');
+      } else {
+        throw new Error(res.message || 'Save failed');
+      }
+    } catch (e: unknown) {
+      console.error('[Settings Page] saveRazorpay error', e);
+      const msg = e instanceof Error ? e.message : 'Failed to save settings';
+      setSectionError(msg);
+      toast.error(msg);
+    } finally {
+      setSavingSection(null);
+    }
+  };
+
+  const resetRazorpay = () => {
+    if (!razorpayBaseline) return;
+    setRazorpayEnabled(razorpayBaseline.razorpayEnabled);
+    setRazorpayKeyId(razorpayBaseline.razorpayKeyId);
+    setRazorpayKeySecret(razorpayBaseline.razorpayKeySecret);
+    setWebhookSecret(razorpayBaseline.webhookSecret);
+    setIsConnected(razorpayBaseline.isConnected);
+    setSectionError(null);
+    toast.success('Changes reset');
+  };
+
+  const testRazorpayConnection = async () => {
+    if (!token) return;
+    if (!razorpayKeyId.trim()) {
+      toast.error('Key ID is required to test connection');
+      return;
+    }
+    if (!razorpayKeySecret.trim()) {
+      toast.error('Key Secret is required to test connection');
+      return;
+    }
+
+    setIsTestingConnection(true);
+    try {
+      const payload: any = {
+        razorpayKeyId: razorpayKeyId.trim(),
+        razorpayKeySecret: razorpayKeySecret.trim(),
+      };
+      if (webhookSecret) {
+        payload.webhookSecret = webhookSecret.trim();
+      }
+
+      const res = await settingsApi.testRazorpayConfig(payload);
+      if (res.success) {
+        setIsConnected(true);
+        toast.success('Connection test succeeded! Razorpay is connected.');
+      } else {
+        setIsConnected(false);
+        throw new Error(res.message || 'Connection test failed');
+      }
+    } catch (e: unknown) {
+      setIsConnected(false);
+      const msg = e instanceof Error ? e.message : 'Connection test failed';
+      toast.error(msg);
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
   const onPickPhoto = () => fileInputRef.current?.click();
 
   const onPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -602,12 +745,15 @@ export function DashboardSettings() {
     setProfile({ ...profile, profilePhoto: '' });
   };
 
+  const normalizedUserRole = normalizeRole(user?.role);
+  const showRazorpay = normalizedUserRole === 'client' || normalizedUserRole === 'admin' || normalizedUserRole === 'super_admin' || normalizedUserRole === 'client_admin';
   const tabs = [
     { id: 'profile', title: 'Account Profile', icon: User },
     { id: 'store', title: 'Store Settings', icon: Store },
     { id: 'notifications', title: 'Notifications', icon: Bell },
     { id: 'security', title: 'Security & Access', icon: ShieldCheck },
     { id: 'billing', title: 'Billing & Plans', icon: CreditCard },
+    ...(showRazorpay ? [{ id: 'razorpay', title: 'Razorpay Integration', icon: CreditCard }] : []),
   ];
 
   const disabledForm = settingsLoading || !profile;
@@ -1329,6 +1475,157 @@ export function DashboardSettings() {
                       onCheckedChange={(v) => setBilling({ ...billing, autoRenew: v })}
                       disabled={disabledForm}
                     />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTab === 'razorpay' && showRazorpay && (
+            <Card className="border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-3xl overflow-hidden">
+              <CardHeader className="border-b border-gray-100 dark:border-white/5 pb-8">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div>
+                    <CardTitle className="text-2xl font-black">Razorpay Integration</CardTitle>
+                    <CardDescription className="text-sm mt-1">
+                      Configure your client-specific Razorpay payment credentials.
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-xl border-gray-200 dark:border-white/10 h-10"
+                      onClick={resetRazorpay}
+                      disabled={busy || !razorpayBaseline || !token}
+                    >
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Reset
+                    </Button>
+                    <Button
+                      type="button"
+                      className="rounded-xl bg-blue-600 text-white hover:bg-blue-700 h-10 px-6 shadow-lg shadow-blue-500/25"
+                      onClick={saveRazorpay}
+                      disabled={busy || !token}
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-8 space-y-8">
+                {settingsLoading && (
+                  <p className="text-sm text-muted-foreground font-medium">Loading settings…</p>
+                )}
+                {sectionError && activeTab === 'razorpay' && (
+                  <p className="text-sm text-rose-500 font-medium">{sectionError}</p>
+                )}
+
+                <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-gray-50/50 dark:bg-white/5 border border-gray-100 dark:border-white/10">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm font-semibold">Enable Razorpay Payments</span>
+                    <span className="text-xs text-muted-foreground">
+                      Accept customer payments directly to your client Razorpay account.
+                    </span>
+                  </div>
+                  <Switch
+                    checked={razorpayEnabled}
+                    onCheckedChange={(v) => setRazorpayEnabled(v)}
+                    disabled={settingsLoading}
+                  />
+                </div>
+
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div className="space-y-2 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                        Connection Status
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                            isTestingConnection
+                              ? 'bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : isConnected
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-gray-50 text-gray-800 border-gray-200 dark:bg-gray-900/30 dark:text-gray-400'
+                          }`}
+                        >
+                          {isTestingConnection ? 'Testing' : isConnected ? 'Connected' : 'Not Connected'}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-3 rounded-lg text-xs"
+                          onClick={testRazorpayConnection}
+                          disabled={isTestingConnection || settingsLoading}
+                        >
+                          Test Connection
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                      Razorpay Key ID
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="rzp_test_..."
+                      className="w-full bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                      value={razorpayKeyId}
+                      onChange={(e) => setRazorpayKeyId(e.target.value)}
+                      disabled={settingsLoading}
+                    />
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                      Razorpay Key Secret
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showKeySecret ? 'text' : 'password'}
+                        placeholder="••••••••••••••••"
+                        className="w-full bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all pr-12"
+                        value={razorpayKeySecret}
+                        onChange={(e) => setRazorpayKeySecret(e.target.value)}
+                        disabled={settingsLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKeySecret(!showKeySecret)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showKeySecret ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider ml-1">
+                      Webhook Secret (Optional)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showWebhookSecret ? 'text' : 'password'}
+                        placeholder="••••••••••••••••"
+                        className="w-full bg-gray-50/50 dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all pr-12"
+                        value={webhookSecret}
+                        onChange={(e) => setWebhookSecret(e.target.value)}
+                        disabled={settingsLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowWebhookSecret(!showWebhookSecret)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showWebhookSecret ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
