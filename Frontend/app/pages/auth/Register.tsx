@@ -11,12 +11,7 @@ import { authApi } from '../../api/auth';
  * We guard against that here so Google OAuth never redirects to
  * /undefined/auth/google in production.
  */
-const RAW_API_URL = import.meta.env.VITE_API_URL as string | undefined;
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_BASE_URL =
-  RAW_API_URL && RAW_API_URL !== 'undefined' && !(isLocalhost === false && (RAW_API_URL.includes('localhost') || RAW_API_URL.includes('127.0.0.1')))
-    ? RAW_API_URL.replace(/\/$/, '') // strip any trailing slash
-    : 'https://omni-commerce-website.onrender.com'; // production Render backend fallback
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, '');
 
 export function Register() {
   const [name, setName] = useState('');

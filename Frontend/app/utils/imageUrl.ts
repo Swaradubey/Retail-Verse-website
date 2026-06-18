@@ -10,12 +10,8 @@ export function getFullImageUrl(url?: string | null): string {
     return url;
   }
   if (isWindowsAbsolutePath(url)) return '';
-  const fallback = "https://omni-commerce-website.onrender.com";
-  let rawBase = String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || fallback;
-  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  if (!isLocalhost && (rawBase.includes("localhost") || rawBase.includes("127.0.0.1"))) {
-    rawBase = fallback;
-  }
+  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+  let rawBase = String(API_BASE_URL).trim();
   const base = rawBase.replace(/\/+$/, "").replace(/\/api$/, "");
   const path = url.startsWith("/") ? url : `/${url}`;
   return `${base}${path}`;
