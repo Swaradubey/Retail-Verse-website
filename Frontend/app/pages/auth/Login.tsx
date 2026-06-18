@@ -47,8 +47,17 @@ export function Login() {
       resetNavigationState();
       navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+      console.error("Login error:", err);
+      let message = 'Something went wrong. Please try again.';
+      if (err instanceof TypeError && err.message === 'Failed to fetch') {
+        message = 'Unable to connect to server. Please try again.';
+      } else if (err instanceof Error) {
+        if (err.message === 'Failed to fetch' || err.message.includes('Network Error')) {
+          message = 'Unable to connect to server. Please try again.';
+        } else {
+          message = err.message;
+        }
+      }
       setError(message);
     } finally {
       setIsSubmitting(false);
