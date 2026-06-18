@@ -26,12 +26,19 @@ const app = express();
 
 // Middleware
 const allowedOrigins = [
+  // ── Production custom domains ─────────────────────────────────────────────
+  "https://www.daizyhome.com",
+  "https://daizyhome.com",
+  "https://cartvio.biz",
+  "https://www.cartvio.biz",
+  // ── Other production domains ──────────────────────────────────────────────
   "https://storesetgo.online",
   "https://www.storesetgo.online",
   "https://retailverse.in",
   "https://www.retailverse.in",
   "https://retail-verse-website-bj2s.vercel.app",
   "https://retail-verse-website-bj2s-a8ccy75yo-swaradubeys-projects.vercel.app",
+  // ── Local development ─────────────────────────────────────────────────────
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:5174",
@@ -89,10 +96,14 @@ app.use(cors({
       console.error("[CORS] Error checking origin:", err.message);
     }
 
+    console.error("[CORS] Blocked by CORS:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true
 }));
+
+// Handle OPTIONS preflight requests for all routes
+app.options("*", cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 

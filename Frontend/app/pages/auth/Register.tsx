@@ -10,8 +10,12 @@ import { authApi } from '../../api/auth';
  * the Vercel dashboard the value becomes the literal string "undefined".
  * We guard against that here so Google OAuth never redirects to
  * /undefined/auth/google in production.
+ * Uses VITE_API_BASE_URL — same env variable as apiService.ts.
+ * Strip /api suffix so the Google OAuth link is built as base + /auth/google.
  */
-const API_BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/$/, '');
+const API_BASE_URL = (
+  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
+).replace(/\/api$/, "").replace(/\/$/, "");
 
 export function Register() {
   const [name, setName] = useState('');

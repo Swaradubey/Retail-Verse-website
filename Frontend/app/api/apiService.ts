@@ -1,17 +1,31 @@
 /**
  * Standardized API service for the EcoShop frontend.
  * Handles base URL, headers, authentication, and error parsing.
+ *
+ * Environment variable used: VITE_API_BASE_URL
+ *   Local:      http://localhost:5000   (set in .env)
+ *   Production: https://your-backend.onrender.com  (set in Vercel env vars)
  */
 
 const TOKEN_KEY = "eco_shop_token";
 
+/**
+ * Read the env var once at module load time.
+ * VITE_API_BASE_URL may be:
+ *   - "http://localhost:5000"                  (local dev without /api suffix)
+ *   - "http://localhost:5000/api"               (local dev with /api suffix)
+ *   - "https://your-backend.onrender.com"       (production without /api suffix)
+ *   - "https://your-backend.onrender.com/api"   (production with /api suffix)
+ */
+const _RAW_API_BASE: string = (
+  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
+).replace(/\/+$/, "");
+
+console.log(`[ApiService] API Base URL: ${_RAW_API_BASE}`);
+
 /** Resolves final request URL whether env base includes `/api` or not. */
 function buildApiUrl(endpoint: string): string {
-  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-  let raw = String(API_BASE_URL).trim();
-
-  console.log(`[ApiService] Using API Base URL: ${raw}`);
-  const base = raw.replace(/\/+$/, "");
+  const base = _RAW_API_BASE;
   let path = endpoint.trim();
   if (!path.startsWith("/")) path = `/${path}`;
 
@@ -19,6 +33,7 @@ function buildApiUrl(endpoint: string): string {
 
   if (path.startsWith("/api/") || path === "/api") {
     if (baseEndsWithApi) {
+      // base already ends with /api — strip the /api prefix from path to avoid duplication
       path = path === "/api" ? "/" : path.slice(4);
       if (!path.startsWith("/")) path = `/${path}`;
     }

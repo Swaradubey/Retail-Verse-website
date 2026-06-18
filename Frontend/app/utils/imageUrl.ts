@@ -4,17 +4,23 @@ function isWindowsAbsolutePath(url: string): boolean {
   return /^[a-zA-Z]:\\/.test(url);
 }
 
+/**
+ * Resolve the backend root (strip /api suffix if present) so image paths
+ * can be appended directly: e.g. base + "/uploads/image.jpg"
+ * Uses VITE_API_BASE_URL — same env variable as apiService.ts.
+ */
+const _IMAGE_API_BASE: string = (
+  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
+).replace(/\/+$/, "").replace(/\/api$/, "");
+
 export function getFullImageUrl(url?: string | null): string {
   if (!url) return '';
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
     return url;
   }
   if (isWindowsAbsolutePath(url)) return '';
-  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-  let rawBase = String(API_BASE_URL).trim();
-  const base = rawBase.replace(/\/+$/, "").replace(/\/api$/, "");
   const path = url.startsWith("/") ? url : `/${url}`;
-  return `${base}${path}`;
+  return `${_IMAGE_API_BASE}${path}`;
 }
 
 /** Extract the best available image URL from a product-like object, checking all common field locations. */

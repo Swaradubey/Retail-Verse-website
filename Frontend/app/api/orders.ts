@@ -1,7 +1,14 @@
 import ApiService from './apiService';
 
-const BASE_URL: string =
-  (String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "https://omni-commerce-website.onrender.com/api").replace(/\/+$/, "");
+/**
+ * Base URL for direct fetch calls in this file.
+ * Uses VITE_API_BASE_URL — same env variable as apiService.ts.
+ * Falls back to localhost for local development.
+ * In production, VITE_API_BASE_URL must be set in Vercel env vars.
+ */
+const BASE_URL: string = (
+  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
+).replace(/\/+$/, "");
 console.log(`[OrdersAPI] Using Base URL: ${BASE_URL}`);
 
 /** Same key as ApiService — send Bearer token on order creation so the backend can link orders to logged-in customers. */
