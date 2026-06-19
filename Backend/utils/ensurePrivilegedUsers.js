@@ -1,11 +1,10 @@
 const mongoose = require("mongoose");
 const User = require("../models/User");
 const {
-  ADMIN_EMAIL,
-  ADMIN_PASSWORD,
   SUPER_ADMIN_EMAIL,
   SUPER_ADMIN_PASSWORD,
 } = require("./authConstants");
+
 
 function logSeedContext() {
   const dbName =
@@ -25,54 +24,12 @@ function logSeedContext() {
 }
 
 /**
- * Ensures admin + super admin accounts exist (idempotent).
+ * Ensures the Super Admin account exists (idempotent).
+ * Normal Admin accounts are created dynamically by the Super Admin through the admin-management flow.
  * Called once after MongoDB connects.
  */
 async function ensurePrivilegedUsers() {
   logSeedContext();
-
-  try {
-    let adminUser = await User.findByNormalizedEmail(ADMIN_EMAIL);
-    if (!adminUser) {
-      console.log("[Seed] Admin user not in DB, creating...");
-      const created = await User.create({
-        name: "Admin",
-        email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
-        role: "admin",
-        isActive: true,
-      });
-      console.log(
-        "[Seed] Admin created successfully:",
-        ADMIN_EMAIL,
-        "id=",
-        String(created._id)
-      );
-    } else {
-      let needsSave = false;
-      if (adminUser.email !== ADMIN_EMAIL) {
-        adminUser.email = ADMIN_EMAIL;
-        needsSave = true;
-        console.log("[Seed] Admin email normalized to:", ADMIN_EMAIL);
-      }
-      if (adminUser.role !== "admin") {
-        adminUser.role = "admin";
-        needsSave = true;
-        console.log("[Seed] Admin role restored for:", ADMIN_EMAIL);
-      }
-      if (needsSave) {
-        await adminUser.save();
-      } else {
-        console.log("[Seed] Admin already present, skipping create:", ADMIN_EMAIL);
-      }
-    }
-  } catch (err) {
-    const msg = err && err.message ? err.message : String(err);
-    console.error("[Seed] Failed to ensure Admin user:", msg);
-    if (err && err.stack) {
-      console.error(err.stack);
-    }
-  }
 
   try {
     let superAdminUser = await User.findByNormalizedEmail(SUPER_ADMIN_EMAIL);

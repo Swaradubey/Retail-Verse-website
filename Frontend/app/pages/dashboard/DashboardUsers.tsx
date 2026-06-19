@@ -145,9 +145,16 @@ export function DashboardUsers() {
       if (!res.success || !res.data) {
         throw new Error(res.message || 'Update failed');
       }
-      toast.success('Role updated');
+      
+      const updatedUser = { ...res.data };
+      if ((res as any).store) {
+        updatedUser.store = (res as any).store;
+        updatedUser.clientId = (res as any).store._id;
+      }
+      
+      toast.success(res.message || 'Role updated');
       setUsers((prev) =>
-        prev.map((row) => (String(row._id) === String(res.data!._id) ? { ...row, ...res.data! } : row)),
+        prev.map((row) => (String(row._id) === String(updatedUser._id) ? { ...row, ...updatedUser } : row)),
       );
       setPendingRole((prev) => {
         const nextMap = { ...prev };
@@ -156,6 +163,11 @@ export function DashboardUsers() {
       });
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Could not update role');
+      setPendingRole((prev) => {
+        const nextMap = { ...prev };
+        delete nextMap[id];
+        return nextMap;
+      });
     } finally {
       setSavingId(null);
     }
@@ -351,11 +363,11 @@ export function DashboardUsers() {
                     let roleOptions: string[] = [];
                     if (safeRole === 'super_admin') {
                       roleOptions = ['super_admin'];
+                    } else if (safeRole === 'admin') {
+                      roleOptions = ['admin'];
                     } else if (!isSA) {
                       // Tenant Admins (Admin, Client, etc.)
-                      if (safeRole === 'admin') {
-                        roleOptions = [safeRole];
-                      } else if (isAdmin) {
+                      if (isAdmin) {
                         // Global Admin can manage employees and users
                         roleOptions = ADMIN_ALLOWED_ROLES;
                       } else {
@@ -365,7 +377,7 @@ export function DashboardUsers() {
                       roleOptions = roleOptions.filter(r => r !== 'admin' && r !== 'super_admin');
                     } else {
                       // Super Admin can assign all roles
-                      roleOptions = [...ASSIGNABLE_ROLES];
+                      roleOptions = [...ASSIGNABLE_ROLES].filter(r => r !== 'admin' && r !== 'super_admin');
                     }
 
                     // "client" and all standard roles are known — only treat as isOldRole if it's a truly unknown custom value
@@ -399,7 +411,7 @@ export function DashboardUsers() {
  <select
    className="rounded-lg border border-gray-200 dark:border-white/15 bg-white dark:bg-zinc-900 px-3 py-2.5 text-[16px] font-medium h-10"
    value={current}
-   disabled={safeRole === 'super_admin' || (!isSA && safeRole === 'admin')}
+   disabled={safeRole === 'super_admin' || safeRole === 'admin'}
    onChange={(e) => setPendingRole((prev) => ({ ...prev, [id]: e.target.value }))}
  >
  {roleOptions.map((r) => (
@@ -443,9 +455,17 @@ export function DashboardUsers() {
                                 variant="secondary"
                                 className="h-9 px-2.5"
                                 disabled={openingPanelUserId === u._id}
-                                onClick={() => void handleOpenRolePanel(u)}
+                                onClick={() => {
+                                  if (safeRole === 'client' && u.store?.customDomain) {
+                                    window.open(`https://${u.store.customDomain}`, '_blank');
+                                  } else {
+                                    void handleOpenRolePanel(u);
+                                  }
+                                }}
                                 title={
-                                  panelCfg.useImpersonation
+                                  safeRole === 'client' && u.store?.customDomain
+                                    ? `Open storefront (${u.store.customDomain})`
+                                    : panelCfg.useImpersonation
                                     ? `Open this account's panel (Super Admin impersonation)`
                                     : `Open the ${roleDisplayName(safeRole)} workspace`
                                 }

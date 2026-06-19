@@ -208,6 +208,13 @@ const updateUserRole = async (req, res) => {
       return res.status(400).json({ success: false, message: "Role cannot be empty" });
     }
 
+    if (nextRole === "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Admin role cannot be assigned from user management.",
+      });
+    }
+
     const target = await User.findById(id);
     if (!target) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -258,6 +265,53 @@ const updateUserRole = async (req, res) => {
     }
 
     target.role = nextRole;
+    
+    let linkedStore = null;
+
+    // Requirement 1 & 2: Provision store for client, check existing
+    if (nextRole === "client") {
+      const Client = require("../models/Client");
+      
+      // 1. Check if user already has a clientId
+      if (target.clientId && isValidObjectId(target.clientId)) {
+        linkedStore = await Client.findById(target.clientId);
+      }
+      
+      // 2. Fallback check by userId or email to avoid duplicates
+      if (!linkedStore) {
+        linkedStore = await Client.findOne({ 
+          $or: [
+            { userId: target._id },
+            { email: target.email.toLowerCase().trim() }
+          ] 
+        });
+      }
+
+      // 3. Create if doesn't exist
+      if (!linkedStore) {
+        const storeName = target.businessName || target.name || target.email.split('@')[0];
+        // Generate a simple slug for reference if needed (even though Client model might not use it natively, we provide an identifier)
+        const slugBase = storeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const slug = `${slugBase}-${Date.now().toString().slice(-4)}`;
+
+        linkedStore = await Client.create({
+          companyName: storeName,
+          shopName: storeName,
+          email: target.email.toLowerCase().trim(),
+          phone: target.phone || "0000000000",
+          gst: `PENDING-${Date.now().toString().slice(-6)}`,
+          userId: target._id,
+          createdBy: req.user?._id || target._id,
+          trialStatus: "active",
+          trialStartDate: new Date(),
+          trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
+        });
+      }
+
+      // 4. Ensure relationship is linked
+      target.clientId = linkedStore._id;
+    }
+
     try {
       await target.save();
     } catch (saveErr) {
@@ -308,7 +362,30 @@ const updateUserRole = async (req, res) => {
 
     await ensureRoleProfilesForUser(target);
     const fresh = await User.findById(target._id).select("-password").lean();
-    res.json({ success: true, message: "Role updated", data: fresh });
+    
+    // Requirement 7: Return updated user and linked store
+    const responsePayload = {
+      success: true,
+      message: nextRole === "client" ? "Role updated and store linked successfully" : "Role updated",
+      data: fresh,
+    };
+
+    if (nextRole === "client" && linkedStore) {
+      responsePayload.store = {
+        _id: linkedStore._id,
+        name: linkedStore.shopName || linkedStore.companyName,
+        slug: linkedStore._id, // Using ID as identifier
+      };
+      
+      // Also look up custom domain if exists
+      const CustomDomain = require("../models/CustomDomain");
+      const domainRec = await CustomDomain.findOne({ clientId: linkedStore._id, status: "Verified" });
+      if (domainRec) {
+        responsePayload.store.customDomain = domainRec.domainName;
+      }
+    }
+
+    res.json(responsePayload);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

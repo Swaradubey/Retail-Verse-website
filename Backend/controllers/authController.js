@@ -7,8 +7,6 @@ const {
   upsertNonAdminUserOnLogin,
 } = require("../utils/syncUserOnLogin");
 const {
-  ADMIN_EMAIL,
-  ADMIN_PASSWORD,
   SUPER_ADMIN_EMAIL,
   SUPER_ADMIN_PASSWORD,
 } = require("../utils/authConstants");
@@ -205,7 +203,7 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "User already exists" });
     }
 
-    if (normalizedEmail === ADMIN_EMAIL || normalizedEmail === SUPER_ADMIN_EMAIL) {
+    if (normalizedEmail === SUPER_ADMIN_EMAIL) {
       return res.status(400).json({
         success: false,
         message: "This email address cannot be used for registration",
@@ -287,24 +285,10 @@ const loginUser = async (req, res) => {
     }
 
     let passwordValid = await user.matchPassword(password);
-    if (
-      !passwordValid &&
-      normalizedEmail === ADMIN_EMAIL &&
-      password === ADMIN_PASSWORD
-    ) {
-      user.password = ADMIN_PASSWORD;
-      await user.save();
-      passwordValid = true;
-    }
 
     if (passwordValid) {
       if (!user.isActive) {
         return res.status(401).json({ success: false, message: "User account is inactive" });
-      }
-
-      if (user.email.toLowerCase().trim() === ADMIN_EMAIL && user.role !== "admin") {
-        user.role = "admin";
-        await user.save();
       }
 
       const roleForSync = String(user.role || "")
