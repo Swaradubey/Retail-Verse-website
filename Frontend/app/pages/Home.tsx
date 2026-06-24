@@ -3,21 +3,9 @@ import { motion } from 'framer-motion';
 import { ShoppingBag, ArrowRight, Star, ShieldCheck, Zap } from 'lucide-react';
 import { Link } from 'react-router';
 import { TrustMarquee } from '../components/TrustMarquee';
-import { SellEverywhere } from '../components/SellEverywhere';
 import { ResourcesSection } from '../components/ResourcesSection';
-import { AnimatedShowcaseSection } from '../components/AnimatedShowcaseSection';
-import { products } from '../data/products';
 
 export function Home() {
-  // Extract featured products for the showcase section
-  const featuredProducts = products.filter(p => p.featured).slice(0, 4).map(p => ({
-    id: p.id,
-    title: p.name,
-    subtitle: p.category,
-    image: p.image,
-    href: `/product/${p.slug}`
-  }));
-
   return (
     <div className="flex flex-col gap-0 overflow-hidden">
 
@@ -118,15 +106,6 @@ export function Home() {
 
       {/* Trust & Features Marquee */}
       <TrustMarquee />
-
-      {/* Omni-Channel Section */}
-      <SellEverywhere />
-
-      {/* Featured Products Showcase */}
-      <AnimatedShowcaseSection
-        heading="Curated Premium Collection"
-        items={featuredProducts}
-      />
 
       {/* Resources & Business Insights */}
       <ResourcesSection />

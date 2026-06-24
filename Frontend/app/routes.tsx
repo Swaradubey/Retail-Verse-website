@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router';
+import React, { lazy, Suspense } from 'react';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
@@ -8,54 +9,70 @@ import { SuperAdminOrClientRoute } from './components/SuperAdminOrClientRoute';
 import { FullAdminOnlyRoute } from './components/FullAdminOnlyRoute';
 import { HelpCenterRoute } from './components/HelpCenterRoute';
 import { SupportRoute } from './components/SupportRoute';
+// Home page is eagerly loaded — it is the first visible screen
 import { Home } from './pages/Home';
-import { Shop } from './pages/Shop';
-import { ProductsPreview } from './pages/ProductsPreview';
-import { ProductDetail } from './pages/ProductDetail';
-import { Cart } from './pages/Cart';
-import { Checkout } from './pages/Checkout';
-import { OrderConfirmation } from './pages/OrderConfirmation';
-import { NotFound } from './pages/NotFound';
-import { Dashboard } from './pages/Dashboard';
-import { Login } from './pages/auth/Login';
-import { SuperAdminLogin } from './pages/auth/SuperAdminLogin';
-import { SuperAdminDashboard } from './pages/super-admin/SuperAdminDashboard';
-import { Register } from './pages/auth/Register';
-import { GoogleAuthCallback } from './pages/auth/GoogleAuthCallback';
-import { ForgotPassword } from './pages/auth/ForgotPassword';
-import { ResetPassword } from './pages/auth/ResetPassword';
-import { Contact } from './pages/Contact';
-import { About } from './pages/About';
-import { Inventory } from './pages/Inventory';
-import { Pos } from './pages/Pos';
-import { DashboardProducts } from './pages/dashboard/DashboardProducts';
-import { DashboardOrders } from './pages/dashboard/DashboardOrders';
-import { DashboardInvoices } from './pages/dashboard/DashboardInvoices';
-import { DashboardCustomers } from './pages/dashboard/DashboardCustomers';
-import { DashboardAnalytics } from './pages/dashboard/DashboardAnalytics';
-import { DashboardInbox } from './pages/dashboard/DashboardInbox';
-import { DashboardSettings } from './pages/dashboard/DashboardSettings';
-import { DashboardHelpCenter } from './pages/dashboard/DashboardHelpCenter';
-import { DashboardWishlistActivity } from './pages/dashboard/DashboardWishlistActivity';
-import { DashboardContactMessages } from './pages/dashboard/DashboardContactMessages';
-import { DashboardUsers } from './pages/dashboard/DashboardUsers';
-import { DashboardSeo } from './pages/dashboard/DashboardSeo';
-import { DashboardAdminLogs } from './pages/dashboard/DashboardAdminLogs';
-import { DashboardSupport } from './pages/dashboard/DashboardSupport';
-import { DashboardClients } from './pages/dashboard/DashboardClients';
-import { DashboardAddEmployee } from './pages/dashboard/DashboardAddEmployee';
-import { DashboardCustomersContactForm } from './pages/dashboard/DashboardCustomersContactForm';
-import { Account } from './pages/Account';
-import { WishlistPage } from './pages/WishlistPage';
-import { TrackOrder } from './pages/TrackOrder';
-import { CustomDomain } from './pages/super-admin/CustomDomain';
-import { SuperAdminClients } from './pages/super-admin/SuperAdminClients';
-import { SuperAdminClientDetail } from './pages/super-admin/SuperAdminClientDetail';
-import { InvoiceDetail } from './pages/super-admin/InvoiceDetail';
-import { PrivacyPolicy } from './pages/PrivacyPolicy';
-import { TermsOfService } from './pages/TermsOfService';
-
 import { RootRoute } from './components/RootRoute';
+
+// ── Page-level lazy imports ─────────────────────────────────────────────────
+// These are only downloaded when the user navigates to that route.
+const Shop = lazy(() => import('./pages/Shop').then(m => ({ default: m.Shop })));
+const ProductsPreview = lazy(() => import('./pages/ProductsPreview').then(m => ({ default: m.ProductsPreview })));
+const ProductDetail = lazy(() => import('./pages/ProductDetail').then(m => ({ default: m.ProductDetail })));
+const Cart = lazy(() => import('./pages/Cart').then(m => ({ default: m.Cart })));
+const Checkout = lazy(() => import('./pages/Checkout').then(m => ({ default: m.Checkout })));
+const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation').then(m => ({ default: m.OrderConfirmation })));
+const NotFound = lazy(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Login = lazy(() => import('./pages/auth/Login').then(m => ({ default: m.Login })));
+const SuperAdminLogin = lazy(() => import('./pages/auth/SuperAdminLogin').then(m => ({ default: m.SuperAdminLogin })));
+const SuperAdminDashboard = lazy(() => import('./pages/super-admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
+const Register = lazy(() => import('./pages/auth/Register').then(m => ({ default: m.Register })));
+const GoogleAuthCallback = lazy(() => import('./pages/auth/GoogleAuthCallback').then(m => ({ default: m.GoogleAuthCallback })));
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword').then(m => ({ default: m.ResetPassword })));
+const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
+const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
+const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
+const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos })));
+const DashboardProducts = lazy(() => import('./pages/dashboard/DashboardProducts').then(m => ({ default: m.DashboardProducts })));
+const DashboardOrders = lazy(() => import('./pages/dashboard/DashboardOrders').then(m => ({ default: m.DashboardOrders })));
+const DashboardInvoices = lazy(() => import('./pages/dashboard/DashboardInvoices').then(m => ({ default: m.DashboardInvoices })));
+const DashboardCustomers = lazy(() => import('./pages/dashboard/DashboardCustomers').then(m => ({ default: m.DashboardCustomers })));
+const DashboardAnalytics = lazy(() => import('./pages/dashboard/DashboardAnalytics').then(m => ({ default: m.DashboardAnalytics })));
+const DashboardInbox = lazy(() => import('./pages/dashboard/DashboardInbox').then(m => ({ default: m.DashboardInbox })));
+const DashboardSettings = lazy(() => import('./pages/dashboard/DashboardSettings').then(m => ({ default: m.DashboardSettings })));
+const DashboardHelpCenter = lazy(() => import('./pages/dashboard/DashboardHelpCenter').then(m => ({ default: m.DashboardHelpCenter })));
+const DashboardWishlistActivity = lazy(() => import('./pages/dashboard/DashboardWishlistActivity').then(m => ({ default: m.DashboardWishlistActivity })));
+const DashboardContactMessages = lazy(() => import('./pages/dashboard/DashboardContactMessages').then(m => ({ default: m.DashboardContactMessages })));
+const DashboardUsers = lazy(() => import('./pages/dashboard/DashboardUsers').then(m => ({ default: m.DashboardUsers })));
+const DashboardSeo = lazy(() => import('./pages/dashboard/DashboardSeo').then(m => ({ default: m.DashboardSeo })));
+const DashboardAdminLogs = lazy(() => import('./pages/dashboard/DashboardAdminLogs').then(m => ({ default: m.DashboardAdminLogs })));
+const DashboardSupport = lazy(() => import('./pages/dashboard/DashboardSupport').then(m => ({ default: m.DashboardSupport })));
+const DashboardClients = lazy(() => import('./pages/dashboard/DashboardClients').then(m => ({ default: m.DashboardClients })));
+const DashboardAddEmployee = lazy(() => import('./pages/dashboard/DashboardAddEmployee').then(m => ({ default: m.DashboardAddEmployee })));
+const DashboardCustomersContactForm = lazy(() => import('./pages/dashboard/DashboardCustomersContactForm').then(m => ({ default: m.DashboardCustomersContactForm })));
+const Account = lazy(() => import('./pages/Account').then(m => ({ default: m.Account })));
+const WishlistPage = lazy(() => import('./pages/WishlistPage').then(m => ({ default: m.WishlistPage })));
+const TrackOrder = lazy(() => import('./pages/TrackOrder').then(m => ({ default: m.TrackOrder })));
+const CustomDomain = lazy(() => import('./pages/super-admin/CustomDomain').then(m => ({ default: m.CustomDomain })));
+const SuperAdminClients = lazy(() => import('./pages/super-admin/SuperAdminClients').then(m => ({ default: m.SuperAdminClients })));
+const SuperAdminClientDetail = lazy(() => import('./pages/super-admin/SuperAdminClientDetail').then(m => ({ default: m.SuperAdminClientDetail })));
+const InvoiceDetail = lazy(() => import('./pages/super-admin/InvoiceDetail').then(m => ({ default: m.InvoiceDetail })));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const TermsOfService = lazy(() => import('./pages/TermsOfService').then(m => ({ default: m.TermsOfService })));
+
+// Minimal loading fallback — a tiny spinner that doesn't block the visible UI
+function PageLoader() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-black/10 border-t-black/50" />
+    </div>
+  );
+}
+
+function withSuspense(element: React.ReactNode) {
+  return <Suspense fallback={<PageLoader />}>{element}</Suspense>;
+}
 
 export const router = createBrowserRouter([
   {
@@ -64,19 +81,19 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <RootRoute /> },
       { path: 'landing', Component: Home },
-      { path: 'shop', Component: Shop },
-      { path: 'products', Component: ProductsPreview },
-      { path: 'products/all', Component: Shop },
-      { path: 'product/:slug', Component: ProductDetail },
-      { path: 'cart', Component: Cart },
-      { path: 'checkout', Component: Checkout },
-      { path: 'order-confirmation/:orderId', Component: OrderConfirmation },
-      { path: 'track-order', Component: TrackOrder },
-      { path: 'login', Component: Login },
-      { path: 'super-admin/login', Component: SuperAdminLogin },
+      { path: 'shop', element: withSuspense(<Shop />) },
+      { path: 'products', element: withSuspense(<ProductsPreview />) },
+      { path: 'products/all', element: withSuspense(<Shop />) },
+      { path: 'product/:slug', element: withSuspense(<ProductDetail />) },
+      { path: 'cart', element: withSuspense(<Cart />) },
+      { path: 'checkout', element: withSuspense(<Checkout />) },
+      { path: 'order-confirmation/:orderId', element: withSuspense(<OrderConfirmation />) },
+      { path: 'track-order', element: withSuspense(<TrackOrder />) },
+      { path: 'login', element: withSuspense(<Login />) },
+      { path: 'super-admin/login', element: withSuspense(<SuperAdminLogin />) },
       {
         path: 'super-admin',
-        element: (
+        element: withSuspense(
           <ProtectedRoute loginPath="/super-admin/login">
             <SuperAdminRoute>
               <SuperAdminDashboard />
@@ -84,17 +101,17 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         ),
       },
-      { path: 'register', Component: Register },
-      { path: 'google-auth-callback', Component: GoogleAuthCallback },
-      { path: 'forgot-password', Component: ForgotPassword },
-      { path: 'reset-password/:token', Component: ResetPassword },
-      { path: 'contact', Component: Contact },
-      { path: 'about', Component: About },
-      { path: 'privacy-policy', Component: PrivacyPolicy },
-      { path: 'terms-of-service', Component: TermsOfService },
+      { path: 'register', element: withSuspense(<Register />) },
+      { path: 'google-auth-callback', element: withSuspense(<GoogleAuthCallback />) },
+      { path: 'forgot-password', element: withSuspense(<ForgotPassword />) },
+      { path: 'reset-password/:token', element: withSuspense(<ResetPassword />) },
+      { path: 'contact', element: withSuspense(<Contact />) },
+      { path: 'about', element: withSuspense(<About />) },
+      { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
+      { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
       {
         path: 'pos',
-        element: (
+        element: withSuspense(
           <ProtectedRoute>
             <Pos />
           </ProtectedRoute>
@@ -102,29 +119,29 @@ export const router = createBrowserRouter([
       },
       {
         path: 'account',
-        element: (
+        element: withSuspense(
           <ProtectedRoute>
             <Account />
           </ProtectedRoute>
         ),
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
-          { path: 'wishlist', element: <WishlistPage /> },
-          { path: 'track', element: <TrackOrder variant="account" /> },
+          { path: 'wishlist', element: withSuspense(<WishlistPage />) },
+          { path: 'track', element: withSuspense(<TrackOrder />) },
         ],
       },
       {
-        element: (
+        element: withSuspense(
           <ProtectedRoute>
             <Dashboard />
           </ProtectedRoute>
         ),
         children: [
           { path: 'dashboard', index: true, element: null },
-          { path: 'dashboard/products', element: <DashboardProducts /> },
+          { path: 'dashboard/products', element: withSuspense(<DashboardProducts />) },
           {
             path: 'dashboard/inventory',
-            element: (
+            element: withSuspense(
               <AdminRoute>
                 <Inventory />
               </AdminRoute>
@@ -132,11 +149,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/orders',
-            element: <DashboardOrders />,
+            element: withSuspense(<DashboardOrders />),
           },
           {
             path: 'dashboard/invoices',
-            element: (
+            element: withSuspense(
               <SuperAdminOrClientRoute>
                 <DashboardInvoices />
               </SuperAdminOrClientRoute>
@@ -144,7 +161,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/customers',
-            element: (
+            element: withSuspense(
               <SuperAdminOrClientRoute>
                 <DashboardCustomers />
               </SuperAdminOrClientRoute>
@@ -152,7 +169,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/customers/contact-form',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <DashboardCustomersContactForm />
               </FullAdminOnlyRoute>
@@ -160,7 +177,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/users',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <DashboardUsers />
               </FullAdminOnlyRoute>
@@ -168,7 +185,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/clients',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <DashboardClients />
               </SuperAdminOnlyRoute>
@@ -176,7 +193,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/admin-logs',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <DashboardAdminLogs />
               </SuperAdminOnlyRoute>
@@ -184,11 +201,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/support',
-            element: <SupportRoute />,
+            element: withSuspense(<SupportRoute />),
           },
           {
             path: 'dashboard/analytics',
-            element: (
+            element: withSuspense(
               <SuperAdminOrClientRoute>
                 <DashboardAnalytics />
               </SuperAdminOrClientRoute>
@@ -196,7 +213,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/inbox',
-            element: (
+            element: withSuspense(
               <AdminRoute>
                 <DashboardInbox />
               </AdminRoute>
@@ -204,7 +221,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/contact-messages',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <DashboardContactMessages />
               </FullAdminOnlyRoute>
@@ -212,7 +229,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/settings',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <DashboardSettings />
               </FullAdminOnlyRoute>
@@ -220,16 +237,16 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/help-center',
-            element: (
+            element: withSuspense(
               <HelpCenterRoute>
                 <DashboardHelpCenter />
               </HelpCenterRoute>
             ),
           },
-          { path: 'dashboard/wishlist', element: <WishlistPage /> },
+          { path: 'dashboard/wishlist', element: withSuspense(<WishlistPage />) },
           {
             path: 'dashboard/wishlist-activity',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <DashboardWishlistActivity />
               </FullAdminOnlyRoute>
@@ -237,7 +254,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/add-employee',
-            element: (
+            element: withSuspense(
               <AdminRoute>
                 <DashboardAddEmployee />
               </AdminRoute>
@@ -245,7 +262,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/seo',
-            element: (
+            element: withSuspense(
               // seo_manager is blocked from /dashboard/seo — they only get Products and Inventory
               <AdminRoute blockedRoles={['seo_manager']}>
                 <DashboardSeo />
@@ -254,7 +271,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'super-admin/custom-domain',
-            element: (
+            element: withSuspense(
               <FullAdminOnlyRoute>
                 <CustomDomain />
               </FullAdminOnlyRoute>
@@ -262,7 +279,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'super-admin/settings',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <DashboardSettings />
               </SuperAdminOnlyRoute>
@@ -270,7 +287,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'super-admin/clients',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <SuperAdminClients />
               </SuperAdminOnlyRoute>
@@ -278,7 +295,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'super-admin/clients/:clientId',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <SuperAdminClientDetail />
               </SuperAdminOnlyRoute>
@@ -286,7 +303,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'super-admin/invoice/:orderId',
-            element: (
+            element: withSuspense(
               <SuperAdminOnlyRoute>
                 <InvoiceDetail />
               </SuperAdminOnlyRoute>
@@ -294,7 +311,7 @@ export const router = createBrowserRouter([
           },
         ],
       },
-      { path: '*', Component: NotFound },
+      { path: '*', element: withSuspense(<NotFound />) },
     ],
   },
 ]);

@@ -184,6 +184,10 @@ export function SellEverywhere() {
                           src="https://images.unsplash.com/photo-1741061961703-0739f3454314?auto=format&fit=crop&q=80&w=800"
                           alt="Product Preview"
                           className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                          width="800"
+                          height="1000"
                         />
                       </div>
                       <div className="space-y-3">
