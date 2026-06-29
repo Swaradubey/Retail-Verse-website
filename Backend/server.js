@@ -195,10 +195,9 @@ app.use("/api/public", brandingRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
-    message: "Backend is running",
-    timestamp: new Date().toISOString(),
+    message: "Retail Verse backend is running",
   });
 });
 
