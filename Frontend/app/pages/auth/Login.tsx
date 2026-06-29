@@ -50,14 +50,30 @@ export function Login() {
       console.error("Login error:", err);
       let message = 'Something went wrong. Please try again.';
       if (err instanceof TypeError && err.message === 'Failed to fetch') {
-        message = 'Unable to connect to server. Please try again.';
+        message = 'Unable to connect to server. Please check your internet connection or try again later.';
       } else if (err instanceof Error) {
-        if (err.message === 'Failed to fetch' || err.message.includes('Network Error')) {
-          message = 'Unable to connect to server. Please try again.';
+        const errMsg = err.message;
+        if (errMsg === 'Failed to fetch' || errMsg.includes('Network Error')) {
+          message = 'Unable to connect to server. Please check your internet connection or try again later.';
+        } else if (errMsg.includes('CORS') || errMsg.includes('blocked by CORS')) {
+          message = 'Connection blocked by security policy (CORS). Please contact administrator.';
+        } else if (errMsg.includes('status 404') || errMsg.includes('404')) {
+          message = 'Login service not found (HTTP 404). Please contact support.';
+        } else if (errMsg.includes('status 500') || errMsg.includes('500')) {
+          message = 'Internal server error (HTTP 500). Please try again later.';
         } else {
-          message = err.message;
+          message = errMsg;
         }
       }
+
+      if (import.meta.env.DEV) {
+        console.log("[Dev Log] Final API Base URL:", import.meta.env.VITE_API_BASE_URL || "http://localhost:5000");
+        console.log("[Dev Log] Login Endpoint: /api/auth/login");
+        if (err instanceof Error) {
+          console.log("[Dev Log] Backend error message:", err.message);
+        }
+      }
+
       setError(message);
     } finally {
       setIsSubmitting(false);

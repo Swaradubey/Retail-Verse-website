@@ -99,7 +99,9 @@ app.use(cors({
     console.error("[CORS] Blocked by CORS:", origin);
     return callback(new Error("Not allowed by CORS"));
   },
-  credentials: true
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-client-id", "x-client-domain", "x-client-origin"]
 }));
 
 // Handle OPTIONS preflight requests for all routes
@@ -284,7 +286,7 @@ const PORT = process.env.PORT || 5000;
     await connectDB();
     console.log("[Backend Debug] MongoDB Connected successfully.");
 
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`\n================================================`);
       console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
