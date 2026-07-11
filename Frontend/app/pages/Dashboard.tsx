@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useLocation, Outlet, Link, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTheme } from '../context/ThemeContext';
 
 import {
   Sidebar,
@@ -487,14 +488,17 @@ export function Dashboard() {
     );
   }
 
+  const { themeKey } = useTheme();
+  const clientId = user?.clientId || '';
+
   return (
     <SidebarProvider>
       <div
-        className={
+        className={`client-dashboard theme-${themeKey} ${
           isOverview || isInventoryOrAnalytics
             ? 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[linear-gradient(145deg,#fdf6e3_0%,#ffffff_45%,#fff8dc_100%)] dark:bg-[linear-gradient(145deg,#1a1510_0%,#0c0a08_50%,#14110c_100%)]'
             : 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[#fafafa] dark:bg-[#09090b]'
-        }
+        }`}
       >
         <ImpersonationBanner />
         <div className="flex min-h-0 flex-1 w-full">

@@ -1,0 +1,65 @@
+/* ── Theme CSS Variable Definitions ─────────────────────────
+   Applied via .client-dashboard.theme-{key} wrapper on the
+   client dashboard layout. Scoped so Super Admin dashboard
+   and other clients remain unaffected.
+   ──────────────────────────────────────────────────────── */
+
+/* ── Luxe Commerce (Editorial / Spacious) ─────────────── */
+.client-dashboard.theme-luxe-commerce {
+  --theme-primary: #1a1a2e;
+  --theme-secondary: #c9a96e;
+  --theme-accent: #e8d5b7;
+  --theme-background: #fcfbf8;
+  --theme-surface: #ffffff;
+  --theme-text: #111111;
+  --theme-muted-text: #6b7280;
+  --theme-border: rgba(0, 0, 0, 0.08);
+  --theme-sidebar-bg: #1a1a2e;
+  --theme-sidebar-foreground: #ffffff;
+  --theme-sidebar-accent: #c9a96e;
+  --theme-header-bg: #ffffff;
+  --theme-button-bg: #1a1a2e;
+  --theme-button-text: #ffffff;
+  --theme-radius: 0.5rem;
+  --theme-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+
+  /* Override shadcn sidebar tokens */
+  --sidebar: #1a1a2e;
+  --sidebar-foreground: #ffffff;
+  --sidebar-accent: #c9a96e;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-primary: #c9a96e;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #c9a96e;
+}
+
+/* ── Nova Marketplace (Marketplace / Conversion-focused) ─ */
+.client-dashboard.theme-nova-marketplace {
+  --theme-primary: #0f172a;
+  --theme-secondary: #3b82f6;
+  --theme-accent: #f97316;
+  --theme-background: #ffffff;
+  --theme-surface: #f8fafc;
+  --theme-text: #0f172a;
+  --theme-muted-text: #64748b;
+  --theme-border: rgba(0, 0, 0, 0.08);
+  --theme-sidebar-bg: #0f172a;
+  --theme-sidebar-foreground: #ffffff;
+  --theme-sidebar-accent: #3b82f6;
+  --theme-header-bg: #ffffff;
+  --theme-button-bg: #3b82f6;
+  --theme-button-text: #ffffff;
+  --theme-radius: 0.375rem;
+  --theme-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+
+  /* Override shadcn sidebar tokens */
+  --sidebar: #0f172a;
+  --sidebar-foreground: #ffffff;
+  --sidebar-accent: #3b82f6;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #3b82f6;
+}

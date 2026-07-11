@@ -19,7 +19,21 @@ const ThemeContext = createContext<ThemeContextType>({
   refreshTheme: async () => {},
 });
 
-const STORAGE_KEY = 'retail_verse_theme_key';
+function getTenantStorageKey(): string {
+  try {
+    const user = localStorage.getItem('eco_shop_user');
+    if (user) {
+      const parsed = JSON.parse(user);
+      if (parsed.clientId || parsed._id) {
+        const id = parsed.clientId || parsed._id;
+        return `retail-verse-theme-${id}`;
+      }
+    }
+  } catch {}
+  const clientId = localStorage.getItem('retail_verse_client_id');
+  if (clientId) return `retail-verse-theme-${clientId}`;
+  return 'retail_verse_theme_key';
+}
 
 function getStoredClientId(): string | null {
   try {
@@ -41,6 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const resolveTheme = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    const storageKey = getTenantStorageKey();
     try {
       const clientId = getStoredClientId();
       if (clientId) {
@@ -49,18 +64,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           const key = res.data.resolvedThemeKey || 'luxe-commerce';
           setThemeKeyState(key);
           setThemeData(res.data.theme);
-          localStorage.setItem(STORAGE_KEY, key);
+          localStorage.setItem(storageKey, key);
           setIsLoading(false);
           return;
         }
       }
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey);
       if (stored && ['luxe-commerce', 'nova-marketplace'].includes(stored)) {
         setThemeKeyState(stored);
       }
       setIsLoading(false);
     } catch {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey);
       if (stored && ['luxe-commerce', 'nova-marketplace'].includes(stored)) {
         setThemeKeyState(stored);
       }
@@ -75,7 +90,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setThemeKey = useCallback((key: string) => {
     if (['luxe-commerce', 'nova-marketplace'].includes(key)) {
       setThemeKeyState(key);
-      localStorage.setItem(STORAGE_KEY, key);
+      localStorage.setItem(getTenantStorageKey(), key);
     }
   }, []);
 

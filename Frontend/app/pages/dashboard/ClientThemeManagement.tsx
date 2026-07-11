@@ -17,6 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../components/ui/button';
 import { themesApi, type ThemeData, type MyThemeData } from '../../api/themes';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const MOCK_PRODUCTS = Array.from({ length: 4 }, (_, i) => ({
   _id: `mock-${i}`,
@@ -52,6 +53,7 @@ const THEME_PREVIEWS: Record<string, { heroBg: string; heroTitle: string; cardSt
 
 export function ClientThemeManagement() {
   const { user } = useAuth();
+  const { setThemeKey, refreshTheme } = useTheme();
   const [themes, setThemes] = useState<ThemeData[]>([]);
   const [myTheme, setMyTheme] = useState<MyThemeData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,15 +89,18 @@ export function ClientThemeManagement() {
   const confirmSelect = async () => {
     if (!showConfirm) return;
     setSaving('select');
+    const previousKey = myTheme?.selectedThemeKey || myTheme?.resolvedThemeKey || 'luxe-commerce';
     try {
       const res = await themesApi.updateMyTheme(showConfirm);
       if (res.success) {
-        toast.success('Theme updated successfully! Your storefront will reflect the new theme.');
+        setThemeKey(showConfirm);
+        toast.success('Theme updated successfully! Your storefront and dashboard will reflect the new theme.');
         setShowConfirm(null);
         setPreviewTheme(null);
         loadData();
       } else throw new Error(res.message);
     } catch (e: any) {
+      setThemeKey(previousKey);
       toast.error(e.message || 'Failed to update theme');
     } finally {
       setSaving(null);
@@ -107,6 +112,7 @@ export function ClientThemeManagement() {
     try {
       const res = await themesApi.resetMyTheme();
       if (res.success) {
+        setThemeKey('luxe-commerce');
         toast.success('Theme reset to platform default');
         loadData();
       } else throw new Error(res.message);

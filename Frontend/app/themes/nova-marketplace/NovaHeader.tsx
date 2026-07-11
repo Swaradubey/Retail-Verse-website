@@ -1,6 +1,8 @@
 import { Link, useLocation } from 'react-router';
 import { Search, ShoppingCart, Menu, X, ChevronDown, MapPin, Phone } from 'lucide-react';
 import { useState } from 'react';
+import { useBranding } from '../../context/BrandingContext';
+import { useAuth } from '../../context/AuthContext';
 
 const CATEGORIES = [
   { label: 'Electronics', href: '/shop' },
@@ -14,6 +16,15 @@ const CATEGORIES = [
 export function NovaHeader() {
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { brandName: brandingBrandName } = useBranding();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = isSuperAdmin
+    ? 'Business Store'
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Business Store';
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -39,7 +50,7 @@ export function NovaHeader() {
           </button>
 
           <Link to="/" className="text-xl lg:text-2xl font-bold text-[#0f172a] tracking-tight shrink-0">
-            <span className="text-blue-600">Nova</span>Market
+            {brandName}
           </Link>
 
           {/* Search */}
@@ -86,7 +97,7 @@ export function NovaHeader() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 bg-white lg:hidden">
           <div className="flex items-center justify-between px-4 h-14 border-b">
-            <span className="text-xl font-bold text-[#0f172a]">NovaMarket</span>
+            <span className="text-xl font-bold text-[#0f172a]">{brandName}</span>
             <button onClick={() => setMobileOpen(false)} className="p-2">
               <X className="w-5 h-5" />
             </button>

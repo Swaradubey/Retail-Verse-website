@@ -1,6 +1,8 @@
 import { Link, useLocation } from 'react-router';
 import { Search, ShoppingBag, Heart, Menu, X } from 'lucide-react';
 import { useState } from 'react';
+import { useBranding } from '../../context/BrandingContext';
+import { useAuth } from '../../context/AuthContext';
 
 const NAV_ITEMS = [
   { label: 'New In', href: '/shop' },
@@ -15,6 +17,15 @@ export function LuxeHeader() {
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { brandName: brandingBrandName } = useBranding();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = isSuperAdmin
+    ? 'Business Store'
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Business Store';
 
   if (typeof window !== 'undefined') {
     window.addEventListener('scroll', () => setScrolled(window.scrollY > 40), { passive: true });
@@ -41,7 +52,7 @@ export function LuxeHeader() {
           </button>
 
           <Link to="/" className="text-2xl lg:text-3xl font-serif tracking-wide text-[#1a1a2e] font-bold">
-            Luxe
+            {brandName}
           </Link>
 
           {pathname !== '/' && (
@@ -77,7 +88,7 @@ export function LuxeHeader() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 bg-white">
           <div className="flex items-center justify-between px-6 h-16 border-b border-gray-100">
-            <span className="text-2xl font-serif font-bold text-[#1a1a2e]">Luxe</span>
+            <span className="text-2xl font-serif font-bold text-[#1a1a2e]">{brandName}</span>
             <button onClick={() => setMobileOpen(false)} className="p-2">
               <X className="w-5 h-5" />
             </button>

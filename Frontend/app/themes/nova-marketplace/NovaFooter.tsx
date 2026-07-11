@@ -1,14 +1,25 @@
 import { Link } from 'react-router';
 import { Mail, Phone, MapPin, Facebook, Twitter, Instagram } from 'lucide-react';
+import { useBranding } from '../../context/BrandingContext';
+import { useAuth } from '../../context/AuthContext';
 
 export function NovaFooter() {
+  const { brandName: brandingBrandName } = useBranding();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = isSuperAdmin
+    ? 'Business Store'
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Business Store';
   return (
     <footer className="bg-[#0f172a] text-gray-400">
       <div className="max-w-[88rem] mx-auto px-4 py-12 lg:py-16">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
           <div>
             <h3 className="text-lg font-bold text-white mb-4">
-              <span className="text-blue-500">Nova</span>Market
+              {brandName}
             </h3>
             <p className="text-sm leading-relaxed mb-4">Your one-stop marketplace for everything you need. Best prices, fast delivery, and amazing deals every day.</p>
             <div className="flex items-center gap-3">
@@ -47,7 +58,7 @@ export function NovaFooter() {
         </div>
 
         <div className="border-t border-white/10 mt-10 pt-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs">
-          <p>&copy; 2026 NovaMarket. All rights reserved.</p>
+          <p>&copy; 2026 {brandName}. All rights reserved.</p>
           <div className="flex items-center gap-4">
             <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
             <Link to="/terms-of-service" className="hover:text-white transition-colors">Terms</Link>

@@ -1,13 +1,24 @@
 import { Link } from 'react-router';
 import { Mail, Phone, MapPin, Instagram, Twitter, Youtube } from 'lucide-react';
+import { useBranding } from '../../context/BrandingContext';
+import { useAuth } from '../../context/AuthContext';
 
 export function LuxeFooter() {
+  const { brandName: brandingBrandName } = useBranding();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const isClientUser = user?.role === 'client';
+  const brandName = isSuperAdmin
+    ? 'Business Store'
+    : isClientUser && user.businessName
+      ? user.businessName
+      : brandingBrandName || 'Business Store';
   return (
     <footer className="bg-[#1a1a2e] text-white/80">
       <div className="max-w-[88rem] mx-auto px-6 py-16 lg:py-20">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           <div className="lg:col-span-2">
-            <h3 className="text-2xl font-serif text-white mb-4">Luxe Commerce</h3>
+            <h3 className="text-2xl font-serif text-white mb-4">{brandName}</h3>
             <p className="text-white/60 leading-relaxed max-w-md mb-8">
               Curating the finest products for discerning customers since 2020. 
               Every piece tells a story of exceptional craftsmanship and timeless design.
@@ -54,7 +65,7 @@ export function LuxeFooter() {
             <Link to="/terms-of-service" className="hover:text-white/60 transition-colors">Terms of Service</Link>
           </div>
           <p className="text-sm text-white/40">
-            &copy; 2026 Luxe Commerce. All rights reserved.
+            &copy; 2026 {brandName}. All rights reserved.
           </p>
         </div>
       </div>
