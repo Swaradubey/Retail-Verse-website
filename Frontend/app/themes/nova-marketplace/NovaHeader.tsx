@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router';
-import { Search, ShoppingCart, Menu, X, ChevronDown, MapPin, Phone } from 'lucide-react';
+import { Search, ShoppingCart, Menu, X, ChevronDown, MapPin, Phone, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
 import { useBranding } from '../../context/BrandingContext';
 import { useAuth } from '../../context/AuthContext';
@@ -37,7 +37,12 @@ export function NovaHeader() {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/track-order" className="hover:text-blue-300 transition-colors">Track Order</Link>
-            <Link to="/account" className="hover:text-blue-300 transition-colors">Sign In</Link>
+            <Link
+              to="/account"
+              className="inline-flex items-center px-5 py-1.5 rounded-full bg-blue-600 text-white text-xs font-semibold tracking-wide hover:bg-blue-700 transition-all duration-300 shadow-sm hover:shadow-md hover:scale-105 active:scale-[0.98]"
+            >
+              Sign In
+            </Link>
           </div>
         </div>
       </div>
@@ -49,8 +54,13 @@ export function NovaHeader() {
             <Menu className="w-5 h-5" />
           </button>
 
-          <Link to="/" className="text-xl lg:text-2xl font-bold text-[#0f172a] tracking-tight shrink-0">
-            {brandName}
+          <Link to="/" className="flex items-center gap-3 shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+              <ShoppingBag className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl lg:text-2xl font-bold text-[#0f172a] tracking-tight">
+              {brandName}
+            </span>
           </Link>
 
           {/* Search */}
@@ -97,7 +107,12 @@ export function NovaHeader() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 bg-white lg:hidden">
           <div className="flex items-center justify-between px-4 h-14 border-b">
-            <span className="text-xl font-bold text-[#0f172a]">{brandName}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+                <ShoppingBag className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-xl font-bold text-[#0f172a]">{brandName}</span>
+            </div>
             <button onClick={() => setMobileOpen(false)} className="p-2">
               <X className="w-5 h-5" />
             </button>

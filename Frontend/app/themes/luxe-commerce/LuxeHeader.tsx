@@ -36,10 +36,16 @@ export function LuxeHeader() {
       {/* Top bar */}
       <div className="hidden lg:block border-b border-black/5">
         <div className="max-w-[88rem] mx-auto px-6 py-2 flex items-center justify-between text-[11px] tracking-widest uppercase text-gray-500 font-medium">
-          <span>Complimentary express shipping on orders over $200</span>
           <div className="flex items-center gap-6">
-            <Link to="/account" className="hover:text-black transition-colors">Sign In</Link>
-            <Link to="/track-order" className="hover:text-black transition-colors">Track Order</Link>
+            <Link to="/track-order" className="hover:text-black transition-colors"></Link>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/account"
+              className="inline-flex items-center px-5 py-1.5 rounded-full bg-[#c9a96e] text-white font-semibold tracking-wide hover:bg-[#b8954f] transition-all duration-300 shadow-sm hover:shadow-md hover:scale-105 active:scale-[0.98]"
+            >
+              Sign In
+            </Link>
           </div>
         </div>
       </div>
@@ -51,8 +57,13 @@ export function LuxeHeader() {
             <Menu className="w-5 h-5" />
           </button>
 
-          <Link to="/" className="text-2xl lg:text-3xl font-serif tracking-wide text-[#1a1a2e] font-bold">
-            {brandName}
+          <Link to="/" className="flex items-center gap-3 shrink-0">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+              <ShoppingBag className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-2xl lg:text-3xl font-serif tracking-wide text-[#1a1a2e] font-bold">
+              {brandName}
+            </span>
           </Link>
 
           {pathname !== '/' && (
@@ -88,7 +99,12 @@ export function LuxeHeader() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 bg-white">
           <div className="flex items-center justify-between px-6 h-16 border-b border-gray-100">
-            <span className="text-2xl font-serif font-bold text-[#1a1a2e]">{brandName}</span>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+                <ShoppingBag className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-2xl font-serif font-bold text-[#1a1a2e]">{brandName}</span>
+            </div>
             <button onClick={() => setMobileOpen(false)} className="p-2">
               <X className="w-5 h-5" />
             </button>

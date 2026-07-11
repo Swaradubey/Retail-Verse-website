@@ -16,7 +16,7 @@ export function PrivacyPolicy() {
       icon: <Eye className="w-5 h-5 text-purple-400" />
     },
     {
-      title: "3. Data Security",
+      title: "3. Data Info",
       content: "We take reasonable measures to help protect information about you from loss, theft, misuse, and unauthorized access, disclosure, alteration, and destruction. However, no security system is impenetrable.",
       icon: <Lock className="w-5 h-5 text-cyan-400" />
     },
@@ -149,8 +149,8 @@ export function PrivacyPolicy() {
 
       <div className="relative max-w-4xl mx-auto px-6 py-20 lg:py-32">
         {/* Navigation */}
-        <Link 
-          to="/" 
+        <Link
+          to="/"
           className="inline-flex items-center gap-2 text-sm text-white/50 hover:text-white transition-colors mb-12 group"
         >
           <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
@@ -229,8 +229,8 @@ export function PrivacyPolicy() {
           <p className="text-white/40 text-sm mb-6">
             Your privacy is important to us. If you have any concerns, please get in touch.
           </p>
-          <Link 
-            to="/contact" 
+          <Link
+            to="/contact"
             className="inline-flex items-center justify-center px-8 py-4 rounded-2xl bg-white text-black font-bold transition-all hover:scale-105 active:scale-95"
           >
             Contact Support
