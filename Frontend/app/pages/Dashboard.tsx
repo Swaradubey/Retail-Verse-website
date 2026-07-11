@@ -142,7 +142,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   /** Dynamic brand name: from BrandingContext (pre-login), then user businessName, then default */
-  const { brandName: dsBrandName, footerText, logo: brandLogo } = useBranding();
+  const { brandName: dsBrandName, logo: brandLogo } = useBranding();
   const dsFinalBrandName = isSuperAdminRole(user?.role)
     ? 'Daizy Homes'
     : user?.role === 'client' && user?.businessName
@@ -890,49 +890,7 @@ export function Dashboard() {
                   )}
                 </AnimatePresence>
 
-                {/* Footer */}
-                <footer
-                  className={
-                    isOverview
-                      ? 'mt-14 pt-10 border-t border-amber-200/30 dark:border-amber-900/25 flex flex-col md:flex-row items-center justify-between text-muted-foreground text-sm pb-10'
-                      : 'mt-12 pt-8 border-t border-gray-100 dark:border-white/5 flex flex-col md:flex-row items-center justify-between text-muted-foreground text-sm pb-8'
-                  }
-                >
-                  <p>{footerText}</p>
-                  <div className="flex flex-wrap items-center justify-center gap-5 sm:gap-6 mt-4 md:mt-0">
-                    <Link
-                      to="/privacy-policy"
-                      className={
-                        isOverview
-                          ? 'transition-colors duration-300 hover:text-[#b8860b] dark:hover:text-amber-300'
-                          : 'hover:text-blue-600 transition-colors'
-                      }
-                    >
-                      Privacy Policy
-                    </Link>
-                    <Link
-                      to="/terms-of-service"
-                      className={
-                        isOverview
-                          ? 'transition-colors duration-300 hover:text-[#b8860b] dark:hover:text-amber-300'
-                          : 'hover:text-blue-600 transition-colors'
-                      }
-                    >
-                      Terms of Service
-                    </Link>
-                    <a
-                      href="#"
-                      className={
-                        isOverview
-                          ? 'transition-colors duration-300 hover:text-[#b8860b] dark:hover:text-amber-300'
-                          : 'hover:text-blue-600 transition-colors'
-                      }
-                    >
-                      Documentation
-                    </a>
-                  </div>
-                </footer>
-                <Footer />
+                <Footer variant="platform" />
               </div>
             </main>
           </SidebarInset>

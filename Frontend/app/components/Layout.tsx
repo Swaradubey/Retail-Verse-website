@@ -11,7 +11,7 @@ const comingSoonAllowedPathPrefixes = ["/home", "/products", "/category", "/cont
 export function Layout() {
   const { pathname } = useLocation();
   const { themeKey } = useTheme();
-  const hasSidebar = pathname.startsWith('/dashboard') || pathname.startsWith('/account');
+  const hasSidebar = pathname.startsWith('/dashboard') || pathname.startsWith('/account') || pathname.startsWith('/super-admin');
 
   const isStorefront = !hasSidebar && !pathname.startsWith('/login') && !pathname.startsWith('/register') && !pathname.startsWith('/super-admin') && !pathname.startsWith('/auth');
 

@@ -1,4 +1,4 @@
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import {
   Facebook,
   Twitter,
@@ -10,23 +10,31 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
 
-export function Footer() {
+export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 'storefront' } = {}) {
+  const location = useLocation();
   const { user } = useAuth();
   const { brandName: brandingBrandName, footerText, isLoading: brandingLoading } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
-  const brandName = isSuperAdmin
-    ? 'Daizy Homes'
-    : isClientUser && user.businessName
-      ? user.businessName
-      : brandingBrandName || 'Daizy Homes';
-  const brandSubtitle = !user
-    ? 'Smart Living Store'
+  const isPlatformRoute = location.pathname.startsWith('/super-admin') || location.pathname.startsWith('/dashboard');
+  const variant = explicitVariant || (isPlatformRoute ? 'platform' : 'storefront');
+
+  const brandName = variant === 'platform'
+    ? 'Retail Verse'
     : isSuperAdmin
+      ? 'Retail Verse'
+      : isClientUser && user.businessName
+        ? user.businessName
+        : brandingBrandName || 'Retail Verse';
+  const brandSubtitle = variant === 'platform'
+    ? 'SMART COMMERCE PLATFORM'
+    : !user
       ? 'Smart Living Store'
-      : isClientUser
-        ? 'Store'
-        : 'Smart Living Store';
+      : isSuperAdmin
+        ? 'Smart Living Store'
+        : isClientUser
+          ? 'Store'
+          : 'Smart Living Store';
   return (
     <footer className="relative mt-auto border-t border-white/10 bg-[#0b0b0c] text-white">
       {/* Background glow */}
@@ -212,17 +220,7 @@ export function Footer() {
 
         {/* Bottom bar */}
         <div className="flex flex-col items-center justify-between gap-4 pt-6 text-sm text-white/40 md:flex-row">
-          <p>
-            {footerText} | Powered by{' '}
-            <a
-              href="https://hexerve.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-white hover:underline"
-            >
-              Hexerve
-            </a>
-          </p>
+          <p>{footerText}</p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 md:justify-end">
             <Link to="/privacy-policy" className="transition-colors hover:text-white/70">
