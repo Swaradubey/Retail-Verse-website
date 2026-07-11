@@ -30,6 +30,8 @@ const clientSchema = new mongoose.Schema(
     footerText: { type: String, trim: true, default: "" },
     logo: { type: String, trim: true, default: "" },
     primaryColor: { type: String, trim: true, default: "" },
+    /** Theme Management */
+    selectedThemeKey: { type: String, trim: true, default: null },
   },
   { timestamps: true }
 );

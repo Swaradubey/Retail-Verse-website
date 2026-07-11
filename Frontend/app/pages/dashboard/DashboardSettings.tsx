@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Eye,
   EyeOff,
+  Palette,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
@@ -30,6 +31,8 @@ import {
   type SettingsSecurity,
   type SettingsBilling,
 } from '../../api/settings';
+import { SuperAdminThemeManagement } from './SuperAdminThemeManagement';
+import { ClientThemeManagement } from './ClientThemeManagement';
 
 const COUNTRY_OPTIONS = [
   'United States',
@@ -747,12 +750,15 @@ export function DashboardSettings() {
 
   const normalizedUserRole = normalizeRole(user?.role);
   const showRazorpay = normalizedUserRole === 'client' || normalizedUserRole === 'admin' || normalizedUserRole === 'super_admin' || normalizedUserRole === 'client_admin';
+  const isSuperAdmin = normalizedUserRole === 'super_admin';
+  const showThemeManagement = isSuperAdmin || normalizedUserRole === 'client' || normalizedUserRole === 'client_admin';
   const tabs = [
     { id: 'profile', title: 'Account Profile', icon: User },
     { id: 'store', title: 'Store Settings', icon: Store },
     { id: 'notifications', title: 'Notifications', icon: Bell },
     { id: 'security', title: 'Security & Access', icon: ShieldCheck },
     { id: 'billing', title: 'Billing & Plans', icon: CreditCard },
+    ...(showThemeManagement ? [{ id: 'theme', title: 'Theme Management', icon: Palette }] : []),
     ...(showRazorpay ? [{ id: 'razorpay', title: 'Razorpay Integration', icon: CreditCard }] : []),
   ];
 
@@ -1479,6 +1485,12 @@ export function DashboardSettings() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {activeTab === 'theme' && showThemeManagement && (
+            <div>
+              {isSuperAdmin ? <SuperAdminThemeManagement /> : <ClientThemeManagement />}
+            </div>
           )}
 
           {activeTab === 'razorpay' && showRazorpay && (

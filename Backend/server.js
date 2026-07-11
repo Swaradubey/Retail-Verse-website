@@ -160,6 +160,7 @@ const shiprocketService = require("./services/shiprocketService");
 
 const customDomainRoutes = require("./routes/customDomainRoutes");
 const brandingRoutes = require("./routes/brandingRoutes");
+const themeRoutes = require("./routes/themeRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -192,12 +193,14 @@ app.use("/api/quotes", quoteRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/public", brandingRoutes);
+app.use("/api/themes", themeRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "Retail Verse backend is running",
+    message: "Backend is running",
+    timestamp: new Date().toISOString(),
   });
 });
 

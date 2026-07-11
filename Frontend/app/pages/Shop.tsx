@@ -92,23 +92,30 @@ export function Shop() {
         if (cancelled) return; // Ignore stale responses from previous auth state
 
         if (response.success && Array.isArray(response.data)) {
-          const normalized = response.data.map((p: DynamicProduct) => ({
-            id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
-            _id: p._id,
-            name: p.name,
-            slug: slugifyProductName(p.name),
-            price: p.price,
-            originalPrice: p.originalPrice,
-            description: p.description || '',
-            category: p.category,
-            image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
-            images: [getProductImageUrl(p)].filter(Boolean),
-            stock: p.stock,
-            rating: p.rating || 0,
-            reviews: 0,
-            featured: p.isFeatured || false,
-            sku: p.sku
-          } as ShopProduct));
+          const normalized = response.data
+            .map((p: DynamicProduct) => ({
+              id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
+              _id: p._id,
+              name: p.name,
+              slug: slugifyProductName(p.name),
+              price: p.price,
+              originalPrice: p.originalPrice,
+              description: p.description || '',
+              category: p.category,
+              image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
+              images: [getProductImageUrl(p)].filter(Boolean),
+              stock: p.stock,
+              rating: p.rating || 0,
+              reviews: 0,
+              featured: p.isFeatured || false,
+              sku: p.sku
+            } as ShopProduct))
+            .filter((p) => {
+              const hasValidId = Boolean(p._id || p.id);
+              const hasValidName = typeof p.name === 'string' && p.name.trim().length > 0;
+              const hasValidPrice = typeof p.price === 'number' && p.price > 0;
+              return hasValidId && hasValidName && hasValidPrice;
+            });
           if (cancelled) return;
           setDynamicProducts(normalized);
           setBackendTotal(response.totalProducts || normalized.length);
@@ -491,7 +498,7 @@ export function Shop() {
                   </div>
                   <h3 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">No products found</h3>
                   <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto leading-relaxed">
-                    Add products from Inventory to see them here.
+                    No products available at the moment.
                   </p>
                   <button
                     type="button"

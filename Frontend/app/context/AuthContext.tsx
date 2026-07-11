@@ -323,6 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('retail_verse_client_id');
     localStorage.removeItem('retail_verse_client_domain');
     localStorage.removeItem('retail_verse_client_origin');
+    localStorage.removeItem('selectedClientId');
   };
 
   const patchUser = (partial: Partial<User>) => {

@@ -7,27 +7,27 @@ export function TermsOfService() {
   const sections = [
     {
       title: "1. Acceptance of Terms",
-      content: "By accessing and using Daizy Homes, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services. We reserve the right to update or modify these terms at any time without prior notice.",
+      content: "By accessing and using Retail Verse, you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services. We reserve the right to update or modify these terms at any time without prior notice.",
       icon: <CheckCircle2 className="w-5 h-5 text-blue-400" />
     },
     {
       title: "2. User Accounts",
-      content: "To access certain features of Daizy Homes, you may be required to create an account. You are responsible for maintaining the confidentiality of your account information and for all activities that occur under your account. You must be at least 18 years old to create an account.",
+      content: "To access certain features of Retail Verse, you may be required to create an account. You are responsible for maintaining the confidentiality of your account information and for all activities that occur under your account. You must be at least 18 years old to create an account.",
       icon: <Shield className="w-5 h-5 text-purple-400" />
     },
     {
       title: "3. Intellectual Property",
-      content: "All content on Daizy Homes, including text, graphics, logos, images, and software, is the property of Daizy Homes or its content suppliers and is protected by international copyright laws. The compilation of all content on this site is the exclusive property of Daizy Homes.",
+      content: "All content on Retail Verse, including text, graphics, logos, images, and software, is the property of Retail Verse or its content suppliers and is protected by international copyright laws. The compilation of all content on this site is the exclusive property of Retail Verse.",
       icon: <FileText className="w-5 h-5 text-cyan-400" />
     },
     {
       title: "4. Limitation of Liability",
-      content: "Daizy Homes shall not be liable for any direct, indirect, incidental, special, or consequential damages resulting from the use or inability to use our services or for the cost of procurement of substitute goods and services.",
+      content: "Retail Verse shall not be liable for any direct, indirect, incidental, special, or consequential damages resulting from the use or inability to use our services or for the cost of procurement of substitute goods and services.",
       icon: <Scale className="w-5 h-5 text-emerald-400" />
     },
     {
       title: "5. Governing Law",
-      content: "These terms shall be governed by and construed in accordance with the laws of the jurisdiction in which Daizy Homes operates, without regard to its conflict of law provisions.",
+      content: "These terms shall be governed by and construed in accordance with the laws of the jurisdiction in which Retail Verse operates, without regard to its conflict of law provisions.",
       icon: <Scale className="w-5 h-5 text-amber-400" />
     }
   ];

@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useLocation } from 'react-router';
 import ApiService from '../api/apiService';
+import { useAuth } from '../context/AuthContext';
+import { isSuperAdminRole } from '../utils/staffRoles';
 
 export interface BrandingData {
   clientId?: string;
@@ -31,6 +34,16 @@ const SELECTED_CLIENT_ID_KEY = 'selectedClientId';
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<BrandingData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { user: authUser } = useAuth();
+
+  // Watch auth state changes: clear client-specific branding when user is
+  // Super Admin or logs out, preventing stale client branding leaks.
+  useEffect(() => {
+    if (!authUser || isSuperAdminRole(authUser.role) || authUser.isSuperAdmin) {
+      setBranding(null);
+      localStorage.removeItem(SELECTED_CLIENT_ID_KEY);
+    }
+  }, [authUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,14 +137,26 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
 
 export function useBranding() {
   const ctx = useContext(BrandingContext);
+  const { user } = useAuth();
+  const location = useLocation();
+
   if (ctx === undefined) {
     throw new Error('useBranding must be used within a BrandingProvider');
   }
 
-  const brandName = ctx.branding?.businessName || ctx.branding?.brandingName || 'Business Store';
-  const footerText = ctx.branding?.footerText || `© 2026 ${brandName}. All rights reserved. | Powered by Hexerve`;
-  const logo = ctx.branding?.logo || '';
-  const primaryColor = ctx.branding?.primaryColor || '';
+  const isSuperAdminRoute = location.pathname.startsWith('/super-admin');
+  const isSuperAdmin = isSuperAdminRoute || user?.isSuperAdmin === true || isSuperAdminRole(user?.role);
+
+  const brandName = isSuperAdmin
+    ? 'Retail Verse'
+    : ctx.branding?.businessName || ctx.branding?.brandingName || 'Business Store';
+
+  const footerText = isSuperAdmin
+    ? `© ${new Date().getFullYear()} Retail Verse. All rights reserved. | Powered by Hexerve`
+    : ctx.branding?.footerText || `© 2026 ${brandName}. All rights reserved. | Powered by Hexerve`;
+
+  const logo = isSuperAdmin ? '' : ctx.branding?.logo || '';
+  const primaryColor = isSuperAdmin ? '' : ctx.branding?.primaryColor || '';
 
   return {
     ...ctx,

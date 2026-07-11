@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { ShoppingCart, Menu, X, ArrowRight, Package, ShoppingBag } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useState } from 'react';
@@ -14,6 +14,7 @@ const HIDDEN_HEADER_ROLES = [
 ];
 
 export function Header() {
+  const { pathname } = useLocation();
   const { cartCount } = useCart();
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -77,7 +78,7 @@ export function Header() {
             </Link>
 
             {/* Desktop Nav — hidden for Super Admin and restricted employee roles */}
-            {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
+            {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? (
               <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
                 <Link
                   to="/products"
@@ -226,7 +227,7 @@ export function Header() {
         {mobileMenuOpen && (
           <div className="absolute left-0 w-full border-t border-black/8 bg-[#f7f6f2]/95 backdrop-blur-xl lg:hidden">
             <div className="mx-auto max-w-[88rem] px-4 pb-6 pt-5 sm:px-6">
-              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
+              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? (
                 <nav className="flex flex-col gap-2">
                   <Link
                     to="/products"
@@ -276,7 +277,7 @@ export function Header() {
                 </nav>
               ) : null}
 
-              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? <div className="my-5 h-px bg-black/8" /> : null}
+              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? <div className="my-5 h-px bg-black/8" /> : null}
 
               {user ? (
                 <div className="flex flex-col gap-3">
