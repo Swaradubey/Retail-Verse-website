@@ -143,12 +143,18 @@ export function DashboardSubscription() {
 
             if (verifyRes.success) {
               toast.success(`${planName} plan activated successfully!`);
+              if (verifyRes.data) {
+                setSubscription(verifyRes.data as SubscriptionData);
+              }
+              setBuying(null);
               await fetchSubscription();
             } else {
               toast.error(verifyRes.message || 'Payment verification failed.');
+              setBuying(null);
             }
           } catch (err: any) {
             toast.error(err?.message || 'Payment verification failed.');
+            setBuying(null);
           }
         },
         prefill: {
