@@ -6,7 +6,6 @@ import {
   Search, 
   User as UserIcon, 
   ChevronDown,
-  Settings,
   Loader2,
   ShoppingCart,
   AlertTriangle,
@@ -393,18 +392,6 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
               >
                 <UserIcon className="w-4 h-4" /> Profile
               </DropdownMenuItem>
-              {hasFullAdminPrivileges(user?.role) && (
-                <DropdownMenuItem
-                  onClick={() => navigate(user?.role === 'super_admin' ? '/super-admin/settings' : '/dashboard/settings')}
-                  className={
-                    premiumOverview
-                      ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
-                      : 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-400'
-                  }
-                >
-                  <Settings className="w-4 h-4" /> Settings
-                </DropdownMenuItem>
-              )}
               <DropdownMenuItem
                 onClick={handleNotifClick}
                 className={

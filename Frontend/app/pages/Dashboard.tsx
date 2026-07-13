@@ -6,7 +6,6 @@ import {
   Package,
   ShoppingCart,
   Users,
-  Settings,
   LogOut,
   TrendingUp,
   HelpCircle,
@@ -117,11 +116,6 @@ const sidebarItems = [
   { title: "POS", icon: ShoppingCart, href: "/pos", counterManagerOnly: true },
 
 
-];
-
-const secondaryItems = [
-  { title: "Settings", icon: Settings, href: "/dashboard/settings", hideForSuperAdmin: true },
-  { title: "Settings", icon: Settings, href: "/super-admin/settings", superAdminOnly: true },
 ];
 
 /** Shared pill layout for every dashboard sidebar link (matches Overview row: radius, padding, min-height, icon gap). */
@@ -367,32 +361,6 @@ export function Dashboard() {
     }
     return true;
   });
-  const resourceSidebarItems = secondaryItems.filter((item) => {
-    if (isCashierRole(user?.role)) {
-      return false;
-    }
-    if (restrictedInventoryDashboardRole) {
-      return false;
-    }
-    if ('hideForSuperAdmin' in item && item.hideForSuperAdmin && isSuperAdminRole(user?.role)) {
-      return false;
-    }
-    if ('superAdminOnly' in item && item.superAdminOnly && !isSuperAdminRole(user?.role)) {
-      return false;
-    }
-    if ('adminOnly' in item && item.adminOnly && !hasFullAdminPrivileges(user?.role)) {
-      return false;
-    }
-    if ('helpCenter' in item && item.helpCenter) {
-      if (isSuperAdminRole(user?.role) || normalizeRole(user?.role) === 'admin') return false;
-      return isCustomerAccountRole(user?.role) || isStaffRole(user?.role);
-    }
-    if ('staffOnly' in item && item.staffOnly && !isStaffRole(user?.role)) {
-      return false;
-    }
-    return true;
-  });
-
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -667,35 +635,6 @@ export function Dashboard() {
                 </SidebarGroupContent>
               </SidebarGroup>
 
-              <SidebarGroup className="mt-4">
-                <SidebarGroupLabel className="sr-only">Resources</SidebarGroupLabel>
-                <SidebarGroupContent>
-                  <SidebarMenu className="gap-2">
-                    {resourceSidebarItems.map((item) => {
-                      const isActive = item.href ? location.pathname.startsWith(item.href) : false;
-                      return (
-                        <SidebarMenuItem key={item.title}>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={isActive}
-                            tooltip={item.title}
-                            className={dashboardSidebarNavButtonClass(isActive, false)}
-                          >
-                            <Link to={item.href || '#'}>
-                              <item.icon
-                                className={`w-5 h-5 shrink-0 ${isActive ? 'text-[#b8860b] dark:text-amber-300' : ''}`}
-                              />
-                              <span className="group-data-[collapsible=icon]:hidden flex-1 min-w-0 text-left text-[16px] font-semibold tracking-wide leading-snug">
-                                {item.title}
-                              </span>
-                            </Link>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      );
-                    })}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </SidebarGroup>
             </SidebarContent>
             <SidebarFooter
               className={
