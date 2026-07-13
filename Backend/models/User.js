@@ -45,6 +45,11 @@ const billingSettingsSchema = new mongoose.Schema(
     autoRenew: { type: Boolean, default: false },
     paymentMethodLast4: { type: String, trim: true, default: "" },
     subscriptionStatus: { type: String, trim: true, default: "inactive" },
+    premium: { type: Boolean, default: false },
+    subscriptionStartDate: { type: Date, default: null },
+    subscriptionEndDate: { type: Date, default: null },
+    razorpayPaymentId: { type: String, trim: true, default: "" },
+    razorpayOrderId: { type: String, trim: true, default: "" },
   },
   { _id: false }
 );

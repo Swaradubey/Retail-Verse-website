@@ -3,10 +3,15 @@ const router = express.Router();
 const { protect, allowRoles } = require("../middleware/authMiddleware");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const { getMe, updateMe, listPlatformUsers, updateUserRole, updateUserStatus, resetUserPassword, deleteUser } = require("../controllers/userController");
+const { getSubscription, createSubscriptionOrder, verifySubscriptionPayment } = require("../controllers/subscriptionController");
 const { getUserAnalytics } = require("../controllers/userAnalyticsController");
 
 router.get("/me", protect, tenantMiddleware, getMe);
 router.put("/me", protect, tenantMiddleware, updateMe);
+
+router.get("/subscription", protect, tenantMiddleware, getSubscription);
+router.post("/subscription/create-order", protect, tenantMiddleware, createSubscriptionOrder);
+router.post("/subscription/verify", protect, tenantMiddleware, verifySubscriptionPayment);
 
 /** User analytics (Sales Analytics + Category Distribution for their orders) */
 router.get(

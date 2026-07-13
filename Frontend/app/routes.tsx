@@ -45,6 +45,7 @@ const DashboardHelpCenter = lazy(() => import('./pages/dashboard/DashboardHelpCe
 const DashboardWishlistActivity = lazy(() => import('./pages/dashboard/DashboardWishlistActivity').then(m => ({ default: m.DashboardWishlistActivity })));
 const DashboardContactMessages = lazy(() => import('./pages/dashboard/DashboardContactMessages').then(m => ({ default: m.DashboardContactMessages })));
 const DashboardUsers = lazy(() => import('./pages/dashboard/DashboardUsers').then(m => ({ default: m.DashboardUsers })));
+const DashboardSubscription = lazy(() => import('./pages/dashboard/DashboardSubscription').then(m => ({ default: m.DashboardSubscription })));
 const DashboardSeo = lazy(() => import('./pages/dashboard/DashboardSeo').then(m => ({ default: m.DashboardSeo })));
 const DashboardAdminLogs = lazy(() => import('./pages/dashboard/DashboardAdminLogs').then(m => ({ default: m.DashboardAdminLogs })));
 const DashboardSupport = lazy(() => import('./pages/dashboard/DashboardSupport').then(m => ({ default: m.DashboardSupport })));
@@ -174,6 +175,10 @@ export const router = createBrowserRouter([
                 <DashboardCustomersContactForm />
               </FullAdminOnlyRoute>
             ),
+          },
+          {
+            path: 'dashboard/subscription',
+            element: withSuspense(<DashboardSubscription />),
           },
           {
             path: 'dashboard/users',

@@ -28,6 +28,7 @@ import {
   Clock,
   ChevronRight,
   Search,
+  Crown,
 } from 'lucide-react';
 import { useNavigate, useLocation, Outlet, Link, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -92,6 +93,7 @@ const sidebarItems = [
   { title: "POS", icon: ShoppingCart, href: "/pos", hideForSuperAdmin: true, hideForUser: true },
   { title: "Wishlist", icon: Heart, href: "/dashboard/wishlist", hideForSuperAdmin: true },
   { title: "Track Order", icon: Truck, href: "/track-order", hideForInventoryManager: true, hideForSuperAdmin: true },
+  { title: "Subscription / Upgrade Plan", icon: Crown, href: "/dashboard/subscription" },
   { title: "Wishlist Activity", icon: Activity, href: "/dashboard/wishlist-activity", adminOnly: true, hideForSuperAdmin: true },
   { title: "Super Admin", icon: Shield, href: "/super-admin", superAdminOnly: true, hideForSuperAdmin: true },
   { title: "Orders", icon: ShoppingCart, href: "/dashboard/orders", hideForUser: false, hideForSuperAdmin: true },
@@ -323,6 +325,7 @@ export function Dashboard() {
         item.href === '/dashboard/invoices' ||
         item.href === '/dashboard/customers' ||
         item.href === '/dashboard/users' ||
+        item.href === '/dashboard/subscription' ||
         item.href === '/super-admin/custom-domain' ||
         item.href === '/dashboard/add-employee' ||
         item.href === '/dashboard/support'
@@ -752,6 +755,7 @@ export function Dashboard() {
                         <TrendingUp className="w-4 h-4 shrink-0" />
                         <span className="text-xs sm:text-sm font-bold uppercase tracking-[0.2em]">
                           {location.pathname === '/dashboard' ? 'Performance Live' :
+                            location.pathname === '/dashboard/subscription' ? 'Subscription' :
                             location.pathname.split('/').pop()?.replace('-', ' ')}
                         </span>
                       </div>
@@ -763,6 +767,7 @@ export function Dashboard() {
                         }
                       >
                         {location.pathname === '/dashboard' ? 'Dashboard Overview' :
+                          location.pathname === '/dashboard/subscription' ? 'Subscription & Upgrade Plan' :
                           location.pathname.split('/').pop()?.replace('-', ' ')}
                       </h1>
                       <p
@@ -774,7 +779,9 @@ export function Dashboard() {
                       >
                         {location.pathname === '/dashboard'
                           ? <>Welcome back, <span className="text-foreground font-semibold">{user?.name || 'Admin'}</span>. Here&apos;s what&apos;s happening today.</>
-                          : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
+                          : location.pathname === '/dashboard/subscription'
+                            ? 'Manage your subscription plan and upgrade to unlock premium features.'
+                            : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
                       </p>
                     </div>
 

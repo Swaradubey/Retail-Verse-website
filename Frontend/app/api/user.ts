@@ -77,5 +77,45 @@ export const userApi = {
 
   deletePlatformUser: (id: string) =>
     ApiService.delete<{ success: boolean; message: string }>(`/api/users/platform/${id}`),
+
+  getSubscription: () =>
+    ApiService.get<SubscriptionData>("/api/users/subscription"),
+
+  createSubscriptionOrder: (planName: string) =>
+    ApiService.post<SubscriptionOrderResponse>("/api/users/subscription/create-order", { planName }),
+
+  verifySubscriptionPayment: (payload: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => ApiService.post<{ success: boolean; message: string; data?: any }>("/api/users/subscription/verify", payload),
 };
+
+export interface Plan {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  features: string[];
+}
+
+export interface SubscriptionData {
+  currentPlan: string;
+  premium: boolean;
+  subscriptionStatus: string;
+  expiryDate: string | null;
+  startDate: string | null;
+  paymentId: string | null;
+  orderId: string | null;
+}
+
+export interface SubscriptionOrderResponse {
+  success: boolean;
+  order_id: string;
+  amount: number;
+  currency: string;
+  key_id: string;
+  plan: string;
+  message?: string;
+}
 
