@@ -10,9 +10,6 @@ import {
   Eye,
   RefreshCw,
   Globe,
-  Monitor,
-  Tablet,
-  Smartphone,
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -21,32 +18,7 @@ import { Button } from '../../components/ui/button';
 import { themesApi, type ThemeData, type ThemeUsageData, type ClientAssignmentData } from '../../api/themes';
 import { useAuth } from '../../context/AuthContext';
 
-const MOCK_PRODUCTS = Array.from({ length: 8 }, (_, i) => ({
-  _id: `mock-${i}`,
-  name: ['Premium Leather Bag', 'Silk Evening Gown', 'Artisan Watch', 'Designer Sunglasses', 'Cashmere Scarf', 'Gold Earrings', 'Signature Fragrance', 'Leather Wallet'][i % 8],
-  price: [245, 1890, 595, 320, 180, 450, 120, 85][i % 8],
-  originalPrice: i % 3 === 0 ? [295, 2490, 795, 420][i % 4] : undefined,
-  image: `https://images.unsplash.com/photo-${[1496181133206, 1523381210434, 1505740420928, 1445205170230, 1596462502278, 1605100804763, 1483985988355, 1542291026][i % 8]}?q=80&w=400&auto=format&fit=crop`,
-  category: ['Accessories', 'Fashion', 'Watches', 'Sunglasses', 'Scarves', 'Jewelry', 'Fragrance', 'Accessories'][i % 8],
-  rating: 4.5,
-  isOnSale: i % 3 === 0,
-}));
-
-const NOVA_PRODUCTS = Array.from({ length: 10 }, (_, i) => ({
-  _id: `nm-${i}`,
-  name: ['Wireless Headphones', 'Smart Watch Pro', 'Organic Green Tea', 'Running Shoes', 'Bluetooth Speaker', 'Desk Lamp', 'Yoga Mat', 'Protein Powder', 'Phone Case', 'USB Hub'][i % 10],
-  price: [79, 249, 22, 129, 59, 45, 35, 49, 19, 29][i % 10],
-  originalPrice: i % 2 === 0 ? [99, 299, 29, 159, 79, 59, 45, 65, 29, 39][i % 10] : undefined,
-  image: `https://images.unsplash.com/photo-${[1505740420928, 1523275335684, 1546868871, 1542291026, 1483985988355, 1513504935903, 1506157780, 1491553895911, 1496181133206, 1556228578][i % 10]}?q=80&w=400&auto=format&fit=crop`,
-  category: ['Electronics', 'Wearables', 'Groceries', 'Sports', 'Electronics', 'Home', 'Sports', 'Health', 'Accessories', 'Electronics'][i % 10],
-  rating: [4.2, 4.7, 4.0, 4.5, 4.3, 4.1, 4.6, 4.4, 3.9, 4.2][i % 10],
-  stock: i % 5 === 0 ? 0 : 15,
-  isOnSale: i % 2 === 0,
-  numReviews: [234, 512, 89, 345, 178, 67, 423, 256, 145, 98][i % 10],
-}));
-
 export function SuperAdminThemeManagement() {
-  const { user } = useAuth();
   const [themes, setThemes] = useState<ThemeData[]>([]);
   const [usage, setUsage] = useState<ThemeUsageData[]>([]);
   const [clients, setClients] = useState<ClientAssignmentData[]>([]);
@@ -57,7 +29,6 @@ export function SuperAdminThemeManagement() {
   const [themeFilter, setThemeFilter] = useState('');
   const [page, setPage] = useState(1);
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
-  const [previewDevice, setPreviewDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -286,57 +257,40 @@ export function SuperAdminThemeManagement() {
       </div>
 
       {/* Preview */}
-      {previewTheme && (
-        <Card className="border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-3xl overflow-hidden">
-          <CardHeader className="border-b border-gray-100 dark:border-white/5 pb-4">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-2">
-                <Eye className="w-5 h-5 text-blue-600" />
-                <CardTitle className="text-lg font-bold">Preview: {themes.find((t) => t.key === previewTheme)?.name}</CardTitle>
-              </div>
-              <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 rounded-xl p-1">
-                {[
-                  { id: 'desktop', icon: Monitor },
-                  { id: 'tablet', icon: Tablet },
-                  { id: 'mobile', icon: Smartphone },
-                ].map((dev) => (
-                  <button
-                    key={dev.id}
-                    onClick={() => setPreviewDevice(dev.id as any)}
-                    className={`p-2 rounded-lg transition-colors ${previewDevice === dev.id ? 'bg-white dark:bg-gray-700 shadow-sm' : 'hover:bg-white/50'}`}
-                    aria-label={dev.id}
-                  >
-                    <dev.icon className="w-4 h-4" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className={`mx-auto border border-gray-200 rounded-xl overflow-hidden bg-white transition-all duration-300 ${
-              previewDevice === 'mobile' ? 'max-w-[375px]' : previewDevice === 'tablet' ? 'max-w-[768px]' : 'max-w-full'
-            }`}>
-              <div className="bg-gray-50 p-6">
-                <div className="grid grid-cols-2 gap-3">
-                  {(previewTheme === 'luxe-commerce' ? MOCK_PRODUCTS.slice(0, 4) : NOVA_PRODUCTS.slice(0, 4)).map((p: any) => (
-                    <div key={p._id} className="bg-white rounded-xl overflow-hidden border border-gray-100">
-                      <div className="aspect-square bg-gray-100">
-                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="p-3">
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase">{p.category}</p>
-                        <p className="text-xs font-semibold mt-0.5 line-clamp-1">{p.name}</p>
-                        <p className="text-sm font-bold mt-1">${p.price}</p>
-                      </div>
-                    </div>
-                  ))}
+      {previewTheme && (() => {
+        const theme = themes.find((t) => t.key === previewTheme);
+        return (
+          <Card className="border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-3xl overflow-hidden">
+            <CardHeader className="border-b border-gray-100 dark:border-white/5 pb-4">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-blue-600" />
+                  <CardTitle className="text-lg font-bold">Preview: {theme?.name}</CardTitle>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-xl h-9"
+                  onClick={() => setPreviewTheme(null)}
+                >
+                  Close
+                </Button>
               </div>
-            </div>
-            <p className="text-xs text-gray-400 text-center mt-4">This is a preview. No changes are saved.</p>
-          </CardContent>
-        </Card>
-      )}
+            </CardHeader>
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center justify-center py-16 px-4 rounded-xl border border-dashed border-gray-200 dark:border-white/10 bg-gray-50/50 dark:bg-white/5">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{
+                  background: `linear-gradient(135deg, ${theme?.colorPalette?.primary || '#1a1a2e'}, ${theme?.colorPalette?.secondary || '#c9a96e'})`
+                }}>
+                  <Eye className="w-7 h-7 text-white" />
+                </div>
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{theme?.name}</p>
+                <p className="text-xs text-gray-400 mt-1">Theme preview — apply this theme to see it live on your storefront.</p>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Client Assignments */}
       <Card className="border-none shadow-xl bg-white/80 dark:bg-black/40 backdrop-blur-xl rounded-3xl overflow-hidden">

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import { User, Mail, Lock, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
 import { authApi } from '../../api/auth';
@@ -18,8 +18,11 @@ const API_BASE_URL = (
 ).replace(/\/api$/, "").replace(/\/$/, "");
 
 export function Register() {
+  const [searchParams] = useSearchParams();
+  const urlEmail = searchParams.get('email') || '';
+  const emailFromUrl = urlEmail.trim() ? urlEmail : '';
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(emailFromUrl);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [captcha, setCaptcha] = useState('');
@@ -161,7 +164,8 @@ export function Register() {
                   type="email"
                   autoComplete="email"
                   required
-                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 px-3 py-2 sm:text-sm border border-gray-300 rounded-md bg-transparent"
+                  readOnly={!!emailFromUrl}
+                  className={`focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 px-3 py-2 sm:text-sm border border-gray-300 rounded-md ${emailFromUrl ? 'bg-gray-100 cursor-not-allowed' : 'bg-transparent'}`}
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

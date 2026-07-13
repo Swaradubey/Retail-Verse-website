@@ -21,7 +21,10 @@ export function ProtectedRoute({
   }
 
   if (!user) {
-    return <Navigate to={loginPath} state={{ from: location }} replace />;
+    const params = new URLSearchParams(location.search);
+    const email = params.get('email');
+    const to = email ? `${loginPath}?email=${encodeURIComponent(email)}` : loginPath;
+    return <Navigate to={to} state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

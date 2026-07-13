@@ -6,7 +6,10 @@ import { resolvePostLoginPath } from '../../utils/staffRoles';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, Loader2, ShoppingBag } from 'lucide-react';
 
 export function Login() {
-  const [email, setEmail] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlEmail = searchParams.get('email') || '';
+  const emailFromUrl = urlEmail.trim() ? urlEmail : '';
+  const [email, setEmail] = useState(emailFromUrl);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -16,7 +19,6 @@ export function Login() {
   const { login } = useAuth();
   const { brandName, updateBranding } = useBranding();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
@@ -151,7 +153,7 @@ export function Login() {
             <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Welcome back</h2>
             <p className="mt-2 text-gray-500 text-sm">
               Don't have an account?{' '}
-              <Link to="/register" className="font-semibold text-violet-600 hover:text-violet-700 transition-colors">
+              <Link to={emailFromUrl ? `/register?email=${encodeURIComponent(emailFromUrl)}` : '/register'} className="font-semibold text-violet-600 hover:text-violet-700 transition-colors">
                 Create one for free
               </Link>
             </p>
@@ -181,9 +183,10 @@ export function Login() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  readOnly={!!emailFromUrl}
                   placeholder="you@example.com"
-                  className="block w-full pl-10 pr-4 py-3 text-sm border border-gray-200 rounded-xl bg-white shadow-sm placeholder-gray-400 text-gray-900
-                    focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all"
+                  className={`block w-full pl-10 pr-4 py-3 text-sm border border-gray-200 rounded-xl shadow-sm placeholder-gray-400 text-gray-900
+                    focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all ${emailFromUrl ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}`}
                 />
               </div>
             </div>
