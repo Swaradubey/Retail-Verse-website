@@ -15,25 +15,25 @@ declare global {
 }
 
 const PLAN_ICONS: Record<string, React.ReactNode> = {
-  Silver: <Star className="w-10 h-10 text-gray-400" />,
-  Gold: <Crown className="w-10 h-10 text-yellow-500" />,
-  Plus: <Zap className="w-10 h-10 text-purple-500" />,
+  Basic: <Star className="w-10 h-10 text-gray-400" />,
+  Plus: <Crown className="w-10 h-10 text-yellow-500" />,
+  Premium: <Zap className="w-10 h-10 text-purple-500" />,
 };
 
 const PLAN_COLORS: Record<string, { border: string; bg: string; badge: string; gradient: string }> = {
-  Silver: {
+  Basic: {
     border: 'border-gray-200 dark:border-gray-700',
     bg: 'bg-gray-50 dark:bg-gray-900',
     badge: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
     gradient: 'from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700',
   },
-  Gold: {
+  Plus: {
     border: 'border-yellow-200 dark:border-yellow-800',
     bg: 'bg-yellow-50 dark:bg-yellow-950/30',
     badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300',
     gradient: 'from-yellow-100 to-amber-200 dark:from-yellow-900 dark:to-amber-800',
   },
-  Plus: {
+  Premium: {
     border: 'border-purple-200 dark:border-purple-800',
     bg: 'bg-purple-50 dark:bg-purple-950/30',
     badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300',
@@ -287,7 +287,7 @@ export function DashboardSubscription() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {plans.map((plan) => {
-              const colors = PLAN_COLORS[plan.name] || PLAN_COLORS.Silver;
+              const colors = PLAN_COLORS[plan.name] || PLAN_COLORS.Basic;
               const isCurrent = currentPlan === plan.name && isPremium;
               const isBuying = buying === plan.name;
 

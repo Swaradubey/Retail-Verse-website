@@ -4,22 +4,22 @@ const User = require("../models/User");
 
 const PLANS = [
   {
-    id: "silver",
-    name: "Silver",
+    id: "basic",
+    name: "Basic",
     price: 999,
     durationDays: 30,
     features: ["Basic analytics", "Up to 50 products", "Email support"],
   },
   {
-    id: "gold",
-    name: "Gold",
+    id: "plus",
+    name: "Plus",
     price: 1999,
     durationDays: 30,
     features: ["Advanced analytics", "Up to 200 products", "Priority email support", "Custom domain"],
   },
   {
-    id: "plus",
-    name: "Plus",
+    id: "premium",
+    name: "Premium",
     price: 4999,
     durationDays: 30,
     features: ["All analytics", "Unlimited products", "24/7 priority support", "Custom domain", "API access"],
@@ -228,7 +228,7 @@ const verifySubscriptionPayment = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Your Plus plan has been activated.",
+      message: "Your Premium plan has been activated.",
       data: {
         currentPlan: user.billingSettings.currentPlan,
         premium: true,

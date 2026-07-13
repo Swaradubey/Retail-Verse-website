@@ -120,10 +120,10 @@ export function PrivacyPolicy() {
       content: (
         <div className="space-y-4">
           <p className="text-white/60 leading-relaxed">
-            Retail Verse Plus subscriptions are managed through the Retail Verse platform.
+            Retail Verse Premium subscriptions are managed through the Retail Verse platform.
           </p>
           <p className="text-white/60 leading-relaxed">
-            To upgrade to the Plus plan, users should:
+            To upgrade to the Premium plan, users should:
           </p>
           <ul className="list-disc list-inside text-white/60 leading-relaxed space-y-1">
             <li>
