@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Search,
   Crown,
+  Settings,
 } from 'lucide-react';
 import { useNavigate, useLocation, Outlet, Link, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -114,6 +115,8 @@ const sidebarItems = [
   { title: "Support", icon: Headphones, href: "/dashboard/support" },
   { title: "Help Center", icon: HelpCircle, href: "/dashboard/help-center", helpCenter: true },
   { title: "POS", icon: ShoppingCart, href: "/pos", counterManagerOnly: true },
+  { title: "Settings", icon: Settings, href: "/super-admin/settings", superAdminOnly: true },
+  { title: "Settings", icon: Settings, href: "/dashboard/settings", adminOnly: true, hideForSuperAdmin: true },
 
 
 ];
@@ -322,7 +325,8 @@ export function Dashboard() {
         item.href === '/dashboard/subscription' ||
         item.href === '/super-admin/custom-domain' ||
         item.href === '/dashboard/add-employee' ||
-        item.href === '/dashboard/support'
+        item.href === '/dashboard/support' ||
+        item.href === '/dashboard/settings'
       );
     }
     if (normalizeRole(user?.role) === 'admin') {
