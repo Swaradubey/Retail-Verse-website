@@ -101,7 +101,9 @@ function parseSpokenQuantity(qty) {
  * @returns {object}              Enriched item with matchedProduct and confidence
  */
 function matchSingleItem(extractedItem, products) {
-  const spokenName = String(extractedItem.spokenName || "");
+  // Guarantee spokenName is always a non-empty string — DB schema requires it.
+  const rawSpokenName = extractedItem.spokenName || extractedItem.name || "";
+  const spokenName = String(rawSpokenName).trim() || "unknown item";
   const aiMatchId = extractedItem.matchedProductId;
 
   const scores = products.map((p) => {
@@ -221,28 +223,36 @@ function revalidateItemsForConfirmation(resolvedItems, liveProducts) {
   const productMap = new Map(liveProducts.map((p) => [String(p._id), p]));
   const errors = [];
   const revalidated = resolvedItems.map((item) => {
-    if (!item.matchedProductId) {
-      errors.push(`Item "${item.spokenName}" has no matched product.`);
-      return { ...item, confirmationError: "No product matched." };
+    // Normalise the item to a plain object first so that spread and property
+    // access are consistent whether item is a Mongoose subdocument or a POJO.
+    const plain = typeof item.toObject === "function" ? item.toObject() : { ...item };
+    const matchedProductId = plain.matchedProductId
+      ? String(plain.matchedProductId)
+      : null;
+
+    if (!matchedProductId) {
+      errors.push(`Item "${plain.spokenName}" has no matched product.`);
+      return { ...plain, matchedProductId, confirmationError: "No product matched." };
     }
-    const live = productMap.get(String(item.matchedProductId));
+    const live = productMap.get(matchedProductId);
     if (!live) {
-      errors.push(`Product "${item.matchedProductName || item.matchedProductId}" no longer exists.`);
-      return { ...item, confirmationError: "Product not found in database." };
+      errors.push(`Product "${plain.matchedProductName || matchedProductId}" no longer exists.`);
+      return { ...plain, matchedProductId, confirmationError: "Product not found in database." };
     }
     if (!live.isActive) {
       errors.push(`Product "${live.name}" is no longer active.`);
-      return { ...item, confirmationError: "Product is inactive." };
+      return { ...plain, matchedProductId, confirmationError: "Product is inactive." };
     }
-    if (live.stock < item.requestedQuantity) {
+    if (live.stock < plain.requestedQuantity) {
       errors.push(
-        `Insufficient stock for "${live.name}". Requested: ${item.requestedQuantity}, Available: ${live.stock}.`
+        `Insufficient stock for "${live.name}". Requested: ${plain.requestedQuantity}, Available: ${live.stock}.`
       );
-      return { ...item, confirmationError: "Insufficient stock." };
+      return { ...plain, matchedProductId, confirmationError: "Insufficient stock." };
     }
     // Use LIVE price from DB — never the AI or cached price
     return {
-      ...item,
+      ...plain,
+      matchedProductId,
       matchedProductPrice: live.price,
       matchedProductStock: live.stock,
       matchedProductIsActive: live.isActive,

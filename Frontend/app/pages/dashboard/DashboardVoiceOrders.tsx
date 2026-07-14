@@ -495,15 +495,54 @@ export function DashboardVoiceOrders() {
   // ── Confirm order ──────────────────────────────────────────────────────────
   const handleConfirm = async () => {
     if (!currentVo || confirming) return;
+
+    // ── Validate fulfilment type before calling API ──────────────────────────
+    if (draftFulfilment.type === 'unknown') {
+      toast.error('Please select Pickup or Delivery before confirming the order.');
+      return;
+    }
+
     setConfirming(true);
     try {
-      await handleSaveDraft(); // Ensure latest edits are saved
+      // Save draft first — any draft-save failure aborts the confirm
+      try {
+        const draftRes = await voiceOrdersApi.saveDraft(currentVo._id, {
+          transcription: editedTranscription,
+          draftData: {
+            customer: draftCustomer,
+            fulfilment: draftFulfilment,
+          },
+          resolvedItems: editedItems,
+        });
+        setCurrentVo(draftRes.data as unknown as VoiceOrder);
+      } catch (draftErr: unknown) {
+        const msg = (draftErr instanceof Error ? draftErr.message : null) || 'Failed to save draft before confirming.';
+        toast.error(msg);
+        return;
+      }
+
+      // Pre-submit diagnostics
+      console.log('[VoiceOrder Confirm] submit', {
+        voiceOrderId: currentVo._id,
+        fulfillmentMethod: draftFulfilment.type,
+        items: editedItems.map((item) => ({
+          spokenName: item.spokenName,
+          matchedProductId: item.matchedProductId,
+          quantity: item.requestedQuantity,
+          hasMatchedProduct: Boolean(item.matchedProductId),
+        })),
+      });
+
       const res = await voiceOrdersApi.confirm(currentVo._id);
-      const { voiceOrder } = res.data as unknown as { voiceOrder: VoiceOrder; order: Record<string, unknown> };
-      setCurrentVo(voiceOrder);
+      const payload = res.data as unknown as { voiceOrder: VoiceOrder; order: Record<string, unknown> };
+      setCurrentVo(payload.voiceOrder);
       toast.success('Order created successfully! 🎉');
     } catch (err: unknown) {
-      toast.error((err instanceof Error ? err.message : null) || 'Failed to create order.');
+      // ApiService already propagates the backend message via throw new Error(data.message)
+      const message =
+        (err instanceof Error ? err.message : null) ||
+        'Failed to confirm order. Please try again.';
+      toast.error(message);
     } finally {
       setConfirming(false);
     }
@@ -548,7 +587,8 @@ export function DashboardVoiceOrders() {
 
   // ── Can confirm? ───────────────────────────────────────────────────────────
   const hasValidItems = editedItems.length > 0 && editedItems.every((i) => i.matchedProductId && i.requestedQuantity > 0 && !i.confirmationError);
-  const canConfirm = hasValidItems && !confirming && currentVo?.status !== 'order_created' && currentVo?.status !== 'cancelled';
+  const hasValidFulfilment = draftFulfilment.type === 'pickup' || draftFulfilment.type === 'delivery';
+  const canConfirm = hasValidItems && hasValidFulfilment && !confirming && currentVo?.status !== 'order_created' && currentVo?.status !== 'cancelled';
 
   // ── Total ──────────────────────────────────────────────────────────────────
   const subtotal = editedItems.reduce((s, i) => s + (i.matchedProductPrice || 0) * (i.requestedQuantity || 0), 0);
@@ -1116,14 +1156,24 @@ export function DashboardVoiceOrders() {
                     <button
                       onClick={handleConfirm}
                       disabled={!canConfirm}
-                      title={!hasValidItems ? 'All items must be matched and have valid quantities' : ''}
+                      title={
+                        !hasValidItems
+                          ? 'All items must be matched and have valid quantities'
+                          : draftFulfilment.type === 'unknown'
+                          ? 'Select Pickup or Delivery before confirming'
+                          : ''
+                      }
                       className="flex items-center gap-2 px-8 py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {confirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       {confirming ? 'Creating Order…' : 'Confirm & Create Order'}
                     </button>
-                    {!hasValidItems && (
-                      <p className="text-xs text-muted-foreground self-center">All items need valid product matches and quantities to confirm.</p>
+                    {(!hasValidItems || draftFulfilment.type === 'unknown') && (
+                      <p className="text-xs text-muted-foreground self-center">
+                        {!hasValidItems
+                          ? 'All items need valid product matches and quantities to confirm.'
+                          : 'Select Pickup or Delivery to confirm the order.'}
+                      </p>
                     )}
                   </div>
                 )}

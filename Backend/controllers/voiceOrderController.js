@@ -837,14 +837,20 @@ const updateDraft = async (req, res) => {
         .lean();
       const productMap = new Map(storeProducts.map((p) => [String(p._id), p]));
 
-      vo.resolvedItems = rawItems.map((item) => {
-        if (!item.matchedProductId) return { ...item, manuallyOverridden: true };
+      vo.resolvedItems = rawItems.map((item, idx) => {
+        // Guarantee spokenName is always a non-empty string — DB schema requires it.
+        const spokenName = String(item.spokenName || item.name || "").trim() || `item ${idx + 1}`;
+
+        if (!item.matchedProductId) {
+          return { ...item, spokenName, manuallyOverridden: true };
+        }
         const product = productMap.get(String(item.matchedProductId));
         if (!product) {
-          return { ...item, confirmationError: "Product not found in your store." };
+          return { ...item, spokenName, confirmationError: "Product not found in your store." };
         }
         return {
           ...item,
+          spokenName,
           matchedProductName: product.name,
           matchedProductPrice: product.price,
           matchedProductStock: product.stock,
@@ -867,175 +873,304 @@ const updateDraft = async (req, res) => {
 
 // ── Confirm and create order ───────────────────────────────────────────────────
 
-const confirmVoiceOrder = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+/**
+ * Core confirmation logic — called with or without a Mongoose session.
+ * Extracted so we can retry without a transaction if the server does not
+ * support multi-document transactions (Atlas M0 / standalone).
+ */
+async function _runConfirmLogic(req, res, voiceOrderId, session) {
+  const useSession = !!session;
 
-  try {
-    const { id } = req.params;
-    if (!isValidObjectId(id)) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: "Invalid voice order ID." });
-    }
+  console.log(`[VoiceOrder Confirm] voiceOrderId=${voiceOrderId} useSession=${useSession}`);
 
-    const vo = await VoiceOrder.findById(id).session(session);
-    if (!vo) {
-      await session.abortTransaction();
-      return res.status(404).json({ success: false, message: "Voice order not found." });
-    }
-    if (!(await ownershipCheck(vo, req))) {
-      await session.abortTransaction();
-      return res.status(403).json({ success: false, message: "Access denied." });
-    }
+  const vo = await VoiceOrder.findById(voiceOrderId).session(session || null);
+  if (!vo) {
+    return res.status(404).json({ success: false, message: "Voice order not found." });
+  }
+  if (!(await ownershipCheck(vo, req))) {
+    return res.status(403).json({ success: false, message: "Access denied." });
+  }
 
-    if (vo.status === "order_created" && vo.createdOrderId) {
-      await session.abortTransaction();
-      const existingOrder = await Order.findById(vo.createdOrderId).select("orderId orderStatus totalPrice");
-      return res.json({
-        success: true,
-        message: "Order was already created.",
-        data: { voiceOrder: vo, order: existingOrder },
-      });
-    }
-
-    const confirmableStates = [
-      "needs_review", "ready_for_review", "draft", "confirmed",
-    ];
-    if (!confirmableStates.includes(vo.status)) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        success: false,
-        message: `Cannot confirm a voice order with status "${vo.status}".`,
-      });
-    }
-
-    const draftData = vo.draftData || {};
-    const extractedData = vo.extractedData || {};
-    const customer = draftData.customer || extractedData.customer || {};
-    const fulfilment = draftData.fulfilment || extractedData.fulfilment || {};
-
-    const liveProducts = await Product.find({ clientId: vo.storeId, isActive: true })
-      .select("_id name price stock isActive category image")
-      .lean();
-
-    const itemsToConfirm = draftData.items || vo.resolvedItems || [];
-    if (!itemsToConfirm.length) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: "No items to confirm in this order." });
-    }
-
-    const { valid, items: revalidatedItems, errors } =
-      productMatchingService.revalidateItemsForConfirmation(itemsToConfirm, liveProducts);
-
-    if (!valid) {
-      await session.abortTransaction();
-      return res.status(422).json({
-        success: false,
-        message: "Order cannot be confirmed due to product issues.",
-        errors,
-      });
-    }
-
-    const store = await Client.findById(vo.storeId).select("companyName shopName").lean();
-    const productMap = new Map(liveProducts.map((p) => [String(p._id), p]));
-
-    const orderItems = revalidatedItems.map((item) => {
-      const p = productMap.get(String(item.matchedProductId));
-      return {
-        productId: String(item.matchedProductId),
-        name: p.name,
-        price: p.price,
-        quantity: item.requestedQuantity,
-        image: p.image || "",
-        category: p.category || "Uncategorised",
-      };
-    });
-
-    const totalPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-
-    const shippingAddress =
-      fulfilment.type === "pickup"
-        ? {
-            fullName: customer.name || "Walk-in Customer",
-            address: "In-store pickup",
-            city: "N/A",
-            state: "N/A",
-            zipCode: "000000",
-            country: "N/A",
-            phone: customer.phone || undefined,
-          }
-        : {
-            fullName: customer.name || "Voice Order Customer",
-            address: fulfilment.address || "Address not provided",
-            city: draftData.city || "N/A",
-            state: draftData.state || "N/A",
-            zipCode: draftData.zipCode || "000000",
-            country: draftData.country || "India",
-            phone: customer.phone || undefined,
-          };
-
-    const orderId = `ORD-VOICE-${Date.now().toString(36).toUpperCase()}-${crypto
-      .randomBytes(3)
-      .toString("hex")
-      .toUpperCase()}`;
-
-    const [newOrder] = await Order.create(
-      [
-        {
-          orderId,
-          clientId: vo.storeId,
-          user: req.user._id,
-          customerName: customer.name || undefined,
-          customerEmail: customer.email || undefined,
-          items: orderItems,
-          shippingAddress,
-          paymentMethod: draftData.paymentMethod || "voice_order_pending",
-          totalPrice,
-          orderSource: "ai_voice",
-          voiceOrderId: String(vo._id),
-          status: "placed",
-          orderStatus: "placed",
-          trackingStatus: "Order Placed",
-          currentStage: 1,
-          trackingHistory: [
-            {
-              stage: 1,
-              label: "Order Placed",
-              message: "Order captured via AI Voice Order.",
-              at: new Date(),
-            },
-          ],
-          estimatedDelivery: (() => {
-            const d = new Date();
-            d.setDate(d.getDate() + 7);
-            return d;
-          })(),
-          trackingId: `TRK-VOICE-${Date.now().toString(36).toUpperCase()}`,
-        },
-      ],
-      { session }
-    );
-
-    vo.status = "order_created";
-    vo.createdOrderId = newOrder._id;
-    vo.confirmedAt = new Date();
-    await vo.save({ session });
-
-    await session.commitTransaction();
-
-    console.log(`[VoiceOrder] Order created: orderId=${orderId} voiceOrderId=${vo._id} storeId=${vo.storeId}`);
-
-    return res.status(201).json({
+  // ── Idempotency guard ──────────────────────────────────────────────────────
+  if (vo.status === "order_created" && vo.createdOrderId) {
+    const existingOrder = await Order.findById(vo.createdOrderId).select("orderId orderStatus totalPrice");
+    return res.json({
       success: true,
-      message: "Order created successfully.",
-      data: { voiceOrder: vo, order: newOrder },
+      message: "Order was already created.",
+      data: { voiceOrder: vo, order: existingOrder },
     });
+  }
+
+  const confirmableStates = [
+    "needs_review", "ready_for_review", "draft", "confirmed",
+  ];
+  if (!confirmableStates.includes(vo.status)) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot confirm a voice order with status "${vo.status}". Expected one of: ${confirmableStates.join(", ")}.`,
+    });
+  }
+
+  const draftData = vo.draftData || {};
+  const extractedData = vo.extractedData || {};
+  const customer = draftData.customer || extractedData.customer || {};
+  const rawFulfilment = draftData.fulfilment || extractedData.fulfilment || {};
+
+  // ── Normalise fulfilment type — never allow "unknown" to reach the DB ──────
+  // Map every non-pickup value to "delivery" so shipping address is populated.
+  const fulfilmentType =
+    rawFulfilment.type === "pickup" ? "pickup" : "delivery";
+  const fulfilment = { ...rawFulfilment, type: fulfilmentType };
+
+  console.log(`[VoiceOrder Confirm] status=${vo.status} fulfilmentType=${fulfilmentType} draftData.keys=${Object.keys(draftData).join(",")}`);
+
+  const liveProducts = await Product.find({ clientId: vo.storeId, isActive: true })
+    .select("_id name price stock isActive category image")
+    .lean();
+
+  // ── Convert Mongoose subdocuments → plain objects ─────────────────────────────
+  // vo.resolvedItems is a Mongoose DocumentArray (subdocuments).  When these are
+  // spread inside revalidateItemsForConfirmation via { ...item, ... } the Mongoose
+  // schema path getters are NOT own-enumerable properties, so matchedProductId is
+  // silently dropped from the spread result even though item.matchedProductId works
+  // as a getter.  Calling .toObject() on each subdocument (or using the plain-
+  // object version from draftData.items) guarantees a real plain JS object.
+  const rawItemsToConfirm = draftData.items || vo.resolvedItems || [];
+  const itemsToConfirm = rawItemsToConfirm.map((item) =>
+    typeof item.toObject === "function" ? item.toObject() : { ...item }
+  );
+
+  // Pre-submit diagnostic — helps trace the exact item shape reaching confirmation
+  console.log(`[VoiceOrder Confirm] itemsToConfirm.length=${itemsToConfirm.length} liveProducts.length=${liveProducts.length}`);
+  itemsToConfirm.forEach((item, idx) => {
+    console.log(`[VoiceOrder Confirm] item[${idx}]`, {
+      spokenName: item.spokenName,
+      matchedProductId: item.matchedProductId,
+      requestedQuantity: item.requestedQuantity,
+      hasMatchedProductId: Boolean(item.matchedProductId),
+    });
+  });
+
+  if (!itemsToConfirm.length) {
+    return res.status(400).json({ success: false, message: "No items to confirm in this order." });
+  }
+
+  // Build the live-product map once — shared by revalidation AND order-item build
+  const productMap = new Map(liveProducts.map((p) => [String(p._id), p]));
+
+  const { valid, items: revalidatedItems, errors } =
+    productMatchingService.revalidateItemsForConfirmation(itemsToConfirm, liveProducts);
+
+  console.log(`[VoiceOrder Confirm] revalidation valid=${valid} errors=${JSON.stringify(errors)}`);
+
+  if (!valid) {
+    return res.status(422).json({
+      success: false,
+      message: "Order cannot be confirmed due to product issues: " + errors.join("; "),
+      errors,
+    });
+  }
+
+  const orderItems = revalidatedItems.map((item) => {
+    const resolvedId = item.matchedProductId ? String(item.matchedProductId) : null;
+    const p = resolvedId ? productMap.get(resolvedId) : null;
+    if (!p) {
+      // Guard against any edge-case where revalidation passed but the product
+      // cannot be found.  This should never happen; if it does, the log below
+      // provides the exact item shape for diagnosis.
+      console.error("[VoiceOrder Confirm] product disappeared after revalidation", {
+        index: revalidatedItems.indexOf(item),
+        spokenName: item.spokenName,
+        matchedProductId: item.matchedProductId,
+        resolvedId,
+        keys: Object.keys(item),
+      });
+      throw Object.assign(
+        new Error(
+          `The matched product for "${item.spokenName || "an item"}" could not be found. Please refresh the page and try again.`
+        ),
+        { statusCode: 422 }
+      );
+    }
+    return {
+      productId: String(item.matchedProductId),
+      name: p.name,
+      price: p.price,
+      quantity: item.requestedQuantity,
+      image: p.image || "",
+      category: p.category || "Uncategorised",
+    };
+  });
+
+  const totalPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+
+  const shippingAddress =
+    fulfilment.type === "pickup"
+      ? {
+          fullName: customer.name || "Walk-in Customer",
+          address: "In-store pickup",
+          city: "N/A",
+          state: "N/A",
+          zipCode: "000000",
+          country: "N/A",
+          phone: customer.phone || undefined,
+        }
+      : {
+          fullName: customer.name || "Voice Order Customer",
+          address: fulfilment.address || "Address not provided",
+          city: draftData.city || "N/A",
+          state: draftData.state || "N/A",
+          zipCode: draftData.zipCode || "000000",
+          country: draftData.country || "India",
+          phone: customer.phone || undefined,
+        };
+
+  const orderId = `ORD-VOICE-${Date.now().toString(36).toUpperCase()}-${crypto
+    .randomBytes(3)
+    .toString("hex")
+    .toUpperCase()}`;
+
+  const createOptions = useSession ? { session } : {};
+
+  const [newOrder] = await Order.create(
+    [
+      {
+        orderId,
+        clientId: vo.storeId,
+        user: req.user._id,
+        customerName: customer.name || undefined,
+        customerEmail: customer.email || undefined,
+        items: orderItems,
+        shippingAddress,
+        paymentMethod: draftData.paymentMethod || "voice_order_pending",
+        totalPrice,
+        orderSource: "ai_voice",
+        voiceOrderId: String(vo._id),
+        status: "placed",
+        orderStatus: "placed",
+        trackingStatus: "Order Placed",
+        currentStage: 1,
+        trackingHistory: [
+          {
+            stage: 1,
+            label: "Order Placed",
+            message: "Order captured via AI Voice Order.",
+            at: new Date(),
+          },
+        ],
+        estimatedDelivery: (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 7);
+          return d;
+        })(),
+        trackingId: `TRK-VOICE-${Date.now().toString(36).toUpperCase()}`,
+      },
+    ],
+    createOptions
+  );
+
+  vo.status = "order_created";
+  vo.createdOrderId = newOrder._id;
+  vo.confirmedAt = new Date();
+
+  if (useSession) {
+    await vo.save({ session });
+  } else {
+    await vo.save();
+  }
+
+  console.log(`[VoiceOrder] Order created: orderId=${orderId} voiceOrderId=${vo._id} storeId=${vo.storeId} fulfilmentType=${fulfilmentType}`);
+
+  return res.status(201).json({
+    success: true,
+    message: "Order created successfully.",
+    data: { voiceOrder: vo, order: newOrder },
+  });
+}
+
+const confirmVoiceOrder = async (req, res) => {
+  const { id } = req.params;
+
+  console.log(`[VoiceOrder Confirm] voiceOrderId=${id} body=${JSON.stringify(req.body)}`);
+
+  if (!isValidObjectId(id)) {
+    return res.status(400).json({ success: false, message: "Invalid voice order ID." });
+  }
+
+  // ── Attempt with transaction first (requires replica set / Atlas M2+) ────────
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    // _runConfirmLogic sends the response itself; it throws on DB errors
+    // and returns without throwing on 4xx validation responses.
+    // We commit unconditionally after it completes without throwing,
+    // because 4xx responses do not modify any documents.
+    await _runConfirmLogic(req, res, id, session);
+    try { await session.commitTransaction(); } catch (commitErr) {
+      // Commit failed after the response was already sent — log only
+      console.error("[VoiceOrder Confirm] commitTransaction failed after response sent:", commitErr.message);
+    }
   } catch (err) {
-    await session.abortTransaction();
-    console.error("[VoiceOrder] confirmVoiceOrder error:", err.message);
-    return res.status(500).json({ success: false, message: "Failed to confirm order. Please try again." });
+    // Check if this is a transaction-not-supported error
+    // (Atlas M0 free tier, standalone, or any other non-replica-set deployment)
+    const msg = err.message || "";
+    const isTransactionUnsupported =
+      /Transaction numbers/i.test(msg) ||
+      /replica set/i.test(msg) ||
+      /not a replica set/i.test(msg) ||
+      /transactions are not supported/i.test(msg) ||
+      err.code === 20 || // MongoServerError: Transaction numbers are only allowed on a replica member
+      err.code === 263;  // OperationNotSupportedInTransaction
+
+    if (session) {
+      try { await session.abortTransaction(); } catch { /* ignore */ }
+      try { session.endSession(); } catch { /* ignore */ }
+      session = null;
+    }
+
+    if (isTransactionUnsupported && !res.headersSent) {
+      // ── Retry without transaction ───────────────────────────────────────────
+      console.warn(`[VoiceOrder Confirm] Transactions not supported on this MongoDB deployment — retrying without session. (${msg.slice(0, 120)})`);
+      try {
+        await _runConfirmLogic(req, res, id, null);
+        return;
+      } catch (retryErr) {
+        if (!res.headersSent) {
+          console.error("[VoiceOrder Confirm] Retry without transaction failed:", {
+            message: retryErr.message,
+            stack: process.env.NODE_ENV === "development" ? retryErr.stack : undefined,
+          });
+          return res.status(retryErr.statusCode || 500).json({
+            success: false,
+            message:
+              process.env.NODE_ENV === "development"
+                ? retryErr.message
+                : "Unable to confirm the order. Please try again.",
+          });
+        }
+        return;
+      }
+    }
+
+    if (!res.headersSent) {
+      console.error("[VoiceOrder Confirm] confirmVoiceOrder failed:", {
+        message: err.message,
+        code: err.code,
+        stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
+      });
+      return res.status(err.statusCode || 500).json({
+        success: false,
+        message:
+          process.env.NODE_ENV === "development"
+            ? err.message
+            : "Failed to confirm order. Please try again.",
+      });
+    }
   } finally {
-    session.endSession();
+    if (session) {
+      try { session.endSession(); } catch { /* ignore */ }
+    }
   }
 };
 
