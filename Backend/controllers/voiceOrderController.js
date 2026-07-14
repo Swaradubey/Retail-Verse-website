@@ -10,12 +10,15 @@ const orderExtractionProvider = require("../services/orderExtractionProvider");
 const productMatchingService = require("../services/productMatchingService");
 const { resolveClientId } = require("../utils/tenantResolver");
 const { normalizeRole } = require("../utils/clientScopedRoles");
+const { resolveAction, determineStage, acquireProcessingLock } = require("../utils/voiceOrderStateMachine");
 
 const isValidObjectId = (id) => {
   if (!id) return false;
   const s = String(id).trim();
   return s && s !== "null" && s !== "undefined" && mongoose.Types.ObjectId.isValid(s);
 };
+
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function resolveStoreId(req) {
   const role = normalizeRole(req.user?.role);
@@ -56,6 +59,58 @@ async function ownershipCheck(voiceOrder, req) {
   const userStoreId = req.user?.clientId || (await resolveClientId(req));
   if (!userStoreId) return false;
   return String(voiceOrder.storeId) === String(userStoreId);
+}
+
+async function readAudioFromStorage(vo) {
+  const chunks = [];
+  const stream = audioStorageService.createReadStream(vo.audioStorageKey);
+  await new Promise((resolve, reject) => {
+    stream.on("data", (chunk) => chunks.push(chunk));
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  return Buffer.concat(chunks);
+}
+
+function buildTranscriptionFailureMessage(errCode, txName) {
+  const m = {
+    QUOTA_LIMIT_ZERO: "Free API quota is unavailable for the selected model.",
+    BILLING_REQUIRED: `Add billing/credits to use ${txName} API.`,
+    QUOTA_EXCEEDED: `${txName} API quota is exhausted for today. Try again later.`,
+    RATE_LIMITED: "Gemini rate limit reached. Please retry later.",
+    AUTH_ERROR: `${txName} API key is missing or invalid. Check the server environment variables.`,
+    PERMISSION_DENIED: `${txName} API access is not permitted for this project.`,
+    MODEL_NOT_FOUND: `The configured ${txName} model is unavailable.`,
+    UNSUPPORTED_AUDIO: "The audio format is unsupported or the recording is invalid.",
+    FILE_TOO_LARGE: "Audio file exceeds the maximum allowed size.",
+    SAFETY_BLOCKED: "The recording was blocked by content safety filters.",
+    EMPTY_RESPONSE: "No speech was detected in this recording.",
+    PROVIDER_NOT_CONFIGURED: "Transcription service is not configured.",
+    SDK_MISSING: "Transcription SDK is not installed.",
+  };
+  return m[errCode] || `Transcription failed: ${errCode}`;
+}
+
+function buildExtractionFailureMessage(errCode, extName) {
+  const m = {
+    QUOTA_EXCEEDED: "AI extraction quota is unavailable. Add API billing/credits.",
+    AUTH_ERROR: `${extName} API key is missing or invalid.`,
+    PERMISSION_DENIED: `${extName} API access is not permitted for this project.`,
+    MODEL_NOT_FOUND: `The configured ${extName} model is unavailable.`,
+    PROVIDER_NOT_CONFIGURED: "AI extraction is not configured.",
+    SDK_MISSING: "AI extraction SDK is not installed.",
+  };
+  return m[errCode] || `AI extraction failed: ${errCode}`;
+}
+
+function logState(meta) {
+  const parts = [];
+  for (const [k, v] of Object.entries(meta)) {
+    if (v !== undefined && v !== null && v !== "") {
+      parts.push(k + "=" + v);
+    }
+  }
+  console.log("[VoiceOrderState] " + parts.join(" "));
 }
 
 // ── List voice orders ──────────────────────────────────────────────────────────
@@ -259,6 +314,121 @@ const streamAudio = async (req, res) => {
   }
 };
 
+// ── core processing pipeline ───────────────────────────────────────────────
+
+async function runTranscriptionPipeline(vo, audioBuffer, options) {
+  const voiceOrderId = String(vo._id);
+  const model = process.env.GEMINI_TRANSCRIPTION_MODEL?.trim() || "gemini-3.1-flash-lite";
+
+  logState({
+    voiceOrderId,
+    databaseStatus: vo.status,
+    frontendRequestedAction: "transcribe",
+    transcriptExists: false,
+    processingStartedAt: vo.processingStartedAt,
+    selectedModel: model,
+  });
+
+  vo.status = "transcribing";
+  vo.failureReason = null;
+  vo.processingStartedAt = new Date();
+  await vo.save();
+
+  let audioBuf = audioBuffer;
+  if (!audioBuf) {
+    audioBuf = await readAudioFromStorage(vo);
+  }
+
+  const result = await transcriptionProvider.transcribeAudio(
+    audioBuf,
+    vo.mimeType,
+    vo.originalFileName,
+    { language: options?.language || undefined, voiceOrderId }
+  );
+
+  const text = (result.text || "").trim();
+  if (!text) {
+    vo.status = "transcription_failed";
+    vo.failureReason = "Gemini returned empty transcription.";
+    vo.processingStartedAt = null;
+    await vo.save();
+    logState({ voiceOrderId, finalStatus: "transcription_failed", errorCode: "EMPTY_RESPONSE" });
+    return { status: "transcription_failed", failureReason: vo.failureReason };
+  }
+
+  vo.transcription = text;
+  vo.transcriptionLanguage = result.language || "en";
+  if (result.durationSeconds != null) vo.durationSeconds = result.durationSeconds;
+  vo.status = "transcribed";
+  await vo.save();
+
+  logState({ voiceOrderId, databaseStatus: "transcribed", transcriptExists: true, resumedStage: "transcribed" });
+  return { status: "transcribed", text };
+}
+
+async function runExtractionPipeline(vo) {
+  const voiceOrderId = String(vo._id);
+  const transcript = (vo.transcription || "").trim();
+
+  logState({
+    voiceOrderId,
+    databaseStatus: vo.status,
+    frontendRequestedAction: "extract",
+    transcriptExists: !!transcript,
+    processingStartedAt: vo.processingStartedAt,
+  });
+
+  if (!transcript) {
+    return { status: "no_transcript" };
+  }
+
+  const diagExt = orderExtractionProvider.getExtractionDiagnostics();
+  if (!diagExt.configured) {
+    vo.status = "extraction_failed";
+    vo.failureReason = "Order extraction provider is not configured.";
+    vo.processingStartedAt = null;
+    await vo.save();
+    logState({ voiceOrderId, finalStatus: "extraction_failed", errorCode: "PROVIDER_NOT_CONFIGURED" });
+    return { status: "extraction_failed", failureReason: vo.failureReason };
+  }
+
+  vo.status = "extracting_order";
+  vo.failureReason = null;
+  vo.processingStartedAt = new Date();
+  await vo.save();
+
+  const storeProducts = await Product.find({
+    clientId: vo.storeId,
+    isActive: true,
+  })
+    .select("_id name sku price stock isActive")
+    .lean();
+
+  const productContext = storeProducts.map((p) => ({
+    id: String(p._id),
+    name: p.name,
+    sku: p.sku,
+  }));
+
+  const extracted = await orderExtractionProvider.extractOrder(
+    transcript,
+    productContext,
+    { currency: "INR", voiceOrderId }
+  );
+
+  const resolvedItems = productMatchingService.matchItems(extracted.items || [], storeProducts);
+
+  vo.extractedData = extracted;
+  vo.resolvedItems = resolvedItems;
+  vo.overallConfidence = extracted.overallConfidence || 0;
+  vo.status = "ready_for_review";
+  vo.processingStartedAt = null;
+  await vo.save();
+
+  logState({ voiceOrderId, finalStatus: "ready_for_review" });
+  return { status: "ready_for_review", extracted, resolvedItems };
+}
+
 // ── Transcribe ─────────────────────────────────────────────────────────────────
 
 const transcribeVoiceOrder = async (req, res) => {
@@ -267,172 +437,152 @@ const transcribeVoiceOrder = async (req, res) => {
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: "Invalid voice order ID." });
     }
+
     const vo = await VoiceOrder.findById(id);
     if (!vo) return res.status(404).json({ success: false, message: "Voice order not found." });
     if (!(await ownershipCheck(vo, req))) {
       return res.status(403).json({ success: false, message: "Access denied." });
     }
-
-    // Idempotency: prevent duplicate processing
-    if (vo.status === "transcribing") {
-      return res.status(409).json({
-        success: false,
-        message: "Transcription is already in progress.",
-      });
-    }
-
-    const retryableStates = [
-      "uploaded", "transcription_failed", "order_extraction_failed",
-      "failed", "needs_review", "ready_for_review", "draft", "transcribed",
-    ];
-    if (!retryableStates.includes(vo.status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Cannot transcribe a voice order with status "${vo.status}".`,
-      });
-    }
-
     if (!vo.audioStorageKey) {
       return res.status(400).json({ success: false, message: "No audio file found for this voice order." });
     }
 
-    const diag = transcriptionProvider.getTranscriptionDiagnostics();
-    if (!diag.configured) {
-      return res.status(503).json({ success: false, message: diag.message });
-    }
+    const resolved = resolveAction(vo);
+    const { stage } = determineStage(resolved);
 
-    // ── Step 1: Transcribe ──────────────────────────────────────────────
-    vo.status = "transcribing";
-    vo.failureReason = null;
-    await vo.save();
+    logState({
+      ...resolved.logMeta,
+      frontendRequestedAction: "transcribe",
+      resolvedAction: resolved.action,
+      resolvedReason: resolved.reason,
+      resumedStage: stage,
+    });
 
-    let audioBuffer;
-    try {
-      const chunks = [];
-      const stream = audioStorageService.createReadStream(vo.audioStorageKey);
-      await new Promise((resolve, reject) => {
-        stream.on("data", (chunk) => chunks.push(chunk));
-        stream.on("end", resolve);
-        stream.on("error", reject);
-      });
-      audioBuffer = Buffer.concat(chunks);
-    } catch (readErr) {
-      vo.status = "transcription_failed";
-      vo.failureReason = "Could not read audio file from storage.";
-      await vo.save();
-      return res.status(500).json({ success: false, message: vo.failureReason });
-    }
-
-    let result;
-    try {
-      result = await transcriptionProvider.transcribeAudio(
-        audioBuffer,
-        vo.mimeType,
-        vo.originalFileName,
-        { language: req.body?.language || undefined, voiceOrderId: String(vo._id) }
-      );
-    } catch (transcribeErr) {
-      console.error("[VoiceOrder] Transcription failed:", transcribeErr.code, transcribeErr.message);
-      const txProvider = (process.env.AI_TRANSCRIPTION_PROVIDER || "openai").toLowerCase();
-      const txName = txProvider === "gemini" ? "Gemini" : "OpenAI";
-      vo.status = "transcription_failed";
-
-      const errCode = transcribeErr.code || "UNKNOWN";
-      const failureMessages = {
-        QUOTA_LIMIT_ZERO: `${txName} API billing is required. Enable billing in Google Cloud Console.`,
-        QUOTA_EXCEEDED: `${txName} API quota is unavailable. Add billing/credits and check the project usage limit.`,
-        AUTH_ERROR: `${txName} API key is missing or invalid. Check the server environment variables.`,
-        PERMISSION_DENIED: `${txName} API access is not permitted for this project.`,
-        MODEL_NOT_FOUND: `The configured ${txName} model is unavailable.`,
-        UNSUPPORTED_AUDIO: "The audio format is unsupported or the recording is invalid.",
-        FILE_TOO_LARGE: "Audio file exceeds the maximum allowed size.",
-        SAFETY_BLOCKED: "The recording was blocked by content safety filters.",
-        EMPTY_RESPONSE: "No speech was detected in this recording.",
-        PROVIDER_NOT_CONFIGURED: "Transcription service is not configured.",
-        SDK_MISSING: "Transcription SDK is not installed.",
-      };
-      vo.failureReason = failureMessages[errCode] || `Transcription failed: ${transcribeErr.message.slice(0, 200)}`;
-      await vo.save();
-
-      const statusCode = transcribeErr.status || 502;
-      return res.status(statusCode).json({
+    if (stage === "rejected") {
+      return res.status(400).json({
         success: false,
-        message: vo.failureReason,
-        errorRef: transcribeErr.errorRef || null,
-        code: transcribeErr.code || "UNKNOWN",
+        message: `Cannot process a voice order with status "${vo.status}".`,
+        status: vo.status,
       });
     }
 
-    // Save transcription result
-    vo.transcription = result.text || "";
-    vo.transcriptionLanguage = result.language || "en";
-    if (result.durationSeconds != null) vo.durationSeconds = result.durationSeconds;
-    vo.status = "transcribed";
-    await vo.save();
+    if (stage === "complete") {
+      return res.json({ success: true, data: vo, message: "Already complete." });
+    }
 
-    // ── Step 2: Auto-extract order ──────────────────────────────────────
-    try {
-      const diagExt = orderExtractionProvider.getExtractionDiagnostics();
-      if (!diagExt.configured) {
-        // Extraction not configured, leave at "transcribed" for manual extraction
-        console.warn("[VoiceOrder] Extraction provider not configured, leaving at transcribed status.");
-        return res.json({ success: true, data: vo, message: "Transcription complete. AI extraction not available." });
+    if (stage === "in_progress") {
+      return res.status(409).json({
+        success: false,
+        message: `Processing is already in progress (status: ${vo.status}). Please wait or retry after 5 minutes.`,
+        status: vo.status,
+      });
+    }
+
+    // ── Acquire processing lock ──────────────────────────────────────────
+    if (!acquireProcessingLock(vo)) {
+      return res.status(409).json({
+        success: false,
+        message: "Processing is already in progress. Please wait.",
+        status: vo.status,
+      });
+    }
+
+    // ── Phase: Transcription ─────────────────────────────────────────────
+    if (stage === "transcribe") {
+      let audioBuffer;
+      try {
+        audioBuffer = await readAudioFromStorage(vo);
+      } catch (readErr) {
+        vo.status = "transcription_failed";
+        vo.failureReason = "Could not read audio file from storage.";
+        vo.processingStartedAt = null;
+        await vo.save();
+        return res.status(500).json({ success: false, message: vo.failureReason });
       }
 
-      vo.status = "extracting_order";
-      await vo.save();
+      try {
+        const txnResult = await runTranscriptionPipeline(vo, audioBuffer, req.body);
 
-      const storeProducts = await Product.find({
-        clientId: vo.storeId,
-        isActive: true,
-      })
-        .select("_id name sku price stock isActive")
-        .lean();
+        if (txnResult.status === "transcription_failed") {
+          return res.status(502).json({
+            success: false,
+            message: txnResult.failureReason,
+            code: "EMPTY_RESPONSE",
+          });
+        }
 
-      const productContext = storeProducts.map((p) => ({
-        id: String(p._id),
-        name: p.name,
-        sku: p.sku,
-      }));
+        // Transcription succeeded; fall through to extraction
+      } catch (transcribeErr) {
+        vo.status = "transcription_failed";
+        vo.failureReason = buildTranscriptionFailureMessage(
+          transcribeErr.code || "UNKNOWN",
+          "Gemini"
+        );
+        vo.processingStartedAt = null;
+        await vo.save();
 
-      const extracted = await orderExtractionProvider.extractOrder(
-        vo.transcription,
-        productContext,
-        { currency: "INR", voiceOrderId: String(vo._id) }
-      );
+        logState({
+          voiceOrderId: String(vo._id),
+          finalStatus: "transcription_failed",
+          errorCode: transcribeErr.code || "UNKNOWN",
+        });
 
-      const resolvedItems = productMatchingService.matchItems(extracted.items || [], storeProducts);
+        const statusCode = transcribeErr.status || 502;
+        return res.status(statusCode).json({
+          success: false,
+          message: vo.failureReason,
+          errorRef: transcribeErr.errorRef || null,
+          code: transcribeErr.code || "UNKNOWN",
+        });
+      }
+    }
 
-      vo.extractedData = extracted;
-      vo.resolvedItems = resolvedItems;
-      vo.overallConfidence = extracted.overallConfidence || 0;
-      vo.status = "ready_for_review";
-      await vo.save();
+    // ── Phase: Extraction ────────────────────────────────────────────────
+    // Always try extraction after transcription, or if resuming from a
+    // status where transcript exists and extraction hasn't completed.
+    try {
+      const extResult = await runExtractionPipeline(vo);
+
+      if (extResult.status === "no_transcript") {
+        // Should not happen at this point, but handle gracefully
+        vo.status = "transcription_failed";
+        vo.failureReason = "No transcript available for extraction.";
+        vo.processingStartedAt = null;
+        await vo.save();
+        return res.status(502).json({ success: false, message: vo.failureReason });
+      }
+
+      if (extResult.status === "extraction_failed") {
+        const extProvider = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "gemini").toLowerCase();
+        const extName = extProvider === "gemini" ? "Gemini" : "OpenAI";
+        return res.status(207).json({
+          success: true,
+          data: vo,
+          message: "Transcription complete but AI extraction failed. You can retry extraction manually.",
+          extractionError: true,
+        });
+      }
 
       return res.json({ success: true, data: vo, message: "Transcription and extraction complete!" });
     } catch (extractErr) {
-      console.error("[VoiceOrder] Auto-extraction failed:", extractErr.code, extractErr.message);
-      const extProvider = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "openai").toLowerCase();
-      const extName = extProvider === "gemini" ? "Gemini" : "OpenAI";
-      vo.status = "order_extraction_failed";
-
-      const errCode = extractErr.code || "UNKNOWN";
-      const failureMessages = {
-        QUOTA_EXCEEDED: "AI extraction quota is unavailable. Add API billing/credits.",
-        AUTH_ERROR: `${extName} API key is missing or invalid.`,
-        PERMISSION_DENIED: `${extName} API access is not permitted for this project.`,
-        MODEL_NOT_FOUND: `The configured ${extName} model is unavailable.`,
-        PROVIDER_NOT_CONFIGURED: "AI extraction is not configured.",
-        SDK_MISSING: "AI extraction SDK is not installed.",
-      };
-      vo.failureReason = failureMessages[errCode] || `AI extraction failed: ${extractErr.message.slice(0, 200)}`;
+      vo.status = "extraction_failed";
+      vo.failureReason = buildExtractionFailureMessage(
+        extractErr.code || "UNKNOWN",
+        "Gemini"
+      );
+      vo.processingStartedAt = null;
       await vo.save();
 
-      // Return partial success — transcription is saved, extraction failed
+      logState({
+        voiceOrderId: String(vo._id),
+        finalStatus: "extraction_failed",
+        errorCode: extractErr.code || "UNKNOWN",
+      });
+
       return res.status(207).json({
         success: true,
         data: vo,
-        message: "Transcription complete but AI extraction failed. You can retry extraction manually.",
+        message: "Transcription complete but AI extraction failed.",
         errorRef: extractErr.errorRef || null,
         extractionError: true,
       });
@@ -440,6 +590,140 @@ const transcribeVoiceOrder = async (req, res) => {
   } catch (err) {
     console.error("[VoiceOrder] transcribeVoiceOrder error:", err.message);
     return res.status(500).json({ success: false, message: "Internal error during transcription." });
+  }
+};
+
+// ── Retry voice order ─────────────────────────────────────────────────────────
+
+const retryVoiceOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid voice order ID." });
+    }
+
+    const vo = await VoiceOrder.findById(id);
+    if (!vo) return res.status(404).json({ success: false, message: "Voice order not found." });
+    if (!(await ownershipCheck(vo, req))) {
+      return res.status(403).json({ success: false, message: "Access denied." });
+    }
+    if (!vo.audioStorageKey) {
+      return res.status(400).json({ success: false, message: "No audio file found for this voice order." });
+    }
+
+    const resolved = resolveAction(vo);
+    const { stage } = determineStage(resolved);
+
+    logState({
+      ...resolved.logMeta,
+      frontendRequestedAction: "retry",
+      resolvedAction: resolved.action,
+      resolvedReason: resolved.reason,
+      resumedStage: stage,
+    });
+
+    if (stage === "rejected") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot retry a voice order with status "${vo.status}".`,
+        status: vo.status,
+      });
+    }
+
+    if (stage === "complete") {
+      return res.json({ success: true, data: vo, message: "Already complete." });
+    }
+
+    if (stage === "in_progress") {
+      if (resolved.action === "transcribe" || resolved.reason.includes("stale")) {
+        // Stale lock — reset and continue
+        vo.processingStartedAt = null;
+        await vo.save();
+      } else {
+        return res.status(409).json({
+          success: false,
+          message: "Processing is already in progress. Please wait.",
+          status: vo.status,
+        });
+      }
+    }
+
+    // ── Phase: Transcription ─────────────────────────────────────────────
+    if (stage === "transcribe") {
+      let audioBuffer;
+      try {
+        audioBuffer = await readAudioFromStorage(vo);
+      } catch (readErr) {
+        vo.status = "transcription_failed";
+        vo.failureReason = "Could not read audio file from storage.";
+        vo.processingStartedAt = null;
+        await vo.save();
+        return res.status(500).json({ success: false, message: vo.failureReason });
+      }
+
+      try {
+        const txnResult = await runTranscriptionPipeline(vo, audioBuffer, req.body);
+        if (txnResult.status === "transcription_failed") {
+          return res.status(502).json({
+            success: false,
+            message: txnResult.failureReason,
+            code: "EMPTY_RESPONSE",
+          });
+        }
+      } catch (transcribeErr) {
+        vo.status = "transcription_failed";
+        vo.failureReason = buildTranscriptionFailureMessage(
+          transcribeErr.code || "UNKNOWN",
+          "Gemini"
+        );
+        vo.processingStartedAt = null;
+        await vo.save();
+        logState({ voiceOrderId: String(vo._id), finalStatus: "transcription_failed", errorCode: transcribeErr.code || "UNKNOWN" });
+        return res.status(transcribeErr.status || 502).json({
+          success: false,
+          message: vo.failureReason,
+          errorRef: transcribeErr.errorRef || null,
+          code: transcribeErr.code || "UNKNOWN",
+        });
+      }
+    }
+
+    // ── Phase: Extraction ────────────────────────────────────────────────
+    try {
+      const extResult = await runExtractionPipeline(vo);
+      if (extResult.status === "no_transcript") {
+        vo.status = "transcription_failed";
+        vo.failureReason = "No transcript available for extraction.";
+        vo.processingStartedAt = null;
+        await vo.save();
+        return res.status(502).json({ success: false, message: vo.failureReason });
+      }
+      if (extResult.status === "extraction_failed") {
+        return res.status(207).json({
+          success: true,
+          data: vo,
+          message: "Transcription complete but AI extraction failed.",
+          extractionError: true,
+        });
+      }
+      return res.json({ success: true, data: vo, message: "Transcription and extraction complete!" });
+    } catch (extractErr) {
+      vo.status = "extraction_failed";
+      vo.failureReason = buildExtractionFailureMessage(extractErr.code || "UNKNOWN", "Gemini");
+      vo.processingStartedAt = null;
+      await vo.save();
+      logState({ voiceOrderId: String(vo._id), finalStatus: "extraction_failed", errorCode: extractErr.code || "UNKNOWN" });
+      return res.status(207).json({
+        success: true,
+        data: vo,
+        message: "Transcription complete but AI extraction failed.",
+        errorRef: extractErr.errorRef || null,
+        extractionError: true,
+      });
+    }
+  } catch (err) {
+    console.error("[VoiceOrder] retryVoiceOrder error:", err.message);
+    return res.status(500).json({ success: false, message: "Internal error during retry." });
   }
 };
 
@@ -451,21 +735,15 @@ const extractVoiceOrder = async (req, res) => {
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: "Invalid voice order ID." });
     }
+
     const vo = await VoiceOrder.findById(id);
     if (!vo) return res.status(404).json({ success: false, message: "Voice order not found." });
     if (!(await ownershipCheck(vo, req))) {
       return res.status(403).json({ success: false, message: "Access denied." });
     }
 
-    // Idempotency check
-    if (vo.status === "extracting" || vo.status === "extracting_order") {
-      return res.status(409).json({
-        success: false,
-        message: "Extraction is already in progress.",
-      });
-    }
-
-    if (!vo.transcription || !vo.transcription.trim()) {
+    const transcript = (vo.transcription || "").trim();
+    if (!transcript) {
       return res.status(400).json({
         success: false,
         message: "No transcription available. Transcribe the audio first.",
@@ -473,8 +751,8 @@ const extractVoiceOrder = async (req, res) => {
     }
 
     const extractableStates = [
-      "needs_review", "ready_for_review", "draft", "failed",
-      "order_extraction_failed", "transcribed",
+      "transcribed", "extracting_order", "extraction_failed",
+      "order_extraction_failed", "needs_review", "ready_for_review", "draft", "failed",
     ];
     if (!extractableStates.includes(vo.status)) {
       return res.status(400).json({
@@ -483,71 +761,31 @@ const extractVoiceOrder = async (req, res) => {
       });
     }
 
-    const diag = orderExtractionProvider.getExtractionDiagnostics();
-    if (!diag.configured) {
-      return res.status(503).json({ success: false, message: diag.message });
-    }
-
-    const storeProducts = await Product.find({
-      clientId: vo.storeId,
-      isActive: true,
-    })
-      .select("_id name sku price stock isActive")
-      .lean();
-
-    const productContext = storeProducts.map((p) => ({
-      id: String(p._id),
-      name: p.name,
-      sku: p.sku,
-    }));
-
-    vo.status = "extracting_order";
-    vo.failureReason = null;
-    await vo.save();
-
-    let extracted;
     try {
-      extracted = await orderExtractionProvider.extractOrder(
-        vo.transcription,
-        productContext,
-        { currency: "INR", voiceOrderId: String(vo._id) }
-      );
+      const extResult = await runExtractionPipeline(vo);
+      if (extResult.status === "extraction_failed") {
+        return res.status(207).json({
+          success: true,
+          data: vo,
+          message: "Extraction failed.",
+          extractionError: true,
+          errorRef: null,
+        });
+      }
+      return res.json({ success: true, data: vo });
     } catch (extractErr) {
-      console.error("[VoiceOrder] Extraction failed:", extractErr.code, extractErr.message);
-      const extProvider = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "openai").toLowerCase();
-      const extName = extProvider === "gemini" ? "Gemini" : "OpenAI";
-      vo.status = "order_extraction_failed";
-
-      const errCode = extractErr.code || "UNKNOWN";
-      const failureMessages = {
-        QUOTA_EXCEEDED: "AI extraction quota is unavailable. Add API billing/credits.",
-        AUTH_ERROR: `${extName} API key is missing or invalid.`,
-        PERMISSION_DENIED: `${extName} API access is not permitted for this project.`,
-        MODEL_NOT_FOUND: `The configured ${extName} model is unavailable.`,
-        PROVIDER_NOT_CONFIGURED: "AI extraction is not configured.",
-        SDK_MISSING: "AI extraction SDK is not installed.",
-      };
-      vo.failureReason = failureMessages[errCode] || `AI extraction failed: ${extractErr.message.slice(0, 200)}`;
+      vo.status = "extraction_failed";
+      vo.failureReason = buildExtractionFailureMessage(extractErr.code || "UNKNOWN", "Gemini");
+      vo.processingStartedAt = null;
       await vo.save();
-
-      const statusCode = extractErr.status || 502;
-      return res.status(statusCode).json({
+      logState({ voiceOrderId: String(vo._id), finalStatus: "extraction_failed", errorCode: extractErr.code || "UNKNOWN" });
+      return res.status(extractErr.status || 502).json({
         success: false,
         message: vo.failureReason,
         errorRef: extractErr.errorRef || null,
         code: extractErr.code || "UNKNOWN",
       });
     }
-
-    const resolvedItems = productMatchingService.matchItems(extracted.items || [], storeProducts);
-
-    vo.extractedData = extracted;
-    vo.resolvedItems = resolvedItems;
-    vo.overallConfidence = extracted.overallConfidence || 0;
-    vo.status = "ready_for_review";
-    await vo.save();
-
-    return res.json({ success: true, data: vo });
   } catch (err) {
     console.error("[VoiceOrder] extractVoiceOrder error:", err.message);
     return res.status(500).json({ success: false, message: "Internal error during extraction." });
@@ -570,7 +808,7 @@ const updateDraft = async (req, res) => {
 
     const editableStates = [
       "needs_review", "ready_for_review", "draft",
-      "transcription_failed", "order_extraction_failed", "failed",
+      "transcription_failed", "extraction_failed", "order_extraction_failed", "failed",
     ];
     if (!editableStates.includes(vo.status)) {
       return res.status(400).json({
@@ -815,7 +1053,6 @@ const deleteVoiceOrder = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access denied." });
     }
 
-    // Prevent deletion if order was already created
     if (vo.status === "order_created" && vo.createdOrderId) {
       return res.status(400).json({
         success: false,
@@ -823,12 +1060,10 @@ const deleteVoiceOrder = async (req, res) => {
       });
     }
 
-    // Delete audio file from storage
     if (vo.audioStorageKey) {
       await audioStorageService.deleteAudio(vo.audioStorageKey);
     }
 
-    // Hard delete the database record
     await VoiceOrder.findByIdAndDelete(id);
 
     console.log(`[VoiceOrder] Deleted: id=${id} storeId=${vo.storeId} file=${vo.audioStorageKey}`);
@@ -864,6 +1099,7 @@ const cancelVoiceOrder = async (req, res) => {
     }
 
     vo.status = "cancelled";
+    vo.processingStartedAt = null;
     await vo.save();
 
     return res.json({ success: true, data: vo });
@@ -895,7 +1131,7 @@ const updateTranscription = async (req, res) => {
     vo.transcription = transcription.slice(0, 10000);
     const resetStates = [
       "needs_review", "ready_for_review", "extracting", "extracting_order",
-      "failed", "order_extraction_failed",
+      "failed", "extraction_failed", "order_extraction_failed",
     ];
     if (resetStates.includes(vo.status)) {
       vo.status = "ready_for_review";
@@ -945,12 +1181,12 @@ const checkVoiceConfig = async (req, res) => {
     checks.push({
       check: "GEMINI_TRANSCRIPTION_MODEL",
       status: "ok",
-      value: process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash",
+      value: process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-3.1-flash-lite",
     });
     checks.push({
       check: "GEMINI_ORDER_MODEL",
       status: "ok",
-      value: process.env.GEMINI_ORDER_MODEL || "gemini-2.5-flash",
+      value: process.env.GEMINI_ORDER_MODEL || "gemini-3.1-flash-lite",
     });
   }
 
@@ -987,7 +1223,6 @@ const checkVoiceConfig = async (req, res) => {
     value: maxLen,
   });
 
-  // Determine overall status — OK if at least one provider is configured
   const hasOpenAiKey = !!process.env.OPENAI_API_KEY;
   const hasGeminiKey = !!process.env.GEMINI_API_KEY;
   const needsOpenAi = provider === "openai" || extProvider === "openai";
@@ -1012,6 +1247,7 @@ module.exports = {
   createVoiceOrder,
   streamAudio,
   transcribeVoiceOrder,
+  retryVoiceOrder,
   extractVoiceOrder,
   updateDraft,
   confirmVoiceOrder,

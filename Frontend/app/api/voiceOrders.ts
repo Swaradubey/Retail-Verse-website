@@ -52,6 +52,7 @@ export type VoiceOrderStatus =
   | 'transcription_failed'
   | 'extracting'
   | 'extracting_order'
+  | 'extraction_failed'
   | 'needs_review'
   | 'ready_for_review'
   | 'draft'
@@ -155,6 +156,13 @@ export const voiceOrdersApi = {
    */
   transcribe: (id: string, language?: string) =>
     ApiService.post<{ data: VoiceOrder }>(`/api/voice-orders/${id}/transcribe`, { language }, { pageName: PAGE_NAME }),
+
+  /**
+   * Retry with state-machine recovery (calls /retry endpoint).
+   * The backend determines whether to transcribe or extract based on current status.
+   */
+  retry: (id: string) =>
+    ApiService.post<{ data: VoiceOrder }>(`/api/voice-orders/${id}/retry`, {}, { pageName: PAGE_NAME }),
 
   /**
    * Start/retry AI extraction.

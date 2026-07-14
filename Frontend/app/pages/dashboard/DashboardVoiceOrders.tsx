@@ -15,20 +15,21 @@ import { isSuperAdminRole, isClientRole } from '../../utils/staffRoles';
 // ── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<VoiceOrderStatus, { label: string; color: string }> = {
-  uploaded:              { label: 'Uploaded',            color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' },
-  transcribing:          { label: 'Transcribing…',       color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' },
-  transcribed:           { label: 'Transcribed',         color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
-  transcription_failed:  { label: 'Transcription Failed',color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
-  extracting:            { label: 'Extracting…',         color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200' },
-  extracting_order:      { label: 'Extracting Order…',   color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200' },
-  needs_review:          { label: 'Needs Review',        color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' },
-  ready_for_review:      { label: 'Ready for Review',   color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
-  draft:                 { label: 'Draft',               color: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' },
-  confirmed:             { label: 'Confirmed',           color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
-  order_created:         { label: 'Order Created',       color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
-  failed:                { label: 'Failed',              color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
-  order_extraction_failed: { label: 'Extraction Failed', color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
-  cancelled:             { label: 'Cancelled',           color: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
+  uploaded:              { label: 'Uploaded',              color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' },
+  transcribing:          { label: 'Transcribing audio…',   color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-200' },
+  transcribed:           { label: 'Transcribed',           color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
+  transcription_failed:  { label: 'Transcription Failed',  color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
+  extracting:            { label: 'Extracting…',           color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200' },
+  extracting_order:      { label: 'Extracting order…',     color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200' },
+  extraction_failed:     { label: 'Extraction Failed',     color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
+  needs_review:          { label: 'Needs Review',          color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' },
+  ready_for_review:      { label: 'Ready for Review',      color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
+  draft:                 { label: 'Draft',                 color: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' },
+  confirmed:             { label: 'Confirmed',             color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
+  order_created:         { label: 'Order Created',         color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
+  failed:                { label: 'Failed',                color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
+  order_extraction_failed: { label: 'Extraction Failed',   color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
+  cancelled:             { label: 'Cancelled',             color: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
 };
 
 function StatusBadge({ status }: { status: VoiceOrderStatus }) {
@@ -267,6 +268,30 @@ export function DashboardVoiceOrders() {
     setEditedItems(currentVo.resolvedItems || []);
   }, [currentVo]);
 
+  // ── Poll for status updates while processing ────────────────────────────
+  useEffect(() => {
+    const processingStates = ['transcribing', 'extracting_order'];
+    if (!currentVo || !processingStates.includes(currentVo.status)) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await voiceOrdersApi.getById(currentVo._id);
+        const updated = res.data as unknown as { data: VoiceOrder };
+        if (updated.data) {
+          setCurrentVo(updated.data);
+          if (updated.data.status === 'ready_for_review') {
+            setView('review');
+            toast.success('Processing complete!');
+          }
+        }
+      } catch {
+        // Silently retry on polling failure
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [currentVo?._id, currentVo?.status]);
+
   // ── Load history ───────────────────────────────────────────────────────────
   const loadHistory = useCallback(async (page = 1) => {
     setHistoryLoading(true);
@@ -340,6 +365,16 @@ export function DashboardVoiceOrders() {
     }
   };
 
+  // ── Fetch latest from backend ──────────────────────────────────────────
+  const refreshCurrentVo = useCallback(async () => {
+    if (!currentVo) return;
+    try {
+      const res = await voiceOrdersApi.getById(currentVo._id);
+      const updated = res.data as unknown as { data: VoiceOrder };
+      if (updated.data) setCurrentVo(updated.data);
+    } catch { /* ignore */ }
+  }, [currentVo?._id]);
+
   // ── Transcribe ─────────────────────────────────────────────────────────────
   const handleTranscribe = async () => {
     if (!currentVo) return;
@@ -376,6 +411,38 @@ export function DashboardVoiceOrders() {
       toast.error(msg);
     } finally {
       setTranscribing(false);
+      await refreshCurrentVo();
+    }
+  };
+
+  // ── Retry via state-machine endpoint ─────────────────────────────────────
+  const handleRetry = async () => {
+    if (!currentVo) return;
+    setTranscribing(true);
+    setTranscriptionError(null);
+    try {
+      const res = await voiceOrdersApi.retry(currentVo._id);
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean };
+      setCurrentVo(data.data);
+      if (data.extractionError) {
+        toast.warning('Processing completed with extraction issue. Review the result.');
+      } else {
+        toast.success(data.message || 'Processing complete!');
+      }
+      if (data.data.status === 'ready_for_review') {
+        setView('review');
+      }
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { message?: string; errorRef?: string; code?: string } } };
+      const msg = axiosErr?.response?.data?.message || (err instanceof Error ? err.message : null) || 'Retry failed.';
+      const errorRef = axiosErr?.response?.data?.errorRef || null;
+      const code = axiosErr?.response?.data?.code || null;
+      let title = 'Processing Failed';
+      setTranscriptionError({ title, message: msg, errorRef, code });
+      toast.error(msg);
+    } finally {
+      setTranscribing(false);
+      await refreshCurrentVo();
     }
   };
 
@@ -738,8 +805,15 @@ export function DashboardVoiceOrders() {
                     <span className="text-xs text-muted-foreground font-mono">{currentVo._id.slice(-8)}</span>
                   </div>
                   <div className="flex gap-2 flex-wrap">
+                    {/* Processing indicator */}
+                    {['transcribing', 'extracting_order'].includes(currentVo.status) && (
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-sm font-semibold">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {currentVo.status === 'transcribing' ? 'Transcribing audio…' : 'Extracting order details…'}
+                      </div>
+                    )}
                     {/* Transcribe / re-transcribe */}
-                    {(['uploaded', 'transcription_failed', 'order_extraction_failed', 'needs_review', 'ready_for_review', 'draft', 'failed', 'transcribed'].includes(currentVo.status)) && (
+                    {['uploaded', 'transcription_failed', 'extraction_failed', 'order_extraction_failed', 'failed'].includes(currentVo.status) && (
                       <button
                         onClick={handleTranscribe}
                         disabled={transcribing}
@@ -749,8 +823,19 @@ export function DashboardVoiceOrders() {
                         {transcribing ? 'Transcribing…' : 'Transcribe'}
                       </button>
                     )}
+                    {/* Retry via state machine */}
+                    {['extracting_order', 'transcribed', 'needs_review', 'ready_for_review', 'draft', 'failed', 'extraction_failed', 'order_extraction_failed'].includes(currentVo.status) && (
+                      <button
+                        onClick={handleRetry}
+                        disabled={transcribing || currentVo.status === 'transcribing'}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-60"
+                      >
+                        {transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                        {transcribing ? 'Processing…' : 'Retry'}
+                      </button>
+                    )}
                     {/* Extract */}
-                    {currentVo.transcription && ['transcribed', 'needs_review', 'ready_for_review', 'draft', 'failed', 'order_extraction_failed'].includes(currentVo.status) && (
+                    {currentVo.transcription && ['transcribed', 'needs_review', 'ready_for_review', 'draft', 'failed', 'extraction_failed', 'order_extraction_failed'].includes(currentVo.status) && (
                       <button
                         onClick={handleExtract}
                         disabled={extracting}
@@ -799,7 +884,7 @@ export function DashboardVoiceOrders() {
                     </div>
                     <div className="flex gap-3 flex-wrap pt-1">
                       <button
-                        onClick={handleTranscribe}
+                        onClick={handleRetry}
                         disabled={transcribing}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-all disabled:opacity-60"
                       >
@@ -835,14 +920,14 @@ export function DashboardVoiceOrders() {
                 )}
 
                 {/* Transcription */}
-                {(currentVo.transcription || ['transcription_failed', 'order_extraction_failed', 'transcribed'].includes(currentVo.status)) && (
+                {(currentVo.transcription || ['transcription_failed', 'extraction_failed', 'order_extraction_failed', 'transcribed'].includes(currentVo.status)) && (
                   <div className="bg-white dark:bg-zinc-900/80 border border-amber-200/40 dark:border-amber-800/30 rounded-xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                         <FileText className="w-4 h-4 text-blue-500" /> Transcription
                         {currentVo.transcriptionLanguage && <span className="ml-1 px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-xs">{currentVo.transcriptionLanguage}</span>}
                       </div>
-                      {(currentVo.status === 'transcription_failed' || currentVo.status === 'order_extraction_failed') && (
+                      {(['transcription_failed', 'extraction_failed', 'order_extraction_failed']).includes(currentVo.status) && (
                         <span className="text-xs text-red-600 dark:text-red-400 font-medium">{currentVo.failureReason || 'Processing failed'}</span>
                       )}
                     </div>

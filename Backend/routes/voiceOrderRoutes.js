@@ -22,6 +22,7 @@ const {
   createVoiceOrder,
   streamAudio,
   transcribeVoiceOrder,
+  retryVoiceOrder,
   extractVoiceOrder,
   updateDraft,
   confirmVoiceOrder,
@@ -94,7 +95,7 @@ router.post(
       if (!apiKey) {
         return res.status(503).json({ success: false, message: "GEMINI_API_KEY is not set on the backend." });
       }
-      const model = req.body?.model || process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash";
+      const model = req.body?.model || process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-3.1-flash-lite";
       const prompt = req.body?.prompt || "Reply with OK only.";
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
@@ -157,6 +158,18 @@ router.post(
   allowRoles(...CLIENT_ROLES),
   tenantMiddleware,
   transcribeVoiceOrder
+);
+
+/**
+ * @route   POST /api/voice-orders/:id/retry
+ * @desc    Retry with state-machine recovery (transcribe or extract)
+ */
+router.post(
+  "/:id/retry",
+  protect,
+  allowRoles(...CLIENT_ROLES),
+  tenantMiddleware,
+  retryVoiceOrder
 );
 
 /**

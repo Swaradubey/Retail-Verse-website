@@ -2,7 +2,7 @@ const crypto = require("crypto");
 
 const PROVIDER = (process.env.AI_TRANSCRIPTION_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1";
-const GEMINI_MODEL = process.env.GEMINI_TRANSCRIPTION_MODEL || "";
+const GEMINI_MODEL = process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-3.1-flash-lite";
 
 function normalizeMimeType(mimeType) {
   if (!mimeType) return mimeType;
@@ -391,13 +391,13 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
               role: "user",
               parts: [
                 {
-                  text: "Transcribe this audio recording to text exactly as spoken. Return ONLY the transcribed text — no explanations, no preamble, no commentary.",
-                },
-                {
                   inlineData: {
                     mimeType: normalizedMime,
                     data: base64Audio,
                   },
+                },
+                {
+                  text: "Transcribe this customer voice order exactly. Preserve product names, quantities and units. Return transcript text only.",
                 },
               ],
             },
@@ -442,17 +442,31 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
         let status = 500;
         let errorMessage = rawMessage;
         let geminiCode = "";
+        let parsedBody = null;
 
         if (err?.constructor?.name === "ApiError") {
           status = err.status || 500;
           try {
-            const parsed = JSON.parse(errorMessage);
-            geminiCode = parsed?.error?.status || "";
-            errorMessage = parsed?.error?.message || errorMessage;
+            parsedBody = JSON.parse(errorMessage);
+            geminiCode = parsedBody?.error?.status || "";
+            errorMessage = parsedBody?.error?.message || errorMessage;
           } catch {
             // use raw message
           }
         }
+
+        // Extract quota details from Gemini error body
+        let quotaMetric = "";
+        let quotaLimit = "";
+        let retryDelay = "";
+        try {
+          const violations = parsedBody?.error?.details?.[0]?.violations;
+          if (violations && violations.length > 0) {
+            quotaMetric = violations[0].quotaMetric || "";
+            quotaLimit = violations[0].quotaLimit || "";
+            retryDelay = violations[0].retryDelay || "";
+          }
+        } catch {}
 
         // ── Log the complete error (no secrets) ──────────────────────────
         console.error(
@@ -464,25 +478,43 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
           " geminiCode=" + geminiCode +
           " errorRef=" + errorRef +
           " attempt=" + (attempt + 1) + "/" + (MAX_RETRIES + 1) +
+          (quotaMetric ? " quotaMetric=" + quotaMetric : "") +
+          (quotaLimit ? " quotaLimit=" + quotaLimit : "") +
+          (retryDelay ? " retryDelay=" + retryDelay : "") +
           " message=" + errorMessage.slice(0, 500)
         );
 
         const msgLower = errorMessage.toLowerCase();
+
+        // ── Quota limit is explicitly 0 ────────────────────────────────
         const isQuotaLimitZero =
           (status === 429 || geminiCode === "RESOURCE_EXHAUSTED") &&
           (msgLower.includes("quota limit:") ||
-           msgLower.includes("quota limit is 0") ||
-           msgLower.includes("billing has not been enabled") ||
+           msgLower.includes("quota limit is 0"));
+
+        // ── Response explicitly states billing or free tier unavailable ─
+        const isBillingRequired =
+          (status === 429 || geminiCode === "RESOURCE_EXHAUSTED") &&
+          !isQuotaLimitZero &&
+          (msgLower.includes("billing has not been enabled") ||
            msgLower.includes("billing not enabled") ||
-           msgLower.includes("does not have billing enabled"));
+           msgLower.includes("does not have billing enabled") ||
+           msgLower.includes("free tier is not available") ||
+           msgLower.includes("free tier is unavailable"));
+
+        // ── Quota exhausted (daily limit) — permanent for this request ──
         const isQuotaExhausted =
           (status === 429 || geminiCode === "RESOURCE_EXHAUSTED") &&
           !isQuotaLimitZero &&
+          !isBillingRequired &&
           (msgLower.includes("quota") ||
            msgLower.includes("resource exhausted"));
+
+        // ── Temporary rate limit ──────────────────────────────────────
         const isRateLimited =
           status === 429 &&
           !isQuotaLimitZero &&
+          !isBillingRequired &&
           !isQuotaExhausted &&
           (msgLower.includes("rate limit") ||
            msgLower.includes("rate_limit") ||
@@ -496,11 +528,21 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
           geminiCode === "UNAUTHENTICATED" ||
           geminiCode === "INVALID_ARGUMENT";
 
-        // ── Quota limit is 0 (billing required) — permanent, no retry ──
+        // ── Quota limit is 0 — permanent, no retry ──────────────────────
         if (isQuotaLimitZero) {
           throw new TranscriptionError(
-            "Gemini API billing is required. Enable billing at https://console.cloud.google.com/billing and check quota at https://aistudio.google.com/apikey",
+            "Free API quota is unavailable for the selected model.",
             "QUOTA_LIMIT_ZERO",
+            429,
+            { errorRef, originalMessage: errorMessage }
+          );
+        }
+
+        // ── Billing explicitly required — permanent, no retry ──────────
+        if (isBillingRequired) {
+          throw new TranscriptionError(
+            "Add billing/credits to use Gemini API. Enable billing at https://console.cloud.google.com/billing",
+            "BILLING_REQUIRED",
             429,
             { errorRef, originalMessage: errorMessage }
           );
@@ -509,18 +551,17 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
         // ── Quota exhausted (daily limit) — permanent for this request ──
         if (isQuotaExhausted) {
           throw new TranscriptionError(
-            "Gemini API quota is exhausted for today. Add billing or check usage limits at https://aistudio.google.com/apikey",
+            "Gemini API quota is exhausted for today. Try again later.",
             "QUOTA_EXCEEDED",
             429,
             { errorRef, originalMessage: errorMessage }
           );
         }
 
-        // ── Rate-limited (temporary) → retry with backoff ─────────
+        // ── Rate-limited (temporary) → retry with backoff ───────────────
         if (isRateLimited && attempt < MAX_RETRIES) {
           const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-          const retryDelay = err?.retryDelay || err?.headers?.["retry-after"];
-          const delayNote = retryDelay ? " (retry-after=" + retryDelay + ")" : "";
+          const delayNote = retryDelay ? " (retryDelay=" + retryDelay + ")" : "";
           console.log(
             "[TranscriptionProvider] voiceOrderId=" + voiceOrderId +
             " rate-limited model=" + model +
@@ -529,6 +570,15 @@ async function transcribeWithGemini(audioBuffer, mimeType, originalName, options
           );
           await sleep(backoffMs);
           continue;
+        }
+
+        if (isRateLimited) {
+          throw new TranscriptionError(
+            "Gemini rate limit reached. Please retry later.",
+            "RATE_LIMITED",
+            429,
+            { errorRef, originalMessage: errorMessage }
+          );
         }
 
         if (isAuthKey || status === 401 || geminiCode === "UNAUTHENTICATED") {

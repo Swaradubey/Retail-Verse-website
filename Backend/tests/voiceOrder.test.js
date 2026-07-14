@@ -367,13 +367,13 @@ describe("Environment Variable Handling", () => {
   });
 
   it("should use default for GEMINI_TRANSCRIPTION_MODEL", () => {
-    const model = process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash";
-    assert.strictEqual(model, "gemini-2.5-flash");
+    const model = process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-3.1-flash-lite";
+    assert.strictEqual(model, "gemini-3.1-flash-lite");
   });
 
   it("should use default for GEMINI_ORDER_MODEL", () => {
-    const model = process.env.GEMINI_ORDER_MODEL || "gemini-2.5-flash";
-    assert.strictEqual(model, "gemini-2.5-flash");
+    const model = process.env.GEMINI_ORDER_MODEL || "gemini-3.1-flash-lite";
+    assert.strictEqual(model, "gemini-3.1-flash-lite");
   });
 
   it("should use default for MAX_AUDIO_FILE_SIZE_MB", () => {

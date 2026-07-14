@@ -346,8 +346,8 @@ const PORT = process.env.PORT || 5000;
       console.log("[AI Voice] Transcription provider:", aiTxProvider);
       console.log("[AI Voice] Extraction provider:", aiExtProvider);
       console.log("[AI Voice] Gemini API key configured:", !!geminiKey);
-      console.log("[AI Voice] Gemini transcription model:", process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash");
-      console.log("[AI Voice] Gemini order extraction model:", process.env.GEMINI_ORDER_MODEL || "gemini-2.5-flash");
+      console.log("[AI Voice] Gemini transcription model:", process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-3.1-flash-lite");
+      console.log("[AI Voice] Gemini order extraction model:", process.env.GEMINI_ORDER_MODEL || "gemini-3.1-flash-lite");
 
       if ((aiTxProvider === "gemini" || aiExtProvider === "gemini") && !geminiKey) {
         console.warn("[AI Voice] WARNING: GEMINI_API_KEY is missing from the backend environment. Gemini features will not work.");

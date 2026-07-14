@@ -2,7 +2,7 @@ const crypto = require("crypto");
 
 const PROVIDER = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_ORDER_MODEL || "gpt-4o";
-const GEMINI_MODEL = process.env.GEMINI_ORDER_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_ORDER_MODEL || "gemini-3.1-flash-lite";
 const MAX_TRANSCRIPT_LENGTH = parseInt(process.env.MAX_TRANSCRIPT_LENGTH || "20000", 10) || 20000;
 
 function generateErrorRef() {
