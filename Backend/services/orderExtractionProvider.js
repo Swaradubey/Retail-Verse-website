@@ -148,9 +148,21 @@ function validateExtractionOutput(raw) {
   }
 
   const FORBIDDEN_FIELDS = ["storeId", "clientId", "userId", "price", "tax", "discount", "total", "stock"];
-  for (const item of parsed.items || []) {
+  for (let i = 0; i < (parsed.items || []).length; i++) {
+    const item = parsed.items[i];
     for (const f of FORBIDDEN_FIELDS) {
       delete item[f];
+    }
+    // spokenName is required by the DB schema — guarantee it is always a non-empty string.
+    // If Gemini omitted it or returned blank, use a descriptive fallback so validation never fails.
+    if (!item.spokenName || !String(item.spokenName).trim()) {
+      item.spokenName = `item ${i + 1}`;
+    } else {
+      item.spokenName = String(item.spokenName).trim();
+    }
+    // Ensure requestedQuantity is a positive number.
+    if (typeof item.requestedQuantity !== "number" || isNaN(item.requestedQuantity) || item.requestedQuantity <= 0) {
+      item.requestedQuantity = 1;
     }
   }
   delete parsed.storeId;
