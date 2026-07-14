@@ -29,6 +29,7 @@ import {
   Search,
   Crown,
   Settings,
+  Mic,
 } from 'lucide-react';
 import { useNavigate, useLocation, Outlet, Link, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -117,8 +118,9 @@ const sidebarItems = [
   { title: "POS", icon: ShoppingCart, href: "/pos", counterManagerOnly: true },
   { title: "Settings", icon: Settings, href: "/super-admin/settings", superAdminOnly: true },
   { title: "Settings", icon: Settings, href: "/dashboard/settings", adminOnly: true, hideForSuperAdmin: true },
-
-
+  // ── AI Voice Order Capture ─────────────────────────────────────────────────
+  { title: "AI Voice Orders", icon: Mic, href: "/dashboard/ai-voice-orders", adminOnly: true, hideForSuperAdmin: true },
+  { title: "AI Voice Orders", icon: Mic, href: "/super-admin/ai-voice-orders", superAdminOnly: true },
 ];
 
 /** Shared pill layout for every dashboard sidebar link (matches Overview row: radius, padding, min-height, icon gap). */
@@ -318,6 +320,7 @@ export function Dashboard() {
         item.href === '/dashboard' ||
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
+        item.href === '/dashboard/ai-voice-orders' ||
         item.href === '/dashboard/orders' ||
         item.href === '/dashboard/invoices' ||
         item.href === '/dashboard/customers' ||

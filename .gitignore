@@ -9,3 +9,7 @@ build/
 
 .env
 .env.*
+!.env.example
+
+# Uploaded audio files
+uploads/

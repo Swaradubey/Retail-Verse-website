@@ -61,6 +61,8 @@ const SuperAdminClientDetail = lazy(() => import('./pages/super-admin/SuperAdmin
 const InvoiceDetail = lazy(() => import('./pages/super-admin/InvoiceDetail').then(m => ({ default: m.InvoiceDetail })));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazy(() => import('./pages/TermsOfService').then(m => ({ default: m.TermsOfService })));
+const DashboardVoiceOrders = lazy(() => import('./pages/dashboard/DashboardVoiceOrders').then(m => ({ default: m.DashboardVoiceOrders })));
+const SuperAdminVoiceOrders = lazy(() => import('./pages/super-admin/SuperAdminVoiceOrders').then(m => ({ default: m.SuperAdminVoiceOrders })));
 
 // Minimal loading fallback — a tiny spinner that doesn't block the visible UI
 function PageLoader() {
@@ -311,6 +313,22 @@ export const router = createBrowserRouter([
             element: withSuspense(
               <SuperAdminOnlyRoute>
                 <InvoiceDetail />
+              </SuperAdminOnlyRoute>
+            ),
+          },
+          {
+            path: 'dashboard/ai-voice-orders',
+            element: withSuspense(
+              <FullAdminOnlyRoute>
+                <DashboardVoiceOrders />
+              </FullAdminOnlyRoute>
+            ),
+          },
+          {
+            path: 'super-admin/ai-voice-orders',
+            element: withSuspense(
+              <SuperAdminOnlyRoute>
+                <SuperAdminVoiceOrders />
               </SuperAdminOnlyRoute>
             ),
           },

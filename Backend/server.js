@@ -161,6 +161,7 @@ const shiprocketService = require("./services/shiprocketService");
 const customDomainRoutes = require("./routes/customDomainRoutes");
 const brandingRoutes = require("./routes/brandingRoutes");
 const themeRoutes = require("./routes/themeRoutes");
+const voiceOrderRoutes = require("./routes/voiceOrderRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -194,6 +195,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/public", brandingRoutes);
 app.use("/api/themes", themeRoutes);
+app.use("/api/voice-orders", voiceOrderRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {
@@ -335,6 +337,20 @@ const PORT = process.env.PORT || 5000;
         if (!smtpUser) missing.push("SMTP_USER");
         if (!smtpPass) missing.push("SMTP_PASS");
         console.warn(`[SMTP] Email service NOT configured — missing env vars: ${missing.join(", ")}`);
+      }
+
+      // ── AI Voice Order diagnostics ─────────────────────────────────────────
+      const aiTxProvider = process.env.AI_TRANSCRIPTION_PROVIDER || "openai";
+      const aiExtProvider = process.env.AI_ORDER_EXTRACTION_PROVIDER || "openai";
+      const geminiKey = process.env.GEMINI_API_KEY?.trim();
+      console.log("[AI Voice] Transcription provider:", aiTxProvider);
+      console.log("[AI Voice] Extraction provider:", aiExtProvider);
+      console.log("[AI Voice] Gemini API key configured:", !!geminiKey);
+      console.log("[AI Voice] Gemini transcription model:", process.env.GEMINI_TRANSCRIPTION_MODEL || "gemini-2.5-flash");
+      console.log("[AI Voice] Gemini order extraction model:", process.env.GEMINI_ORDER_MODEL || "gemini-2.5-flash");
+
+      if ((aiTxProvider === "gemini" || aiExtProvider === "gemini") && !geminiKey) {
+        console.warn("[AI Voice] WARNING: GEMINI_API_KEY is missing from the backend environment. Gemini features will not work.");
       }
     });
 

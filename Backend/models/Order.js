@@ -68,10 +68,17 @@ const orderSchema = new mongoose.Schema(
         category: { type: String, required: false },
       },
     ],
-    /** Set to "pos" for in-store sales; website checkout omits (legacy orders have no value). */
+    /** Set to "pos" for in-store sales; "ai_voice" for voice orders; website checkout omits (legacy orders have no value). */
     orderSource: {
       type: String,
       required: false,
+    },
+    /** Links this order back to the VoiceOrder that created it. Null for non-voice orders. */
+    voiceOrderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "VoiceOrder",
+      required: false,
+      default: null,
     },
     /** Client-generated id for offline POS sync; unique when present (sparse index). */
     offlineOrderId: {
