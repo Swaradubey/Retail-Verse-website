@@ -79,6 +79,10 @@ export const productApi = {
   },
 };
 
+export const catalogApi = {
+  getAll: () => ApiService.get<Product[]>("/api/products"),
+};
+
 // Maintain compatibility with existing code that might import specific functions
 export const getProducts = () => productApi.getAll();
 export const createProduct = (data: Product) => productApi.create(data);

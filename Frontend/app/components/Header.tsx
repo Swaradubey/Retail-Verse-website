@@ -42,8 +42,20 @@ export function Header() {
         ? 'Store'
         : 'Premium Commerce';
 
-  /** Pricing link is now disabled globally per requirement. */
-  const hidePricing = true;
+  /** Pricing link disabled globally — we now use a protected /pricing route. */
+  const hidePricing = false;
+
+  const handlePricingClick = () => {
+    if (user) {
+      navigate("/subscription");
+    } else {
+      navigate("/login?redirect=%2Fsubscription", {
+        state: {
+          from: "/subscription"
+        }
+      });
+    }
+  };
 
   const canOpenInventory = canAccessInventoryEditor(user?.role);
   const accountHomeHref = '/dashboard';
@@ -86,14 +98,6 @@ export function Header() {
                 >
                   Products
                 </Link>
-                {!hidePricing && (
-                  <Link
-                    to="/shop?category=Pricing"
-                    className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
-                  >
-                    Pricing
-                  </Link>
-                )}
                 {canOpenInventory && (
                   <Link
                     to="/dashboard/inventory"
@@ -117,6 +121,14 @@ export function Header() {
                 >
                   Contact
                 </Link>
+                {!hidePricing && (
+                  <button
+                    onClick={handlePricingClick}
+                    className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
+                  >
+                    Pricing
+                  </button>
+                )}
               </nav>
             ) : (
               <div className="hidden lg:block" aria-hidden="true" />
@@ -237,16 +249,6 @@ export function Header() {
                     Products
                   </Link>
 
-                  {!hidePricing && (
-                    <Link
-                      to="/shop?category=Pricing"
-                      onClick={closeMobileMenu}
-                      className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                    >
-                      Pricing
-                    </Link>
-                  )}
-
                   {canOpenInventory && (
                     <Link
                       to="/dashboard/inventory"
@@ -274,6 +276,14 @@ export function Header() {
                   >
                     Contact
                   </Link>
+                  {!hidePricing && (
+                    <button
+                      onClick={() => { handlePricingClick(); closeMobileMenu(); }}
+                      className="w-full text-left rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
+                    >
+                      Pricing
+                    </button>
+                  )}
                 </nav>
               ) : null}
 

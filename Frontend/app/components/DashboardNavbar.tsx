@@ -4,26 +4,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Bell, 
   Search, 
-  User as UserIcon, 
-  ChevronDown,
   Loader2,
   ShoppingCart,
   AlertTriangle,
   Package
 } from 'lucide-react';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
-} from './ui/dropdown-menu';
 import { Button } from './ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Input } from './ui/input';
-import { useAuth } from '../context/AuthContext';
-import { accountRoleSubtitle, hasFullAdminPrivileges } from '../utils/staffRoles';
 import { SidebarTrigger } from './ui/sidebar';
 import {
   Dialog,
@@ -52,7 +39,6 @@ type DashboardNavbarProps = {
 };
 
 export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProps) {
-  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -336,81 +322,7 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
             )}
           </Button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <motion.div
-                whileHover={premiumOverview ? { scale: 1.02 } : undefined}
-                whileTap={premiumOverview ? { scale: 0.98 } : undefined}
-                className="inline-flex"
-              >
-                <Button
-                  variant="ghost"
-                  className={
-                    premiumOverview
-                      ? 'relative flex items-center gap-2 p-1 pr-2 rounded-full border border-transparent transition-all duration-300 hover:border-amber-200/50 hover:bg-amber-500/5 dark:hover:border-amber-800/40 dark:hover:bg-amber-400/5 hover:shadow-md hover:shadow-amber-900/5'
-                      : 'relative flex items-center gap-2 p-1 pr-2 rounded-xl hover:bg-gray-100 dark:hover:bg-white/10 transition-all'
-                  }
-                >
-                  <Avatar className="h-8 w-8 border-2 border-white dark:border-zinc-800 shadow-md ring-2 ring-amber-200/30 dark:ring-amber-700/20">
-                    <AvatarImage src={`https://avatar.iran.liara.run/username?username=${user?.name || 'User'}`} />
-                    <AvatarFallback>{user?.name?.charAt(0) || 'U'}</AvatarFallback>
-                  </Avatar>
-                  <div className="hidden sm:flex flex-col items-start">
-                    <span className="text-sm font-bold leading-none">{user?.name || 'Admin'}</span>
-                    <span
-                      className={
-                        user?.role === 'super_admin'
-                          ? 'text-[10px] font-semibold text-violet-700 dark:text-violet-300'
-                          : user?.role === 'admin'
-                            ? 'text-[10px] font-semibold text-amber-800 dark:text-amber-200/90'
-                            : 'text-[10px] text-muted-foreground'
-                      }
-                    >
-                      {accountRoleSubtitle(user?.role)}
-                    </span>
-                  </div>
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                </Button>
-              </motion.div>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className={
-                premiumOverview
-                  ? 'w-56 mt-2 p-2 rounded-2xl border border-amber-200/40 dark:border-amber-900/30 shadow-2xl shadow-amber-900/10 bg-white/92 dark:bg-zinc-950/92 backdrop-blur-xl'
-                  : 'w-56 mt-2 p-2 rounded-2xl border-none shadow-2xl bg-white/90 dark:bg-black/90 backdrop-blur-xl'
-              }
-            >
-              <DropdownMenuLabel className="font-bold">My Account</DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-gray-100 dark:bg-white/10" />
-              <DropdownMenuItem
-                className={
-                  premiumOverview
-                    ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
-                    : 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-400'
-                }
-              >
-                <UserIcon className="w-4 h-4" /> Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={handleNotifClick}
-                className={
-                  premiumOverview
-                    ? 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-amber-50 dark:focus:bg-amber-950/40 focus:text-amber-900 dark:focus:text-amber-200'
-                    : 'rounded-xl flex items-center gap-2 p-2 cursor-pointer focus:bg-blue-50 dark:focus:bg-blue-900/20 focus:text-blue-600 dark:focus:text-blue-400'
-                }
-              >
-                <Bell className="w-4 h-4" /> Notifications
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-gray-100 dark:bg-white/10" />
-              <DropdownMenuItem
-                onClick={logout}
-                className="rounded-xl flex items-center gap-2 p-2 cursor-pointer text-rose-500 focus:bg-rose-50 dark:focus:bg-rose-900/20 focus:text-rose-600"
-              >
-                Log out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+
         </div>
       </div>
 

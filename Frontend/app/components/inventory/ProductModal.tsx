@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, AlertCircle, Package, Hash, Tag, IndianRupee, Database, Image as ImageIcon, FileText, Camera } from 'lucide-react';
+import { X, Save, AlertCircle, Package, Hash, Tag, IndianRupee, Database, Image as ImageIcon, FileText, Camera, Store } from 'lucide-react';
+import api from '../../api/apiService';
+import * as marketplaceApi from '../../services/marketplaceApi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '../ui/button';
 import { Product } from '../../api/products';
@@ -47,6 +49,8 @@ export function ProductModal({
     Array.isArray(assignableClients) &&
     assignableClients.length > 0;
   const [assignClientId, setAssignClientId] = useState('');
+  const [connectedMarketplaces, setConnectedMarketplaces] = useState<string[]>([]);
+  const [selectedMarketplaces, setSelectedMarketplaces] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     productName: '',
     sku: '',
@@ -161,10 +165,29 @@ export function ProductModal({
         imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1470',
         description: '',
       });
+      setSelectedMarketplaces([]);
     }
     setAssignClientId('');
     setError(null);
   }, [product, mode, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && mode === 'add') {
+      marketplaceApi.getMarketplaceConnections()
+        .then((connData: any) => {
+          const connections = Array.isArray(connData) ? connData : (connData.connections || []);
+          const activeMps = connections
+            .filter((c: any) => c.status === 'connected')
+            .map((c: any) => c.marketplace);
+          setConnectedMarketplaces(activeMps);
+          setSelectedMarketplaces(activeMps); // Auto select connected marketplaces by default
+        })
+        .catch(err => {
+          console.error('[ProductModal] Failed to fetch marketplace connections:', err.message);
+          setConnectedMarketplaces([]);
+        });
+    }
+  }, [isOpen, mode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -243,6 +266,7 @@ export function ProductModal({
         stock: formData.stockLevel,
         image: formData.imageUrl,
         description: formData.description,
+        publishTo: selectedMarketplaces,
       };
       if (showClientAssign && assignClientId) {
         (mappedPayload as Product).clientId = assignClientId;
@@ -531,6 +555,68 @@ export function ProductModal({
                         </div>
                       </div>
                     </div>
+
+                    {/* Publish To Marketplaces Checkboxes */}
+                    {mode === 'add' && (
+                      <div className="space-y-3 md:col-span-2 border-t border-gray-100 dark:border-white/5 pt-4">
+                        <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                          <Store className="w-4.5 h-4.5 text-indigo-500" />
+                          Publish To Connected Marketplaces
+                        </label>
+                        {connectedMarketplaces.length === 0 ? (
+                          <div className="p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-150 dark:border-zinc-800 text-xs text-slate-500 leading-relaxed">
+                            No connected accounts found. You can link your Amazon, Flipkart, or Shopify stores in the{' '}
+                            <a href="/dashboard/marketplaces" className="text-indigo-600 font-semibold hover:underline">
+                              Marketplaces Settings
+                            </a>{' '}
+                            to auto-publish listings.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {[
+                              { id: 'amazon', name: 'Amazon' },
+                              { id: 'flipkart', name: 'Flipkart' },
+                              { id: 'shopify', name: 'Shopify' }
+                            ].map((mp) => {
+                              const isConnected = connectedMarketplaces.includes(mp.id);
+                              const isSelected = selectedMarketplaces.includes(mp.id);
+                              return (
+                                <label
+                                  key={mp.id}
+                                  className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 select-none ${
+                                    isSelected
+                                      ? 'border-indigo-500 bg-indigo-50/20 dark:border-indigo-500/30 dark:bg-indigo-950/20 shadow-sm'
+                                      : isConnected
+                                        ? 'border-gray-200 dark:border-white/10 hover:bg-gray-50 dark:hover:bg-white/5'
+                                        : 'border-gray-100 dark:border-white/5 bg-gray-50/30 dark:bg-white/[0.01] opacity-50 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    disabled={!isConnected}
+                                    onChange={() => {
+                                      if (isSelected) {
+                                        setSelectedMarketplaces(prev => prev.filter(id => id !== mp.id));
+                                      } else {
+                                        setSelectedMarketplaces(prev => [...prev, mp.id]);
+                                      }
+                                    }}
+                                    className="rounded text-indigo-600 focus:ring-indigo-500/20 w-4 h-4 cursor-pointer disabled:cursor-not-allowed"
+                                  />
+                                  <div className="min-w-0 leading-tight">
+                                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">{mp.name}</p>
+                                    <p className="text-[10px] text-gray-400">
+                                      {isConnected ? 'Connected' : 'Not Connected'}
+                                    </p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
 

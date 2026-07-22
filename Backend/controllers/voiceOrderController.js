@@ -11,6 +11,7 @@ const productMatchingService = require("../services/productMatchingService");
 const { resolveClientId } = require("../utils/tenantResolver");
 const { normalizeRole } = require("../utils/clientScopedRoles");
 const { resolveAction, determineStage, acquireProcessingLock } = require("../utils/voiceOrderStateMachine");
+const { resolveAccessibleStore } = require("../utils/resolveAccessibleStore");
 
 const isValidObjectId = (id) => {
   if (!id) return false;
@@ -20,41 +21,19 @@ const isValidObjectId = (id) => {
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
+// resolveStoreId is now delegated to the shared resolveAccessibleStore utility
+// which correctly handles: super_admin, client/client_admin/staff, AND user/customer roles.
 async function resolveStoreId(req) {
-  const role = normalizeRole(req.user?.role);
-  const isSuperAdmin = role === "super_admin";
-
-  if (!isSuperAdmin) {
-    const cId = req.user?.clientId || (await resolveClientId(req));
-    if (!isValidObjectId(cId)) {
-      throw Object.assign(
-        new Error("Your account is not linked to a store. Please contact the Super Admin."),
-        { code: "NO_STORE" }
-      );
-    }
-    return String(cId);
-  }
-
-  const supplied = req.body?.storeId || req.query?.storeId;
-  if (!isValidObjectId(supplied)) {
-    throw Object.assign(
-      new Error("Super Admin must select a store before performing this action."),
-      { code: "STORE_REQUIRED" }
-    );
-  }
-  const client = await Client.findById(supplied).select("_id companyName shopName");
-  if (!client) {
-    throw Object.assign(
-      new Error(`Selected store (${supplied}) does not exist.`),
-      { code: "STORE_NOT_FOUND" }
-    );
-  }
-  return String(client._id);
+  return resolveAccessibleStore(req);
 }
 
 async function ownershipCheck(voiceOrder, req) {
   const role = normalizeRole(req.user?.role);
   if (role === "super_admin") return true;
+
+  if (role === "user" || role === "customer") {
+    return String(voiceOrder.createdByUserId) === String(req.user._id);
+  }
 
   const userStoreId = req.user?.clientId || (await resolveClientId(req));
   if (!userStoreId) return false;
@@ -135,14 +114,31 @@ const listVoiceOrders = async (req, res) => {
         filter.storeId = new mongoose.Types.ObjectId(String(filterStoreId));
       }
     } else {
-      const cId = req.user?.clientId || (await resolveClientId(req));
-      if (!isValidObjectId(cId)) {
-        return res.status(403).json({ success: false, message: "Store not resolved." });
+      const role = normalizeRole(req.user?.role);
+      // user/customer: scope to their own voice orders (createdByUserId filter below handles isolation)
+      // but we still need a storeId filter if they pass one explicitly
+      if (role === "user" || role === "customer") {
+        const suppliedStoreId = req.query?.storeId || req.body?.storeId;
+        if (isValidObjectId(suppliedStoreId)) {
+          filter.storeId = new mongoose.Types.ObjectId(String(suppliedStoreId));
+        }
+        // If no storeId supplied, list ALL their voice orders across stores (scoped by createdByUserId below)
+      } else {
+        // Client-scoped roles
+        const cId = req.user?.clientId || (await resolveClientId(req));
+        if (!isValidObjectId(cId)) {
+          return res.status(403).json({ success: false, message: "Store not resolved." });
+        }
+        filter.storeId = new mongoose.Types.ObjectId(String(cId));
       }
-      filter.storeId = new mongoose.Types.ObjectId(String(cId));
     }
 
     if (status) filter.status = status;
+
+    const userRole = normalizeRole(req.user?.role);
+    if (userRole === "user" || userRole === "customer") {
+      filter.createdByUserId = req.user._id;
+    }
 
     if (search) {
       const regex = new RegExp(String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -209,9 +205,14 @@ const getVoiceOrder = async (req, res) => {
 
 const createVoiceOrder = async (req, res) => {
   try {
-    const storeId = await resolveStoreId(req).catch((err) =>
-      res.status(err.code === "STORE_REQUIRED" ? 400 : 403).json({ success: false, message: err.message })
-    );
+    const storeId = await resolveStoreId(req).catch((err) => {
+      const httpStatus = err.status || (
+        err.code === "STORE_REQUIRED" || err.code === "NO_STORE_SELECTED" ? 400
+        : err.code === "STORE_NOT_FOUND" ? 404
+        : 403
+      );
+      res.status(httpStatus).json({ success: false, message: err.message, code: err.code });
+    });
     if (res.headersSent) return;
 
     let audioBuffer = null;
@@ -349,6 +350,7 @@ async function runTranscriptionPipeline(vo, audioBuffer, options) {
   const text = (result.text || "").trim();
   if (!text) {
     vo.status = "transcription_failed";
+    vo.transcriptionStatus = "failed";
     vo.failureReason = "Gemini returned empty transcription.";
     vo.processingStartedAt = null;
     await vo.save();
@@ -358,6 +360,7 @@ async function runTranscriptionPipeline(vo, audioBuffer, options) {
 
   vo.transcription = text;
   vo.transcriptionLanguage = result.language || "en";
+  vo.transcriptionStatus = "completed";
   if (result.durationSeconds != null) vo.durationSeconds = result.durationSeconds;
   vo.status = "transcribed";
   await vo.save();
@@ -385,6 +388,7 @@ async function runExtractionPipeline(vo) {
   const diagExt = orderExtractionProvider.getExtractionDiagnostics();
   if (!diagExt.configured) {
     vo.status = "extraction_failed";
+    vo.matchingStatus = "failed";
     vo.failureReason = "Order extraction provider is not configured.";
     vo.processingStartedAt = null;
     await vo.save();
@@ -421,6 +425,7 @@ async function runExtractionPipeline(vo) {
   vo.extractedData = extracted;
   vo.resolvedItems = resolvedItems;
   vo.overallConfidence = extracted.overallConfidence || 0;
+  vo.matchingStatus = "completed";
   vo.status = "ready_for_review";
   vo.processingStartedAt = null;
   await vo.save();

@@ -30,6 +30,7 @@ import {
   Crown,
   Settings,
   Mic,
+  Store,
 } from 'lucide-react';
 import { useNavigate, useLocation, Outlet, Link, Navigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -94,7 +95,7 @@ const sidebarItems = [
   { title: "POS", icon: ShoppingCart, href: "/pos", hideForSuperAdmin: true, hideForUser: true },
   { title: "Wishlist", icon: Heart, href: "/dashboard/wishlist", hideForSuperAdmin: true },
   { title: "Track Order", icon: Truck, href: "/track-order", hideForInventoryManager: true, hideForSuperAdmin: true },
-  { title: "Subscription / Upgrade Plan", icon: Crown, href: "/dashboard/subscription" },
+  { title: "Subscription / Upgrade Plan", icon: Crown, href: "/dashboard/subscription", hideForSuperAdmin: true },
   { title: "Wishlist Activity", icon: Activity, href: "/dashboard/wishlist-activity", adminOnly: true, hideForSuperAdmin: true },
   { title: "Super Admin", icon: Shield, href: "/super-admin", superAdminOnly: true, hideForSuperAdmin: true },
   { title: "Orders", icon: ShoppingCart, href: "/dashboard/orders", hideForUser: false, hideForSuperAdmin: true },
@@ -112,6 +113,7 @@ const sidebarItems = [
   { title: "Users & roles", icon: UserCog, href: "/dashboard/users", adminOnly: true },
   { title: "Clients", icon: Building2, href: "/super-admin/clients", superAdminOnly: true },
   { title: "Add Custom Domain", icon: Globe, href: "/super-admin/custom-domain", adminOnly: true },
+  { title: "Marketplace Integrations", icon: Store, href: "/dashboard/marketplaces", adminOnly: true },
   { title: "Employee", icon: UserPlus, href: "/dashboard/add-employee", staffOnly: true, hideForSuperAdmin: true, hideForUser: true },
   { title: "Support", icon: Headphones, href: "/dashboard/support" },
   { title: "Help Center", icon: HelpCircle, href: "/dashboard/help-center", helpCenter: true },
@@ -119,7 +121,7 @@ const sidebarItems = [
   { title: "Settings", icon: Settings, href: "/super-admin/settings", superAdminOnly: true },
   { title: "Settings", icon: Settings, href: "/dashboard/settings", adminOnly: true, hideForSuperAdmin: true },
   // ── AI Voice Order Capture ─────────────────────────────────────────────────
-  { title: "AI Voice Orders", icon: Mic, href: "/dashboard/ai-voice-orders", adminOnly: true, hideForSuperAdmin: true },
+  { title: "AI Voice Orders", icon: Mic, href: "/dashboard/ai-voice-orders", hideForSuperAdmin: true },
   { title: "AI Voice Orders", icon: Mic, href: "/super-admin/ai-voice-orders", superAdminOnly: true },
 ];
 
@@ -325,7 +327,6 @@ export function Dashboard() {
         item.href === '/dashboard/invoices' ||
         item.href === '/dashboard/customers' ||
         item.href === '/dashboard/users' ||
-        item.href === '/dashboard/subscription' ||
         item.href === '/super-admin/custom-domain' ||
         item.href === '/dashboard/add-employee' ||
         item.href === '/dashboard/support' ||
@@ -354,6 +355,9 @@ export function Dashboard() {
       return false;
     }
     if ('adminOnly' in item && item.adminOnly && !hasFullAdminPrivileges(user?.role)) {
+      return false;
+    }
+    if ('userOnly' in item && item.userOnly && !isCustomerAccountRole(user?.role)) {
       return false;
     }
     if (item.href === '/dashboard/inventory') {
@@ -683,7 +687,7 @@ export function Dashboard() {
             >
               <div className="w-full max-w-[1600px] mx-auto space-y-8 sm:space-y-10 min-w-0">
                 {/* Welcome Section */}
-                {location.pathname !== '/dashboard/products' && (
+                {location.pathname !== '/dashboard/products' && !location.pathname.startsWith('/dashboard/marketplaces') && !location.pathname.startsWith('/admin/marketplaces') && (
                   <motion.div
                     initial={{ opacity: 0, y: -16 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -815,13 +819,15 @@ export function Dashboard() {
                               }
                             />
                           </motion.div>
-                          <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
-                            <DashboardCharts
-                              analytics={isCustomerOverview ? userAnalyticsData : overviewData}
-                              staffView={staff || isCustomerOverview}
-                              revenueInInr={isSuperAdminRole(user?.role) || isClientRole(user?.role)}
-                            />
-                          </motion.div>
+                          {!isCustomerOverview && (
+                            <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
+                              <DashboardCharts
+                                analytics={overviewData}
+                                staffView={staff}
+                                revenueInInr={isSuperAdminRole(user?.role) || isClientRole(user?.role)}
+                              />
+                            </motion.div>
+                          )}
                           {(isSuperAdminRole(user?.role) || isClientRole(user?.role)) && (
                             <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
                               <DashboardContactSummary />

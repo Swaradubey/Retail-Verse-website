@@ -59,6 +59,8 @@ const CLIENT_ROLES = [
   "store_manager",
   "employee",
   "staff",
+  "user",
+  "customer",
 ];
 
 // ── Routes ─────────────────────────────────────────────────────────────────────

@@ -3,6 +3,21 @@ const dns = require("dns");
 dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 dns.setDefaultResultOrder("ipv4first");
 
+// Register ts-node for dynamic typescript compilation in backend
+try {
+  require('ts-node').register({
+    transpileOnly: true,
+    compilerOptions: {
+      module: "commonjs",
+      target: "es2020",
+      esModuleInterop: true
+    }
+  });
+  console.log("[TS-Node] Registered successfully for compiling TypeScript modules.");
+} catch (err) {
+  console.warn("[TS-Node] Failed to register ts-node. Error:", err.message);
+}
+
 const path = require("path");
 
 const envPath = path.resolve(__dirname, ".env");
@@ -11,6 +26,20 @@ if (envLoad.error) {
   console.warn(`[env] dotenv could not read ${envPath}: ${envLoad.error.message}`);
 } else {
   console.log(`[env] Loaded ${envPath}`);
+}
+
+// Validate required Shopify environment variables at server startup
+const requiredShopifyEnv = [
+  "SHOPIFY_API_KEY",
+  "SHOPIFY_API_SECRET",
+  "SHOPIFY_REDIRECT_URI",
+  "SHOPIFY_SCOPES"
+];
+
+for (const key of requiredShopifyEnv) {
+  if (!process.env[key]) {
+    throw new Error(`Missing environment variable: ${key}`);
+  }
 }
 
 const express = require("express");
@@ -104,9 +133,13 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization", "x-client-id", "x-client-domain", "x-client-origin"]
 }));
 
-// Handle OPTIONS preflight requests for all routes
 app.options("*", cors());
-app.use(express.json({ limit: "50mb" }));
+app.use(express.json({
+  limit: "50mb",
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Session middleware (required for Passport OAuth flow)
@@ -162,6 +195,9 @@ const customDomainRoutes = require("./routes/customDomainRoutes");
 const brandingRoutes = require("./routes/brandingRoutes");
 const themeRoutes = require("./routes/themeRoutes");
 const voiceOrderRoutes = require("./routes/voiceOrderRoutes");
+const marketplaceRoutes = require("./routes/marketplace.routes");
+const marketplaceSyncJobRoutes = require("./routes/marketplaceSyncJobRoutes");
+const flipkartRoutes = require("./routes/flipkartRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -196,13 +232,22 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/public", brandingRoutes);
 app.use("/api/themes", themeRoutes);
 app.use("/api/voice-orders", voiceOrderRoutes);
+app.use("/api/marketplaces", marketplaceRoutes);
+app.use("/api/marketplace-sync/jobs", marketplaceSyncJobRoutes);
+app.use("/api/integrations/flipkart", flipkartRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {
   res.json({
-    success: true,
-    message: "Backend is running",
-    timestamp: new Date().toISOString(),
+    status: "ok",
+    mongodb: {
+      configured: true,
+      connected: require("mongoose").connection.readyState === 1
+    },
+    jobProcessing: {
+      type: "mongodb",
+      status: "available"
+    }
   });
 });
 
@@ -289,6 +334,10 @@ const PORT = process.env.PORT || 5000;
     console.log("[Backend Debug] Connecting to MongoDB...");
     await connectDB();
     console.log("[Backend Debug] MongoDB Connected successfully.");
+
+    // Start Marketplace Background Worker (MongoDB based)
+    const marketplaceWorker = require("./services/marketplaces/MarketplaceJobWorker");
+    marketplaceWorker.start();
 
     const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`\n================================================`);

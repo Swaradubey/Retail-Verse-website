@@ -10,7 +10,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { voiceOrdersApi, type VoiceOrder, type VoiceOrderItem, type VoiceOrderStatus } from '../../api/voiceOrders';
 import { toast } from 'sonner';
-import { isSuperAdminRole, isClientRole } from '../../utils/staffRoles';
+import { isSuperAdminRole } from '../../utils/staffRoles';
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ const STATUS_META: Record<VoiceOrderStatus, { label: string; color: string }> = 
   extraction_failed:     { label: 'Extraction Failed',     color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' },
   needs_review:          { label: 'Needs Review',          color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' },
   ready_for_review:      { label: 'Ready for Review',      color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
+  review_ready:          { label: 'Ready for Review',      color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
   draft:                 { label: 'Draft',                 color: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' },
   confirmed:             { label: 'Confirmed',             color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-200' },
   order_created:         { label: 'Order Created',         color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
@@ -246,8 +247,28 @@ export function DashboardVoiceOrders() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const isSuperAdmin = isSuperAdminRole(user?.role);
-  const isClient = isClientRole(user?.role);
-  const canUseVoiceOrders = isSuperAdmin || isClient;
+  const isUserRole = user?.role === 'user' || user?.role === 'customer';
+
+  // ── Store selector (for user/customer role) ───────────────────────────────
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const [availableStores, setAvailableStores] = useState<{ id: string; name: string; logo: string | null }[]>([]);
+  const [storesLoading, setStoresLoading] = useState(false);
+  const [storesError, setStoresError] = useState<string | null>(null);
+
+  // ── Load available stores for user/customer role ──────────────────────────
+  useEffect(() => {
+    if (!isUserRole) return;
+    setStoresLoading(true);
+    voiceOrdersApi.fetchAvailableStores()
+      .then((stores) => {
+        setAvailableStores(stores);
+        if (stores.length === 1) setSelectedStoreId(stores[0].id);
+      })
+      .catch((err: unknown) => {
+        setStoresError((err instanceof Error ? err.message : null) || 'Failed to load stores.');
+      })
+      .finally(() => setStoresLoading(false));
+  }, [isUserRole]);
 
   // ── Sync review state when voice order updates ─────────────────────────────
   useEffect(() => {
@@ -342,24 +363,69 @@ export function DashboardVoiceOrders() {
   const activeFileName = uploadedFile?.name || `recording_${new Date().toISOString()}.webm`;
   const hasAudio = !!activeBlob;
 
-  // ── Upload and create voice order ─────────────────────────────────────────
+  // ── Upload and process voice order (single-click pipeline) ──────────────────
   const handleUploadAndCreate = async () => {
     if (!activeBlob) return;
+
+    // For user/customer: require a selected store
+    if (isUserRole && !selectedStoreId) {
+      toast.error('Please select a store before uploading your audio.');
+      return;
+    }
+
     setUploading(true);
+    setTranscriptionError(null);
     try {
       const blob = activeBlob instanceof File ? activeBlob : activeBlob;
-      const res = await voiceOrdersApi.uploadAudio(
+      // Pass storeId for user/customer role; CLIENT role resolves storeId server-side
+      const storeIdToSend = isUserRole ? selectedStoreId : undefined;
+
+      // 1. Upload audio file & save initial draft
+      const uploadRes = await voiceOrdersApi.uploadAudio(
         blob,
         activeMimeType,
         activeFileName,
-        undefined, // storeId resolved server-side for client role
+        storeIdToSend,
         recorder.elapsed > 0 ? recorder.elapsed : undefined
       );
-      setCurrentVo(res.data);
-      toast.success('Audio uploaded. Click "Generate Transcription" to continue.');
+      const createdVo = uploadRes.data;
+      setCurrentVo(createdVo);
+
+      // 2. Automatically trigger transcription, extraction, and store product matching
+      const res = await voiceOrdersApi.transcribe(createdVo._id);
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; errorRef?: string };
+      setCurrentVo(data.data);
+
+      if (data.extractionError) {
+        toast.warning('Transcription complete, but product matching had an issue. Please review items.');
+      } else {
+        toast.success(data.message || 'Transcription and product matching complete!');
+      }
+
+      // 3. Navigate to Review & Confirm after pipeline is fully processed
       setView('review');
     } catch (err: unknown) {
-      toast.error((err instanceof Error ? err.message : null) || 'Upload failed. Please try again.');
+      const axiosErr = err as { response?: { data?: { message?: string; errorRef?: string; code?: string } } };
+      const msg = axiosErr?.response?.data?.message || (err instanceof Error ? err.message : null) || 'Processing failed. Please try again.';
+      const errorRef = axiosErr?.response?.data?.errorRef || null;
+      const code = axiosErr?.response?.data?.code || null;
+
+      let title = 'Processing Failed';
+      if (code === 'QUOTA_LIMIT_ZERO') title = 'Billing Required';
+      else if (code === 'QUOTA_EXCEEDED') title = 'API Quota Exceeded';
+      else if (code === 'RATE_LIMITED') title = 'Rate Limited';
+      else if (code === 'AUTH_ERROR') title = 'API Key Error';
+      else if (code === 'UNSUPPORTED_AUDIO') title = 'Unsupported Audio';
+      else if (code === 'FILE_TOO_LARGE') title = 'File Too Large';
+      else if (code === 'PROVIDER_NOT_CONFIGURED') title = 'Not Configured';
+
+      setTranscriptionError({ title, message: msg, errorRef, code });
+      toast.error(msg);
+
+      // If audio was created before failure, open review page so user sees failure card & retry options
+      if (currentVo) {
+        setView('review');
+      }
     } finally {
       setUploading(false);
     }
@@ -650,6 +716,57 @@ export function DashboardVoiceOrders() {
         {view === 'capture' && (
           <motion.div key="capture" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
 
+            {/* ── Store selector (USER / CUSTOMER role only) ─────────────────────── */}
+            {isUserRole && (
+              <div className="mb-5">
+                {storesLoading ? (
+                  <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 rounded-xl text-sm text-amber-800 dark:text-amber-200">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Loading available stores…</span>
+                  </div>
+                ) : storesError ? (
+                  <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200/60 rounded-xl text-sm text-red-700 dark:text-red-300">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{storesError}</span>
+                  </div>
+                ) : availableStores.length === 0 ? (
+                  <div className="flex items-start gap-3 p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200/60 rounded-xl text-sm text-orange-700 dark:text-orange-300">
+                    <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>No stores are available at this time. Please contact your administrator.</span>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-800/30 rounded-xl space-y-2">
+                    <label htmlFor="voice-order-store-select" className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                      <Search className="w-4 h-4" />
+                      Select Store for this Voice Order
+                    </label>
+                    <select
+                      id="voice-order-store-select"
+                      value={selectedStoreId}
+                      onChange={(e) => setSelectedStoreId(e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-amber-200/70 dark:border-amber-700/40 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                    >
+                      <option value="">— Choose a store —</option>
+                      {availableStores.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                    {selectedStoreId && (
+                      <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Store selected — you can now record or upload audio.
+                      </p>
+                    )}
+                    {!selectedStoreId && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        You must select a store before recording or uploading audio.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Privacy notice */}
             <div className="mb-5 flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 rounded-xl text-sm text-blue-800 dark:text-blue-200">
               <Info className="w-4 h-4 mt-0.5 shrink-0" />
@@ -809,12 +926,14 @@ export function DashboardVoiceOrders() {
                 className="mt-6 flex gap-3 flex-wrap"
               >
                 <button
+                  id="generate-transcription-btn"
                   onClick={handleUploadAndCreate}
-                  disabled={uploading}
+                  disabled={uploading || (isUserRole && !selectedStoreId)}
+                  title={isUserRole && !selectedStoreId ? 'Please select a store first' : undefined}
                   className="flex items-center gap-2 px-7 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed text-sm"
                 >
                   {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  {uploading ? 'Uploading…' : 'Generate Transcription'}
+                  {uploading ? 'Processing Audio & Matching Products…' : 'Generate Transcription'}
                 </button>
               </motion.div>
             )}
@@ -852,19 +971,8 @@ export function DashboardVoiceOrders() {
                         {currentVo.status === 'transcribing' ? 'Transcribing audio…' : 'Extracting order details…'}
                       </div>
                     )}
-                    {/* Transcribe / re-transcribe */}
-                    {['uploaded', 'transcription_failed', 'extraction_failed', 'order_extraction_failed', 'failed'].includes(currentVo.status) && (
-                      <button
-                        onClick={handleTranscribe}
-                        disabled={transcribing}
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all disabled:opacity-60"
-                      >
-                        {transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-                        {transcribing ? 'Transcribing…' : 'Transcribe'}
-                      </button>
-                    )}
                     {/* Retry via state machine */}
-                    {['extracting_order', 'transcribed', 'needs_review', 'ready_for_review', 'draft', 'failed', 'extraction_failed', 'order_extraction_failed'].includes(currentVo.status) && (
+                    {['extracting_order', 'transcribed', 'needs_review', 'ready_for_review', 'review_ready', 'draft', 'failed', 'extraction_failed', 'order_extraction_failed', 'transcription_failed'].includes(currentVo.status) && (
                       <button
                         onClick={handleRetry}
                         disabled={transcribing || currentVo.status === 'transcribing'}
@@ -1221,7 +1329,7 @@ export function DashboardVoiceOrders() {
               ) : history.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FileAudio className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                  <p className="font-semibold">No voice orders found.</p>
+                  <p className="font-semibold">No AI voice orders yet. Record your first voice order.</p>
                 </div>
               ) : (
                 <div className="bg-white dark:bg-zinc-900/80 border border-amber-200/40 dark:border-amber-800/30 rounded-2xl overflow-hidden">

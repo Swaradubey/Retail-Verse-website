@@ -23,7 +23,11 @@ export function ProtectedRoute({
   if (!user) {
     const params = new URLSearchParams(location.search);
     const email = params.get('email');
-    const to = email ? `${loginPath}?email=${encodeURIComponent(email)}` : loginPath;
+    const redirectTo = location.pathname + location.search;
+    let to = `${loginPath}?redirect=${encodeURIComponent(redirectTo)}`;
+    if (email) {
+      to += `&email=${encodeURIComponent(email)}`;
+    }
     return <Navigate to={to} state={{ from: location }} replace />;
   }
 

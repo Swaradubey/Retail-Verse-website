@@ -21,6 +21,7 @@ import { LowStockAlertModal } from '../components/inventory/LowStockAlertModal';
 import { SortConfig, type InventoryItem } from '../types/inventory';
 import { productApi, inventoryApi, Product } from '../api/products';
 // import { products as staticProducts } from '../data/products';
+import api from '../api/apiService';
 import { clientsApi, type ClientRow } from '../api/clients';
 import { employeesApi, type EmployeeRow } from '../api/employees';
 import { storeManagersApi, type StoreManager } from '../api/storeManagers';
@@ -344,6 +345,22 @@ export function Inventory() {
     }
   };
 
+  const handleRetrySync = async (productId: string, marketplaces?: string[]) => {
+    const toastId = toast.loading('Initiating sync retry for marketplaces...');
+    try {
+      const response = await api.post(`/products/${productId}/sync`, { marketplaces });
+      const res = response.data || response;
+      if (res.success) {
+        toast.success(res.message || 'Sync retry initiated successfully', { id: toastId });
+        await fetchAllProducts();
+      } else {
+        throw new Error(res.message || 'Sync retry was not acknowledged by server');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Sync retry failed', { id: toastId });
+    }
+  };
+ 
   if (authLoading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center bg-[linear-gradient(165deg,#faf9f7_0%,#f7f5ff_45%,#f0f7ff_100%)] dark:bg-[linear-gradient(165deg,#09090b_0%,#0c0a12_50%,#09090b_100%)]">
@@ -525,6 +542,7 @@ export function Inventory() {
                 totalPages={totalPages}
                 onPageChange={setCurrentPage}
                 itemsPerPage={ITEMS_PER_PAGE}
+                onRetrySync={handleRetrySync}
               />
             </motion.div>
           )}

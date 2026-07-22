@@ -13,6 +13,10 @@ import { SupportRoute } from './components/SupportRoute';
 import { Home } from './pages/Home';
 import { RootRoute } from './components/RootRoute';
 
+function PricingRedirect() {
+  return <Navigate to="/subscription" replace />;
+}
+
 // ── Page-level lazy imports ─────────────────────────────────────────────────
 // These are only downloaded when the user navigates to that route.
 const Shop = lazy(() => import('./pages/Shop').then(m => ({ default: m.Shop })));
@@ -63,6 +67,9 @@ const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy').then(m => ({ de
 const TermsOfService = lazy(() => import('./pages/TermsOfService').then(m => ({ default: m.TermsOfService })));
 const DashboardVoiceOrders = lazy(() => import('./pages/dashboard/DashboardVoiceOrders').then(m => ({ default: m.DashboardVoiceOrders })));
 const SuperAdminVoiceOrders = lazy(() => import('./pages/super-admin/SuperAdminVoiceOrders').then(m => ({ default: m.SuperAdminVoiceOrders })));
+const DashboardMarketplaces = lazy(() => import('./pages/dashboard/DashboardMarketplaces').then(m => ({ default: m.DashboardMarketplaces })));
+const MarketplaceDetail = lazy(() => import('./pages/dashboard/MarketplaceDetail').then(m => ({ default: m.MarketplaceDetail })));
+const DashboardMarketplaceLogs = lazy(() => import('./pages/dashboard/DashboardMarketplaceLogs').then(m => ({ default: m.DashboardMarketplaceLogs })));
 
 // Minimal loading fallback — a tiny spinner that doesn't block the visible UI
 function PageLoader() {
@@ -109,6 +116,22 @@ export const router = createBrowserRouter([
       { path: 'forgot-password', element: withSuspense(<ForgotPassword />) },
       { path: 'reset-password/:token', element: withSuspense(<ResetPassword />) },
       { path: 'contact', element: withSuspense(<Contact />) },
+      {
+        path: 'pricing',
+        element: withSuspense(
+          <ProtectedRoute>
+            <PricingRedirect />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'subscription',
+        element: withSuspense(
+          <ProtectedRoute>
+            <DashboardSubscription />
+          </ProtectedRoute>
+        ),
+      },
       { path: 'about', element: withSuspense(<About />) },
       { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
       { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
@@ -318,9 +341,37 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/ai-voice-orders',
+            element: withSuspense(<DashboardVoiceOrders />),
+          },
+          {
+            path: 'dashboard/marketplaces',
             element: withSuspense(
               <FullAdminOnlyRoute>
-                <DashboardVoiceOrders />
+                <DashboardMarketplaces />
+              </FullAdminOnlyRoute>
+            ),
+          },
+          {
+            path: 'admin/marketplaces',
+            element: withSuspense(
+              <FullAdminOnlyRoute>
+                <DashboardMarketplaces />
+              </FullAdminOnlyRoute>
+            ),
+          },
+          {
+            path: 'dashboard/marketplaces/:id',
+            element: withSuspense(
+              <FullAdminOnlyRoute>
+                <MarketplaceDetail />
+              </FullAdminOnlyRoute>
+            ),
+          },
+          {
+            path: 'dashboard/marketplaces/:id/logs',
+            element: withSuspense(
+              <FullAdminOnlyRoute>
+                <DashboardMarketplaceLogs />
               </FullAdminOnlyRoute>
             ),
           },

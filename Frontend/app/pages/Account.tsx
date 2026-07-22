@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
-import { Heart, LogOut, Store, Package, ShoppingCart, Truck, LayoutDashboard } from 'lucide-react';
+import { Heart, LogOut, Store, Package, ShoppingCart, Truck, LayoutDashboard, Mic } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { isInventoryManagerRole, isCustomerAccountRole } from '../utils/staffRoles';
 import { Footer } from '../components/Footer';
@@ -111,7 +111,7 @@ export function Account() {
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton asChild tooltip="Shop" className="rounded-xl">
-                      <Link to="/shop" className="flex items-center gap-3 px-4 py-2.5 text-muted-foreground hover:text-foreground">
+                      <Link to="/shop" className="flex items-center gap-3 px-4 py-2.5 text-muted-foreground hover:bg-gray-100 dark:hover:bg-white/5 hover:text-foreground transition-all duration-200 rounded-xl">
                         <Store className="w-5 h-5" />
                         <span className="group-data-[collapsible=icon]:hidden font-semibold">Continue shopping</span>
                       </Link>

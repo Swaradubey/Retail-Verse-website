@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Flipkart official logo: blue background with yellow "F" -->
+  <rect width="200" height="200" rx="24" fill="#2874F0"/>
+  <!-- White shopping bag shape -->
+  <path d="M65 60 L75 60 L80 50 L120 50 L125 60 L135 60 L135 150 L65 150 Z" fill="white" opacity="0.15"/>
+  <!-- Yellow "F" letterform matching Flipkart brand -->
+  <text x="100" y="140" font-family="Arial, Helvetica, sans-serif" font-size="110" font-weight="900" fill="#FFE500" text-anchor="middle">F</text>
+  <!-- Flipkart wordmark -->
+  <text x="100" y="175" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="white" text-anchor="middle" letter-spacing="2">flipkart</text>
+</svg>

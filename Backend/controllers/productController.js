@@ -16,6 +16,8 @@ const {
   buildProductVisibilityFilter,
   isValidObjectId 
 } = require("../utils/tenantResolver");
+const { getMerchantId } = require("../utils/merchantHelper");
+const { attachMarketplaceStatusToProducts } = require("../utils/marketplaceStatusHelper");
 
 function userOwnsClientProduct(user, product) {
   const role = normalizeRole(user?.role);
@@ -33,13 +35,29 @@ function userOwnsClientProduct(user, product) {
   return String(product.clientId) === String(userClientId);
 }
 
-async function loadProductFormatted(id) {
+async function loadProductFormatted(id, req) {
   const doc = await Product.findById(id).populate({
     path: "clientId",
     select: "companyName shopName email storeName",
   });
   if (!doc) return null;
-  return formatProductWithClient(doc.toObject({ virtuals: true }));
+  const formatted = formatProductWithClient(doc.toObject({ virtuals: true }));
+  try {
+    const merchantId = getMerchantId(req);
+    const [enriched] = await attachMarketplaceStatusToProducts({
+      products: [doc],
+      merchantId
+    });
+    formatted.marketplaces = enriched.marketplaces || [];
+    const MarketplaceProduct = require("../models/MarketplaceProduct");
+    const listings = await MarketplaceProduct.find({ productId: id }).lean();
+    formatted.marketplaceListings = listings || [];
+  } catch (err) {
+    console.error("[productController] Error loading marketplace listings:", err.message);
+    formatted.marketplaceListings = [];
+    formatted.marketplaces = [];
+  }
+  return formatted;
 }
 
 const INVENTORY_MANAGER_TITLE_DESC_SUCCESS =
@@ -128,11 +146,37 @@ const getProducts = async (req, res) => {
     const products = await dbQuery;
     console.log("Returned count:", products.length);
 
+    // Dynamic Marketplace Status mapping to prevent N+1 queries
+    let productsWithListings = products;
+    try {
+      const merchantId = getMerchantId(req);
+      productsWithListings = await attachMarketplaceStatusToProducts({
+        products,
+        merchantId
+      });
+      productsWithListings = productsWithListings.map(pObj => {
+        pObj.marketplaceListings = (pObj.marketplaces || []).map(m => ({
+          _id: m.connectionId,
+          marketplace: m.provider,
+          syncStatus: m.status === 'not_connected' ? 'not_connected' :
+                      m.status === 'not_synced' ? 'pending' :
+                      m.status === 'queued' ? 'queued' :
+                      m.status === 'processing' ? 'syncing' :
+                      m.status === 'failed' ? 'failed' :
+                      m.status === 'synced' ? 'success' : 'pending',
+          syncError: m.error || ''
+        }));
+        return pObj;
+      });
+    } catch (err) {
+      console.error("[productController] Error resolving marketplace status in list:", err.message);
+    }
+
     res.status(200).json({
       success: true,
       count: products.length,
-      data: products,
-      products: products,
+      data: productsWithListings,
+      products: productsWithListings,
       totalProducts,
       page,
       totalPages: limit > 0 ? Math.ceil(totalProducts / limit) : 1
@@ -198,9 +242,27 @@ const getProductById = async (req, res) => {
         message: "Product not found",
       });
     }
+
+    const productObj = product.toObject ? product.toObject({ virtuals: true }) : product;
+    try {
+      const merchantId = getMerchantId(req);
+      const [enriched] = await attachMarketplaceStatusToProducts({
+        products: [product],
+        merchantId
+      });
+      productObj.marketplaces = enriched.marketplaces || [];
+      const MarketplaceProduct = require("../models/MarketplaceProduct");
+      const listings = await MarketplaceProduct.find({ productId: product._id }).lean();
+      productObj.marketplaceListings = listings || [];
+    } catch (err) {
+      console.error("[productController] Error resolving listings for product:", err.message);
+      productObj.marketplaceListings = [];
+      productObj.marketplaces = [];
+    }
+
     res.status(200).json({
       success: true,
-      data: product,
+      data: productObj,
     });
   } catch (error) {
     res.status(500).json({
@@ -273,7 +335,32 @@ const createProduct = async (req, res) => {
     }
 
     const product = await Product.create(productData);
-    const formatted = await loadProductFormatted(product._id);
+
+    // Dispatch background sync job if marketplaces are selected
+    const { publishTo } = req.body;
+    if (Array.isArray(publishTo) && publishTo.length > 0) {
+      try {
+        const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+        for (const marketplace of publishTo) {
+          const job = await MarketplaceSyncJobService.createJob({
+            merchantId: targetClientId || product.createdBy,
+            productId: product._id,
+            marketplace: marketplace,
+            operation: "create_product"
+          });
+          if (job) {
+            // Direct execution async mode (Now a no-op, handled by worker)
+            MarketplaceSyncJobService.processJob(job._id).catch(err => {
+               console.error(`[productController] Direct process error for ${marketplace}:`, err.message);
+            });
+          }
+        }
+      } catch (queueErr) {
+        console.error("[productController] Failed to dispatch sync job:", queueErr.message);
+      }
+    }
+
+    const formatted = await loadProductFormatted(product._id, req);
 
     res.status(201).json({
       success: true,
@@ -439,7 +526,7 @@ const updateProduct = async (req, res) => {
         // Continue and return success anyway since product was saved
       }
 
-      const formatted = await loadProductFormatted(updated._id);
+      const formatted = await loadProductFormatted(updated._id, req);
       const responsePayload = {
         success: true,
         message: role === "seo_manager"
@@ -514,7 +601,7 @@ const updateProduct = async (req, res) => {
       updatedAt: updated.updatedAt,
     });
 
-    const formatted = await loadProductFormatted(updated._id);
+    const formatted = await loadProductFormatted(updated._id, req);
     const responsePayload = {
       success: true,
       message: "Product updated successfully",
@@ -580,7 +667,7 @@ const updateProductStock = async (req, res) => {
 
     existing.stock = stock;
     const product = await existing.save({ validateBeforeSave: true });
-    const formatted = await loadProductFormatted(product._id);
+    const formatted = await loadProductFormatted(product._id, req);
 
     res.status(200).json({
       success: true,
@@ -710,6 +797,79 @@ const createProductReview = async (req, res) => {
   }
 };
 
+const syncProductNow = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    let marketplacesToSync = req.body.marketplaces;
+    
+    if (!marketplacesToSync || !Array.isArray(marketplacesToSync) || marketplacesToSync.length === 0) {
+      const MarketplaceProduct = require("../models/MarketplaceProduct");
+      const failedListings = await MarketplaceProduct.find({
+        productId,
+        syncStatus: { $in: ['failed', 'pending'] }
+      });
+      marketplacesToSync = failedListings.map(l => l.marketplace);
+    }
+
+    if (marketplacesToSync.length === 0) {
+      const MarketplaceConnection = require("../models/MarketplaceConnection");
+      const connections = await MarketplaceConnection.find({
+        merchantId: product.merchantId || product.clientId || product.createdBy,
+        status: 'connected',
+        isSyncEnabled: true
+      });
+      marketplacesToSync = connections.map(c => c.marketplace);
+    }
+
+    if (marketplacesToSync.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No connected marketplaces or failed listings found to synchronize."
+      });
+    }
+
+    const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+    for (const marketplace of marketplacesToSync) {
+      const job = await MarketplaceSyncJobService.createJob({
+        merchantId: product.merchantId || product.clientId || product.createdBy,
+        productId: product._id,
+        marketplace: marketplace,
+        operation: "update_product"
+      });
+      // Direct execution async mode
+      MarketplaceSyncJobService.processJob(job._id).catch(err => {
+         console.error(`[productController] Direct process error for ${marketplace}:`, err.message);
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Product synchronization job queued for: ${marketplacesToSync.join(", ")}`,
+      marketplaces: marketplacesToSync
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Sync retry failed: " + error.message });
+  }
+};
+
+const getProductSyncStatus = async (req, res) => {
+  try {
+    const MarketplaceProduct = require("../models/MarketplaceProduct");
+    const listings = await MarketplaceProduct.find({ productId: req.params.id }).lean();
+    res.status(200).json({
+      success: true,
+      data: listings
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getProducts,
   getFeaturedProducts,
@@ -719,4 +879,6 @@ module.exports = {
   updateProductStock,
   deleteProduct,
   createProductReview,
+  syncProductNow,
+  getProductSyncStatus,
 };

@@ -17,17 +17,28 @@ function parseMongoUriForLog(uri) {
   return { host: m[2], dbName };
 }
 
+let cached = global.mongooseCache;
+
+if (!cached) {
+  cached = global.mongooseCache = { connection: null, promise: null };
+}
+
 const connectDB = async () => {
   dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-  const rawUri = process.env.MONGO_URI;
+  const rawUri = process.env.MONGO_URI || process.env.MONGODB_URI;
   const mongoUri = typeof rawUri === "string" ? rawUri.trim() : "";
 
   if (!mongoUri) {
     console.error(
-      "[MongoDB] MONGO_URI is missing or empty. Set it in Backend/.env (no quotes around the value)."
+      "[MongoDB] MONGO_URI or MONGODB_URI is missing or empty. Set it in Backend/.env (no quotes around the value)."
     );
     process.exit(1);
+  }
+
+  if (cached.connection) {
+    console.log("[MongoDB] Using cached database connection");
+    return cached.connection;
   }
 
   const { host, dbName } = parseMongoUriForLog(mongoUri);
@@ -35,10 +46,18 @@ const connectDB = async () => {
   console.log("[MongoDB] Connection attempt started…");
 
   try {
-    await mongoose.connect(mongoUri);
+    if (!cached.promise) {
+      cached.promise = mongoose.connect(mongoUri).then((mongooseInstance) => {
+        return mongooseInstance;
+      });
+    }
+    
+    cached.connection = await cached.promise;
     console.log("[MongoDB] Connected successfully");
     await ensurePrivilegedUsers();
+    return cached.connection;
   } catch (error) {
+    cached.promise = null;
     const name = error && error.name ? error.name : "Error";
     const msg = error && error.message ? error.message : String(error);
     console.error("[MongoDB] Connection failed");

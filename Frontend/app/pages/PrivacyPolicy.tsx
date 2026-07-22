@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ArrowLeft, Lock, Eye, Database, Share2, Bell, Smartphone, Shield, Trash2, CreditCard } from 'lucide-react';
+import { ArrowLeft, Lock, Eye, Database, Share2, Bell, Smartphone, Shield, Trash2 } from 'lucide-react';
 
 export function PrivacyPolicy() {
   const lastUpdated = "May 1, 2026";
@@ -115,24 +115,38 @@ export function PrivacyPolicy() {
       )
     },
     {
-      title: "D. Subscription & Payments",
-      icon: <CreditCard className="w-5 h-5 text-amber-400" />,
+      title: "D. Third-Party Services",
+      icon: <Share2 className="w-5 h-5 text-emerald-400" />,
       content: (
         <div className="space-y-4">
           <p className="text-white/60 leading-relaxed">
-            Retail Verse Premium subscriptions are managed through the Retail Verse platform.
+            Our application uses trusted third-party services to provide core functionality such as authentication, analytics, notifications, and platform services. These providers may collect certain information in accordance with their own privacy policies.
           </p>
           <p className="text-white/60 leading-relaxed">
-            To upgrade to the Premium plan, users should:
+            Our app may use the following third-party services:
           </p>
           <ul className="list-disc list-inside text-white/60 leading-relaxed space-y-1">
-            <li>
-              Visit: <a href="https://retailverse.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">https://retailverse.com</a> from a desktop or laptop computer,
-            </li>
-            <li>or Contact the Retail Verse support team for assistance.</li>
+            <li>Google Play Services</li>
+            <li>Google Analytics for Firebase</li>
+            <li>Firebase Cloud Messaging (FCM)</li>
+            <li>Facebook (Meta) SDK (if enabled)</li>
           </ul>
+        </div>
+      )
+    },
+    {
+      title: "E. User-Selected Photos (No Broad Gallery Access)",
+      icon: <Smartphone className="w-5 h-5 text-indigo-400" />,
+      content: (
+        <div className="space-y-4">
           <p className="text-white/60 leading-relaxed">
-            Subscription pricing, billing, and payment processing are handled securely using our supported payment providers.
+            Our application does <strong>not</strong> request permission to access your entire photo gallery or media library.
+          </p>
+          <p className="text-white/60 leading-relaxed">
+            Instead, we use your device's secure system photo picker, which allows you to manually select only the specific product or profile images you wish to upload. The app can access only the images you explicitly choose.
+          </p>
+          <p className="text-white/60 leading-relaxed">
+            Selected images are securely uploaded to our servers solely for the features you request (such as product listings or profile management). We do <strong>not</strong> use these images for advertising, sell them to third parties, or share them publicly without your permission.
           </p>
         </div>
       )

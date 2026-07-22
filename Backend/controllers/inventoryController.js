@@ -13,6 +13,8 @@ const {
 } = require("../utils/formatInventoryProduct");
 const { isClientScopedRole, normalizeRole } = require("../utils/clientScopedRoles");
 const { resolveClientId, buildScopeQuery, applyScope, buildProductVisibilityFilter, isValidObjectId } = require("../utils/tenantResolver");
+const { getMerchantId } = require("../utils/merchantHelper");
+const { attachMarketplaceStatusToProducts } = require("../utils/marketplaceStatusHelper");
 
 function userOwnsClientProduct(user, product) {
   const role = normalizeRole(user?.role);
@@ -76,9 +78,22 @@ const getInventoryManage = async (req, res) => {
     console.log("Inventory filter:", JSON.stringify(query));
     console.log("Inventory products count:", rows.length);
 
+    // Populate marketplace status
+    let formattedRows = formatProductsWithClient(rows);
+    try {
+      const merchantId = getMerchantId(req);
+      const rowsWithStatus = await attachMarketplaceStatusToProducts({
+        products: rows,
+        merchantId
+      });
+      formattedRows = formatProductsWithClient(rowsWithStatus);
+    } catch (err) {
+      console.error("[inventoryController] Error loading marketplace status in manage:", err.message);
+    }
+
     return res.json({
       success: true,
-      data: formatProductsWithClient(rows),
+      data: formattedRows,
       count: rows.length
     });
   } catch (error) {
@@ -147,6 +162,31 @@ const createInventoryItem = async (req, res) => {
     }
 
     const item = await Product.create(payload);
+
+    // Queue marketplace sync if requested
+    const { publishTo } = req.body;
+    if (Array.isArray(publishTo) && publishTo.length > 0) {
+      try {
+        const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+        for (const marketplace of publishTo) {
+          const job = await MarketplaceSyncJobService.createJob({
+            merchantId: targetClientId || item.createdBy,
+            productId: item._id,
+            marketplace: marketplace,
+            operation: "create_product"
+          });
+          if (job) {
+            // Direct execution async mode (Now a no-op, handled by worker)
+            MarketplaceSyncJobService.processJob(job._id).catch(err => {
+               console.error(`[inventoryController] Direct process error for ${marketplace}:`, err.message);
+            });
+          }
+        }
+      } catch (queueErr) {
+        console.error("[inventoryController] Failed to queue sync job:", queueErr.message);
+      }
+    }
+
     const populated = await Product.findById(item._id)
       .populate({ path: "clientId", select: "companyName shopName storeName email" })
       .lean();
@@ -216,6 +256,30 @@ const getInventory = async (req, res) => {
       .sort("-createdAt");
     const productsFound = inventory.length;
 
+    // Populate marketplace listings
+    let formattedInventory = inventory;
+    try {
+      const productIds = inventory.map(r => r._id);
+      const MarketplaceProduct = require("../models/MarketplaceProduct");
+      const listings = await MarketplaceProduct.find({ productId: { $in: productIds } }).lean();
+      
+      const listingsMap = {};
+      listings.forEach(l => {
+        if (!listingsMap[l.productId.toString()]) {
+          listingsMap[l.productId.toString()] = [];
+        }
+        listingsMap[l.productId.toString()].push(l);
+      });
+
+      formattedInventory = inventory.map(p => {
+        const pObj = p.toObject ? p.toObject({ virtuals: true }) : p;
+        pObj.marketplaceListings = listingsMap[p._id.toString()] || [];
+        return pObj;
+      });
+    } catch (err) {
+      console.error("[inventoryController] Error loading marketplace listings in list:", err.message);
+    }
+
     // Requested debug logs
     console.log("-----------------------------------------");
     console.log("role:", req.user?.role, "clientId:", resolvedClientId, "query:", JSON.stringify(query));
@@ -225,7 +289,7 @@ const getInventory = async (req, res) => {
 
     res.json({
       success: true,
-      data: inventory,
+      data: formattedInventory,
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

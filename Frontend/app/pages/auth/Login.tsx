@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router';
 import { useAuth, resetNavigationState } from '../../context/AuthContext';
 import { useBranding } from '../../context/BrandingContext';
 import { resolvePostLoginPath } from '../../utils/staffRoles';
@@ -19,6 +19,7 @@ export function Login() {
   const { login } = useAuth();
   const { brandName, updateBranding } = useBranding();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const errorParam = searchParams.get('error');
@@ -47,7 +48,26 @@ export function Login() {
         });
       }
       resetNavigationState();
-      navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
+      const fromState = location.state?.from;
+      const intendedPath = typeof fromState === 'string'
+        ? fromState
+        : (typeof fromState === 'object' && fromState !== null
+          ? fromState.pathname
+          : null);
+      const redirectParam = searchParams.get('redirect');
+      const requestedRedirect = intendedPath || redirectParam;
+      const isSafeInternalRedirect =
+        requestedRedirect &&
+        requestedRedirect.startsWith('/') &&
+        !requestedRedirect.startsWith('//') &&
+        !requestedRedirect.includes('://') &&
+        requestedRedirect !== '/login' &&
+        requestedRedirect !== '/register';
+      if (isSafeInternalRedirect) {
+        navigate(requestedRedirect, { replace: true });
+      } else {
+        navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
+      }
     } catch (err: unknown) {
       console.error("Login error:", err);
       let message = 'Something went wrong. Please try again.';

@@ -10,6 +10,8 @@ const {
   updateProductStock,
   deleteProduct,
   createProductReview,
+  syncProductNow,
+  getProductSyncStatus,
 } = require("../controllers/productController");
 const { protect, allowRoles, optionalProtect } = require("../middleware/authMiddleware");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
@@ -101,5 +103,19 @@ router.delete(
  * @access  Private
  */
 router.post("/:id/rating", protect, tenantMiddleware, createProductReview);
+
+/**
+ * @route   POST /api/products/:id/sync
+ * @desc    Retry synchronization to failed marketplaces
+ * @access  Private
+ */
+router.post("/:id/sync", protect, tenantMiddleware, syncProductNow);
+
+/**
+ * @route   GET /api/products/:id/sync-status
+ * @desc    Get synchronization status for a product's listings
+ * @access  Private
+ */
+router.get("/:id/sync-status", protect, tenantMiddleware, getProductSyncStatus);
 
 module.exports = router;

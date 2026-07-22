@@ -30,6 +30,35 @@ router.post(
   createClient
 );
 
+/**
+ * @route   GET /api/clients/available
+ * @desc    Returns a minimal list of stores (id + display name) for the store-selector UI.
+ *          Accessible to all authenticated roles including user/customer.
+ */
+router.get(
+  "/available",
+  protect,
+  allowRoles("super_admin", "admin", "client", "client_admin", "store_manager", "employee", "staff", "user", "customer"),
+  async (req, res) => {
+    try {
+      const Client = require("../models/Client");
+      const stores = await Client.find({})
+        .select("_id companyName shopName logo brandingName")
+        .sort({ companyName: 1 })
+        .lean();
+      const data = stores.map((s) => ({
+        id: String(s._id),
+        name: s.shopName || s.brandingName || s.companyName || "Unnamed Store",
+        logo: s.logo || null,
+      }));
+      return res.json({ success: true, data });
+    } catch (err) {
+      console.error("[ClientRoutes] /available error:", err.message);
+      return res.status(500).json({ success: false, message: "Failed to load available stores." });
+    }
+  }
+);
+
 router.get("/", protect, allowRoles("super_admin", "admin"), listClients);
 
 router.delete("/:id", protect, allowRoles("super_admin"), deleteClient);

@@ -55,6 +55,7 @@ export type VoiceOrderStatus =
   | 'extraction_failed'
   | 'needs_review'
   | 'ready_for_review'
+  | 'review_ready'
   | 'draft'
   | 'confirmed'
   | 'order_created'
@@ -73,6 +74,8 @@ export interface VoiceOrder {
   durationSeconds?: number | null;
   transcription: string;
   transcriptionLanguage: string;
+  transcriptionStatus?: string;
+  matchingStatus?: string;
   extractedData?: ExtractedData | null;
   resolvedItems?: VoiceOrderItem[];
   overallConfidence: number;
@@ -216,6 +219,22 @@ export const voiceOrdersApi = {
     const base = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
     // Token is embedded as a query param so the browser's <audio> element can request it
     return `${base}/voice-orders/${id}/audio?t=${encodeURIComponent(token || '')}`;
+  },
+
+  /**
+   * Fetch available stores for the store-selector UI (user/customer role).
+   */
+  fetchAvailableStores: (): Promise<{ id: string; name: string; logo: string | null }[]> => {
+    const token = localStorage.getItem('eco_shop_token');
+    const rawBase = (String(import.meta.env.VITE_API_BASE_URL ?? '').trim() || 'http://localhost:5000').replace(/\/+$/, '');
+    const url = rawBase.endsWith('/api') ? `${rawBase}/clients/available` : `${rawBase}/api/clients/available`;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(url, { headers }).then(async (r) => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.message || `Failed to load stores (${r.status})`);
+      return (data.data || []) as { id: string; name: string; logo: string | null }[];
+    });
   },
 };
 

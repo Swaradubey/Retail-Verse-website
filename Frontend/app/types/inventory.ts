@@ -5,6 +5,37 @@ export type InventoryClientInfo = {
   email?: string;
 };
 
+export type MarketplaceSyncStatus =
+  | 'not_connected'
+  | 'not_synced'
+  | 'queued'
+  | 'processing'
+  | 'synced'
+  | 'failed';
+
+export interface MarketplaceInfo {
+  provider: string;
+  connectionId: string;
+  accountName: string;
+  status: MarketplaceSyncStatus;
+  externalProductId?: string | null;
+  shopifyProductId?: string | null;
+  shopifyVariantId?: string | null;
+  inventoryItemId?: string | null;
+  lastSyncedAt?: string | null;
+}
+
+export interface MarketplaceListing {
+  _id: string;
+  marketplace: string;
+  syncStatus: string;
+  syncError?: string;
+  shopifyProductId?: string;
+  shopifyVariantId?: string;
+  inventoryItemId?: string;
+  lastSyncedAt?: string;
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -17,6 +48,8 @@ export interface InventoryItem {
   lowStockThreshold?: number;
   updatedAt: string;
   client?: InventoryClientInfo | null;
+  marketplaces?: MarketplaceInfo[];
+  marketplaceListings?: MarketplaceListing[];
 }
 
 export type StockStatus = 'in-stock' | 'low-stock' | 'out-of-stock';
