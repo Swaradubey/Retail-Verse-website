@@ -24,9 +24,13 @@ if (!cached) {
 }
 
 const connectDB = async () => {
-  dotenv.config({ path: path.join(__dirname, "..", ".env") });
+  try {
+    dotenv.config({ path: path.join(__dirname, "..", ".env") });
+  } catch (err) {
+    console.warn("[MongoDB Config] dotenv config could not be loaded:", err.message);
+  }
 
-  const rawUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+  const rawUri = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.DATABASE_URL;
   const mongoUri = typeof rawUri === "string" ? rawUri.trim() : "";
 
   if (!mongoUri) {

@@ -20,27 +20,64 @@ try {
 
 const path = require("path");
 
-const envPath = path.resolve(__dirname, ".env");
-const envLoad = require("dotenv").config({ path: envPath });
-if (envLoad.error) {
-  console.warn(`[env] dotenv could not read ${envPath}: ${envLoad.error.message}`);
-} else {
-  console.log(`[env] Loaded ${envPath}`);
+// Keep dotenv for local development, but do not expect a .env file to exist on Render.
+try {
+  const envLoad = require('dotenv').config({
+    path: path.join(__dirname, '.env')
+  });
+  if (envLoad.error) {
+    console.warn(`[env] dotenv could not read: ${path.join(__dirname, '.env')}\nError: ${envLoad.error.message}`);
+  } else {
+    console.log(`[env] Loaded ${path.join(__dirname, '.env')}`);
+  }
+} catch (err) {
+  console.warn('[env] Failed to initialize dotenv:', err.message);
 }
 
-// Validate required Shopify environment variables at server startup (log warning instead of crashing)
-const requiredShopifyEnv = [
-  "SHOPIFY_API_KEY",
-  "SHOPIFY_API_SECRET",
-  "SHOPIFY_REDIRECT_URI",
-  "SHOPIFY_SCOPES"
-];
+// Validate core environment variables at server startup
+const requiredCoreEnv = ["JWT_SECRET"];
+const dbUri = process.env.MONGO_URI || process.env.MONGODB_URI || process.env.DATABASE_URL;
 
-const missingShopifyEnv = requiredShopifyEnv.filter(key => !process.env[key]);
-if (missingShopifyEnv.length > 0) {
-  console.warn(`[Shopify] Integration disabled: missing environment variables: ${missingShopifyEnv.join(", ")}`);
+const missingCoreEnv = requiredCoreEnv.filter(key => !process.env[key]);
+if (!dbUri) {
+  missingCoreEnv.push("DATABASE_URL (or MONGO_URI / MONGODB_URI)");
+}
+
+if (missingCoreEnv.length > 0) {
+  console.error(`[CRITICAL] Server startup failed due to missing core environment variables: ${missingCoreEnv.join(", ")}`);
+  throw new Error(`Missing core environment variable(s): ${missingCoreEnv.join(", ")}`);
 } else {
-  console.log("[Shopify] Integration credentials loaded successfully.");
+  console.log("[Env Validation] Core environment variables validated successfully.");
+}
+
+// Map SHOPIFY_CLIENT_ID and SHOPIFY_CLIENT_SECRET for backward compatibility
+if (process.env.SHOPIFY_API_KEY && !process.env.SHOPIFY_CLIENT_ID) {
+  process.env.SHOPIFY_CLIENT_ID = process.env.SHOPIFY_API_KEY;
+}
+if (process.env.SHOPIFY_API_SECRET && !process.env.SHOPIFY_CLIENT_SECRET) {
+  process.env.SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_API_SECRET;
+}
+
+// Shopify Integration Configuration Structure
+const shopifyConfig = {
+  apiKey: process.env.SHOPIFY_API_KEY,
+  apiSecret: process.env.SHOPIFY_API_SECRET,
+  scopes: process.env.SHOPIFY_SCOPES,
+  redirectUri: process.env.SHOPIFY_REDIRECT_URI
+};
+
+const isShopifyConfigured = Boolean(
+  shopifyConfig.apiKey &&
+  shopifyConfig.apiSecret &&
+  shopifyConfig.redirectUri
+);
+
+if (!isShopifyConfigured) {
+  console.warn(
+    '[Shopify] Integration disabled because required Shopify environment variables are not configured.'
+  );
+} else {
+  console.log('[Shopify] Integration credentials loaded successfully.');
 }
 
 const express = require("express");
@@ -327,7 +364,7 @@ app.get("/auth/google/failure", (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
 // Connect before listening so Atlas/network errors fail fast with clear logs
 (async () => {

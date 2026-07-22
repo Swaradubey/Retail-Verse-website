@@ -2,6 +2,66 @@ const express = require('express');
 const router = express.Router();
 const marketplaceController = require('../controllers/marketplace.controller');
 const { protect } = require('../middleware/authMiddleware');
+const MarketplaceConnection = require('../models/MarketplaceConnection');
+
+// Check if Shopify integration is configured
+const isShopifyConfigured = () => {
+  return !!(
+    (process.env.SHOPIFY_API_KEY || process.env.SHOPIFY_CLIENT_ID) &&
+    (process.env.SHOPIFY_API_SECRET || process.env.SHOPIFY_CLIENT_SECRET) &&
+    process.env.SHOPIFY_REDIRECT_URI
+  );
+};
+
+// Middleware to block Shopify endpoints if credentials are missing
+const checkShopifyConfig = async (req, res, next) => {
+  if (isShopifyConfigured()) {
+    return next();
+  }
+
+  let isShopifyRequest = false;
+
+  // 1. Check path/URL patterns
+  if (req.originalUrl && (
+    req.originalUrl.includes('/shopify') || 
+    req.originalUrl.includes('to-shopify')
+  )) {
+    isShopifyRequest = true;
+  }
+
+  // 2. Check marketplace param
+  if (req.params && req.params.marketplace === 'shopify') {
+    isShopifyRequest = true;
+  }
+
+  // 3. Check connectionId / marketplaceAccountId param if it belongs to a Shopify connection
+  const targetId = req.params.connectionId || req.params.marketplaceAccountId;
+  if (!isShopifyRequest && targetId) {
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(targetId)) {
+        const conn = await MarketplaceConnection.findById(targetId).select('marketplace');
+        if (conn && conn.marketplace === 'shopify') {
+          isShopifyRequest = true;
+        }
+      }
+    } catch (err) {
+      console.error('[Shopify Check Middleware] Error checking connection ID:', err.message);
+    }
+  }
+
+  if (isShopifyRequest) {
+    return res.status(503).json({
+      success: false,
+      message: 'Shopify integration is not configured.'
+    });
+  }
+
+  next();
+};
+
+// Apply Shopify configuration protection
+router.use(checkShopifyConfig);
 
 router.get('/', protect, marketplaceController.getMarketplaces);
 router.get('/connections', protect, marketplaceController.getConnections);
