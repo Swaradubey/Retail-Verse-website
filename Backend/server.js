@@ -28,7 +28,7 @@ if (envLoad.error) {
   console.log(`[env] Loaded ${envPath}`);
 }
 
-// Validate required Shopify environment variables at server startup
+// Validate required Shopify environment variables at server startup (log warning instead of crashing)
 const requiredShopifyEnv = [
   "SHOPIFY_API_KEY",
   "SHOPIFY_API_SECRET",
@@ -36,10 +36,11 @@ const requiredShopifyEnv = [
   "SHOPIFY_SCOPES"
 ];
 
-for (const key of requiredShopifyEnv) {
-  if (!process.env[key]) {
-    throw new Error(`Missing environment variable: ${key}`);
-  }
+const missingShopifyEnv = requiredShopifyEnv.filter(key => !process.env[key]);
+if (missingShopifyEnv.length > 0) {
+  console.warn(`[Shopify] Integration disabled: missing environment variables: ${missingShopifyEnv.join(", ")}`);
+} else {
+  console.log("[Shopify] Integration credentials loaded successfully.");
 }
 
 const express = require("express");
