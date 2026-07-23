@@ -1134,6 +1134,89 @@ const getOverview = async (req, res) => {
   }
 };
 
+/**
+ * Helper to fetch and resolve business profile details for a Client.
+ * @param {import("mongoose").Types.ObjectId|Object|null} clientInput
+ * @returns {Promise<Object>}
+ */
+async function resolveBusinessProfile(clientInput) {
+  const business = {
+    name: "",
+    logo: "",
+    address: "",
+    email: "",
+    phone: "",
+    taxNumber: "",
+    website: ""
+  };
+
+  if (!clientInput) {
+    business.name = "Business Profile";
+    return business;
+  }
+
+  const Client = require("../models/Client");
+  const User = require("../models/User");
+  const CustomDomain = require("../models/CustomDomain");
+
+  let client = clientInput;
+  if (clientInput && !(clientInput.companyName || clientInput.shopName)) {
+    try {
+      client = await Client.findById(clientInput);
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error fetching client by ID:", err.message);
+    }
+  }
+
+  if (client) {
+    business.name = client.companyName || client.shopName || "";
+    business.logo = client.logo || "";
+    business.address = client.permanentAddress || "";
+    business.email = client.email || "";
+    business.phone = client.phone || "";
+    business.taxNumber = client.gst || "";
+
+    try {
+      const domainDoc = await CustomDomain.findOne({ clientId: client._id, status: "Verified" });
+      if (domainDoc) {
+        business.website = domainDoc.domainName || domainDoc.domain || "";
+      }
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error resolving custom domain:", err.message);
+    }
+  }
+
+  // Fallback Logic:
+  // 1. Business Name (client.companyName)
+  // 2. Store Name (client.shopName)
+  // 3. Merchant Name (User name)
+  if (!business.name && client) {
+    try {
+      let merchantUser = await User.findById(client.userId || client.createdBy);
+      if (!merchantUser) {
+        merchantUser = await User.findOne({ clientId: client._id, role: { $in: ["client", "admin"] } });
+      }
+      if (merchantUser) {
+        business.name = merchantUser.name || "";
+        if (!business.email) business.email = merchantUser.email || "";
+        if (!business.phone) business.phone = merchantUser.phone || "";
+        if (!business.address) {
+          business.address = merchantUser.address || (merchantUser.storeSettings && merchantUser.storeSettings.storeAddress) || "";
+        }
+      }
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error fetching merchant user:", err.message);
+    }
+  }
+
+  // Never display "DAIZY HOMES" as a fallback
+  if (!business.name || business.name.toUpperCase() === "DAIZY HOMES") {
+    business.name = "Business Profile";
+  }
+
+  return business;
+}
+
 // @desc    Get invoice by orderId
 // @route   GET /api/superadmin/invoices/:orderId
 // @access  Super Admin only
@@ -1154,7 +1237,9 @@ const getInvoiceByOrderId = async (req, res) => {
       orderQuery.$or.push({ _id: orderId });
     }
 
-    const order = await Order.findOne(orderQuery).populate("user", "name email phone");
+    const order = await Order.findOne(orderQuery)
+      .populate("user", "name email phone")
+      .populate("clientId");
     console.log("Order found:", !!order);
 
     if (!order) {
@@ -1168,10 +1253,14 @@ const getInvoiceByOrderId = async (req, res) => {
         { orderId: order.orderId },
         { orderId: orderId }
       ]
-    });
+    }).populate("clientId");
     console.log("Invoice found:", !!invoice);
 
-    // 3. Fallback logic: return existing invoice OR generate from order
+    // 3. Resolve business profile linked to order/invoice
+    const clientToResolve = order.clientId || invoice?.clientId;
+    const business = await resolveBusinessProfile(clientToResolve);
+
+    // 4. Fallback logic: return existing invoice OR generate from order
     const invoiceNo = invoice?.invoiceNumber || invoice?.invoiceNo || `INV-${order.orderId.replace("ORD-", "")}`;
     
     const isPos = order.orderSource === "pos" || /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId);
@@ -1199,10 +1288,11 @@ const getInvoiceByOrderId = async (req, res) => {
       paymentStatus: invoice?.paymentStatus === "paid" ? "paid" : finalPaymentStatus,
       paymentMethod: order.paymentMethod || "N/A",
       orderStatus: order.orderStatus || order.status || "placed",
-      createdAt: order.createdAt
+      createdAt: order.createdAt,
+      business
     };
 
-    res.json({ success: true, data: responseData });
+    res.json({ success: true, data: responseData, business });
   } catch (error) {
     console.error("[Superadmin] getInvoiceByOrderId error:", error.message);
     res.status(500).json({ success: false, message: error.message });

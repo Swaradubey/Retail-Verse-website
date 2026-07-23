@@ -47,7 +47,7 @@ import {
 } from '../utils/wishlistPayload';
 import { createOrder, type OrderPayload } from '../api/orders';
 import { loadPosProductsCache, savePosProductsCache } from '../lib/posProductCache';
-import { formatINR } from '../utils/formatINR';
+import { formatINR, formatINRForPDF } from '../utils/formatINR';
 import {
   getPendingOfflinePosOrdersCount,
   newOfflineOrderId,
@@ -1298,13 +1298,13 @@ export function Pos() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = qty * price;
+        const amount = item.subtotal || item.total || (qty * price);
 
         return [
           name,
           String(qty),
-          `Rs. ${Number(price).toFixed(2)}`,
-          `Rs. ${Number(amount).toFixed(2)}`
+          formatINRForPDF(price),
+          formatINRForPDF(amount)
         ];
       });
 
@@ -1328,16 +1328,16 @@ export function Pos() {
 
       doc.setFont("helvetica", "bold");
       doc.text("Subtotal:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(subtotal).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 8;
       doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(tax).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 10;
       doc.setFontSize(14);
       doc.text("Total Amount:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(total).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
 

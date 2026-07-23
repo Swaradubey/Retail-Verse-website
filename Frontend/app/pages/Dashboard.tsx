@@ -122,7 +122,6 @@ const sidebarItems = [
   { title: "Settings", icon: Settings, href: "/dashboard/settings", adminOnly: true, hideForSuperAdmin: true },
   // ── AI Voice Order Capture ─────────────────────────────────────────────────
   { title: "AI Voice Orders", icon: Mic, href: "/dashboard/ai-voice-orders", hideForSuperAdmin: true },
-  { title: "AI Voice Orders", icon: Mic, href: "/super-admin/ai-voice-orders", superAdminOnly: true },
 ];
 
 /** Shared pill layout for every dashboard sidebar link (matches Overview row: radius, padding, min-height, icon gap). */

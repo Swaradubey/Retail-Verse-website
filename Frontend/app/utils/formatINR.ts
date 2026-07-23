@@ -27,3 +27,18 @@ export function formatINRShort(value: number | string | null | undefined): strin
   }).format(num);
 }
 
+/**
+ * Formats a numeric value as Indian Rupee (INR) currency specifically for PDF generation (jsPDF).
+ * Uses "Rs." prefix with en-IN number formatting because standard jsPDF fonts (Helvetica)
+ * do not support Unicode ₹ (U+20B9) and mangle it into '¹&' corrupted characters in generated PDFs.
+ */
+export function formatINRForPDF(value: number | string | null | undefined): string {
+  const num = Number(value ?? 0);
+  const formattedNum = new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(num);
+  return `Rs. ${formattedNum}`;
+}
+
+

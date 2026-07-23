@@ -13,8 +13,29 @@ import { SupportRoute } from './components/SupportRoute';
 import { Home } from './pages/Home';
 import { RootRoute } from './components/RootRoute';
 
+import { useAuth } from './context/AuthContext';
+import { isSuperAdminRole } from './utils/staffRoles';
+
 function PricingRedirect() {
   return <Navigate to="/subscription" replace />;
+}
+
+function BlockSuperAdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="w-10 h-10 border-4 border-violet-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (user && isSuperAdminRole(user.role)) {
+    return <Navigate to="/super-admin" replace />;
+  }
+
+  return <>{children}</>;
 }
 
 // ── Page-level lazy imports ─────────────────────────────────────────────────
@@ -341,7 +362,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/ai-voice-orders',
-            element: withSuspense(<DashboardVoiceOrders />),
+            element: withSuspense(
+              <BlockSuperAdminRoute>
+                <DashboardVoiceOrders />
+              </BlockSuperAdminRoute>
+            ),
           },
           {
             path: 'dashboard/marketplaces',
@@ -378,9 +403,11 @@ export const router = createBrowserRouter([
           {
             path: 'super-admin/ai-voice-orders',
             element: withSuspense(
-              <SuperAdminOnlyRoute>
-                <SuperAdminVoiceOrders />
-              </SuperAdminOnlyRoute>
+              <BlockSuperAdminRoute>
+                <SuperAdminOnlyRoute>
+                  <SuperAdminVoiceOrders />
+                </SuperAdminOnlyRoute>
+              </BlockSuperAdminRoute>
             ),
           },
         ],

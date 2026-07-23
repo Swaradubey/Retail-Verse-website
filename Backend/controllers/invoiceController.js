@@ -4,6 +4,89 @@ const SupportTicket = require("../models/SupportTicket");
 const User = require("../models/User");
 const { isValidObjectId, resolveClientId } = require("../utils/tenantResolver");
 
+/**
+ * Helper to fetch and resolve business profile details for a Client.
+ * @param {import("mongoose").Types.ObjectId|Object|null} clientInput
+ * @returns {Promise<Object>}
+ */
+async function resolveBusinessProfile(clientInput) {
+  const business = {
+    name: "",
+    logo: "",
+    address: "",
+    email: "",
+    phone: "",
+    taxNumber: "",
+    website: ""
+  };
+
+  if (!clientInput) {
+    business.name = "Business Profile";
+    return business;
+  }
+
+  const Client = require("../models/Client");
+  const User = require("../models/User");
+  const CustomDomain = require("../models/CustomDomain");
+
+  let client = clientInput;
+  if (clientInput && !(clientInput.companyName || clientInput.shopName)) {
+    try {
+      client = await Client.findById(clientInput);
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error fetching client by ID:", err.message);
+    }
+  }
+
+  if (client) {
+    business.name = client.companyName || client.shopName || "";
+    business.logo = client.logo || "";
+    business.address = client.permanentAddress || "";
+    business.email = client.email || "";
+    business.phone = client.phone || "";
+    business.taxNumber = client.gst || "";
+
+    try {
+      const domainDoc = await CustomDomain.findOne({ clientId: client._id, status: "Verified" });
+      if (domainDoc) {
+        business.website = domainDoc.domainName || domainDoc.domain || "";
+      }
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error resolving custom domain:", err.message);
+    }
+  }
+
+  // Fallback Logic:
+  // 1. Business Name (client.companyName)
+  // 2. Store Name (client.shopName)
+  // 3. Merchant Name (User name)
+  if (!business.name && client) {
+    try {
+      let merchantUser = await User.findById(client.userId || client.createdBy);
+      if (!merchantUser) {
+        merchantUser = await User.findOne({ clientId: client._id, role: { $in: ["client", "admin"] } });
+      }
+      if (merchantUser) {
+        business.name = merchantUser.name || "";
+        if (!business.email) business.email = merchantUser.email || "";
+        if (!business.phone) business.phone = merchantUser.phone || "";
+        if (!business.address) {
+          business.address = merchantUser.address || (merchantUser.storeSettings && merchantUser.storeSettings.storeAddress) || "";
+        }
+      }
+    } catch (err) {
+      console.error("[resolveBusinessProfile] Error fetching merchant user:", err.message);
+    }
+  }
+
+  // Never display "DAIZY HOMES" as a fallback
+  if (!business.name || business.name.toUpperCase() === "DAIZY HOMES") {
+    business.name = "Business Profile";
+  }
+
+  return business;
+}
+
 // @desc    Get all invoices
 // @route   GET /api/invoices
 // @access  Private (SuperAdmin)
@@ -30,8 +113,8 @@ const getInvoices = async (req, res) => {
     console.log("-----------------------------------------");
     console.log("role:", role, "clientId:", clientId, "query:", JSON.stringify(query));
     console.log("-----------------------------------------");
-    let invoices = await Invoice.find(query).sort({ createdAt: -1 }).lean();
-    const orders = await Order.find(query).sort({ createdAt: -1 }).lean();
+    let invoices = await Invoice.find(query).sort({ createdAt: -1 }).populate("clientId").lean();
+    const orders = await Order.find(query).sort({ createdAt: -1 }).populate("clientId").lean();
 
     if (!invoices || invoices.length < orders.length) {
       console.log(`[invoiceController] Found ${invoices?.length || 0} invoices but ${orders.length} orders. Deriving missing invoices...`);
@@ -63,14 +146,17 @@ const getInvoices = async (req, res) => {
       invoices = [...(invoices || []), ...derivedInvoices].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     }
 
-    // Ensure all POS invoices return "paid" regardless of database state
-    invoices = invoices.map(inv => {
-      const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
-      if (isPos) {
-        inv.paymentStatus = "paid";
-      }
-      return inv;
-    });
+    // Ensure all POS invoices return "paid" regardless of database state and attach business details
+    invoices = await Promise.all(
+      invoices.map(async (inv) => {
+        const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
+        if (isPos) {
+          inv.paymentStatus = "paid";
+        }
+        inv.business = await resolveBusinessProfile(inv.clientId);
+        return inv;
+      })
+    );
 
     res.json({ success: true, count: invoices.length, data: invoices });
   } catch (error) {
@@ -104,7 +190,7 @@ const getInvoiceById = async (req, res) => {
     } else {
       query.clientId = clientId;
     }
-    const invoice = await Invoice.findOne(query);
+    const invoice = await Invoice.findOne(query).populate("clientId");
 
     if (!invoice) {
       return res.status(404).json({ success: false, message: "Invoice not found or access denied" });
@@ -115,6 +201,9 @@ const getInvoiceById = async (req, res) => {
     if (/^POS-/i.test(invoiceObj.orderId) || /^ORD-POS-/i.test(invoiceObj.orderId)) {
       invoiceObj.paymentStatus = "paid";
     }
+
+    // Resolve business details
+    invoiceObj.business = await resolveBusinessProfile(invoice.clientId);
 
     console.log(`[invoiceController] DB Query - Collection: invoices, Filter: ${JSON.stringify(query)}, Found: true`);
 

@@ -40,6 +40,7 @@ import { useCart } from '../../context/CartContext';
 import { QuoteRequestDialog } from '../../components/QuoteRequestDialog';
 import { CreateQuoteModal } from '../../components/CreateQuoteModal';
 import { useNavigate } from 'react-router';
+import { formatINR, formatINRForPDF } from '../../utils/formatINR';
 
 type TabType = 'invoices' | 'quotes';
 
@@ -451,13 +452,13 @@ export function DashboardInvoices() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = qty * price;
+        const amount = item.subtotal || item.total || (qty * price);
 
         return [
           name,
           String(qty),
-          `Rs. ${Number(price).toFixed(2)}`,
-          `Rs. ${Number(amount).toFixed(2)}`
+          formatINRForPDF(price),
+          formatINRForPDF(amount)
         ];
       });
 
@@ -481,16 +482,16 @@ export function DashboardInvoices() {
 
       doc.setFont("helvetica", "bold");
       doc.text("Subtotal:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(subtotal).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 8;
       doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(tax).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 10;
       doc.setFontSize(14);
       doc.text("Total Amount:", pageWidth - 60, finalY);
-      doc.text(`Rs. ${Number(total).toFixed(2)}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
 
@@ -876,27 +877,32 @@ export function DashboardInvoices() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50 dark:divide-white/5">
-                          {viewInvoice.items?.map((item: any, i: number) => (
-                            <tr key={i}>
-                              <td className="px-4 sm:px-6 py-4 font-semibold text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{item.name}</td>
-                              <td className="px-4 sm:px-6 py-4 text-center text-[#6B7280]">{item.quantity}</td>
-                              <td className="px-4 sm:px-6 py-4 text-right text-[#6B7280]">₹{Number(item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">₹{Number(item.subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                            </tr>
-                          ))}
+                          {viewInvoice.items?.map((item: any, i: number) => {
+                            const qty = item.quantity || item.qty || 1;
+                            const price = item.price || item.unitPrice || item.product?.price || 0;
+                            const amount = item.subtotal || item.total || (qty * price);
+                            return (
+                              <tr key={i}>
+                                <td className="px-4 sm:px-6 py-4 font-semibold text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{item.name || item.productName || "Item"}</td>
+                                <td className="px-4 sm:px-6 py-4 text-center text-[#6B7280]">{qty}</td>
+                                <td className="px-4 sm:px-6 py-4 text-right text-[#6B7280]">{formatINR(price)}</td>
+                                <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(amount)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot className="bg-gray-50/30 dark:bg-white/2 font-bold border-t border-gray-100 dark:border-white/5">
                           <tr>
                             <td colSpan={3} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Subtotal</td>
-                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">₹{Number(viewInvoice.subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(viewInvoice.subtotal || 0)}</td>
                           </tr>
                           <tr>
                             <td colSpan={3} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Tax</td>
-                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">₹{Number(viewInvoice.tax || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(viewInvoice.tax || 0)}</td>
                           </tr>
                           <tr className="text-base sm:text-lg bg-blue-50/50 dark:bg-blue-900/10">
                             <td colSpan={3} className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">Total Amount</td>
-                            <td className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">₹{Number(viewInvoice.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">{formatINR(viewInvoice.totalAmount || viewInvoice.total || 0)}</td>
                           </tr>
                         </tfoot>
                       </table>

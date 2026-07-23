@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Separator } from '../../components/ui/separator';
 import ApiService from '../../api/apiService';
 import { toast } from 'sonner';
-import { formatINR } from '../../utils/formatINR';
+import { formatINR, formatINRForPDF } from '../../utils/formatINR';
 
 export function InvoiceDetail() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -142,13 +142,13 @@ export function InvoiceDetail() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = qty * price;
+        const amount = item.total || item.subtotal || (qty * price);
 
         return [
           name,
           String(qty),
-          `₹${Number(price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          `₹${Number(amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          formatINRForPDF(price),
+          formatINRForPDF(amount)
         ];
       });
 
@@ -172,16 +172,16 @@ export function InvoiceDetail() {
 
       doc.setFont("helvetica", "bold");
       doc.text("Subtotal:", pageWidth - 60, finalY);
-      doc.text(`₹${Number(subtotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 8;
       doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(`₹${Number(tax).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
 
       finalY += 10;
       doc.setFontSize(14);
       doc.text("Total Amount:", pageWidth - 60, finalY);
-      doc.text(`₹${Number(total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, pageWidth - 14, finalY, { align: "right" });
+      doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
 
@@ -281,18 +281,52 @@ export function InvoiceDetail() {
               <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-start">
                 <div>
                   <div className="flex items-center gap-3 mb-6">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D4AF37] text-white shadow-lg">
-                      <Receipt className="h-7 w-7" />
-                    </div>
+                    {invoice.business?.logo ? (
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white overflow-hidden shadow-lg">
+                        <img src={invoice.business.logo} alt={invoice.business.name || "Business Logo"} className="h-full w-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D4AF37] text-white shadow-lg">
+                        <Receipt className="h-7 w-7" />
+                      </div>
+                    )}
                     <div>
-                      <h1 className="text-2xl font-black tracking-tight uppercase">Daizy Homes</h1>
-                      <p className="text-[10px] font-bold tracking-[0.2em] text-[#D4AF37]">PREMIUM E-COMMERCE</p>
+                      <h1 className="text-2xl font-black tracking-tight uppercase">
+                        {invoice.business?.name || "Business Profile"}
+                      </h1>
+                      <p className="text-[10px] font-bold tracking-[0.2em] text-[#D4AF37]">
+                        {invoice.business?.website
+                          ? invoice.business.website.replace(/^https?:\/\//, '').toUpperCase()
+                          : "STORE INVOICE"}
+                      </p>
                     </div>
                   </div>
                   <div className="space-y-1 text-sm text-zinc-400">
-                    <p>123 Business Avenue, Suite 500</p>
-                    <p>New Delhi, India 110001</p>
-                    <p>contact@retailverse.com</p>
+                    {invoice.business?.address ? (
+                      <p>{invoice.business.address}</p>
+                    ) : null}
+                    {invoice.business?.phone ? (
+                      <p>Phone: {invoice.business.phone}</p>
+                    ) : null}
+                    {invoice.business?.email ? (
+                      <p>Email: {invoice.business.email}</p>
+                    ) : null}
+                    {invoice.business?.taxNumber ? (
+                      <p>GST/VAT: {invoice.business.taxNumber}</p>
+                    ) : null}
+                    {invoice.business?.website ? (
+                      <p>
+                        Website:{" "}
+                        <a
+                          href={invoice.business.website.startsWith("http") ? invoice.business.website : `https://${invoice.business.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#D4AF37] hover:underline"
+                        >
+                          {invoice.business.website}
+                        </a>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 
