@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   Mic, Search, RefreshCw, FileAudio, Loader2, Eye,
   ChevronDown, ChevronUp, AlertTriangle, CheckCircle2,
-  Building2, ArrowUpRight, BarChart3, Clock, ShoppingCart,
+  ShoppingCart,
 } from 'lucide-react';
 import { voiceOrdersApi, type VoiceOrder, type VoiceOrderStatus } from '../../api/voiceOrders';
 import { toast } from 'sonner';
@@ -63,12 +63,6 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-interface StoreInfo {
-  _id: string;
-  companyName?: string;
-  shopName?: string;
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function SuperAdminVoiceOrders() {
@@ -77,7 +71,7 @@ export function SuperAdminVoiceOrders() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [filters, setFilters] = useState({ status: '', search: '', storeId: '' });
+  const [filters, setFilters] = useState({ status: '', search: '' });
 
   // Stats
   const [stats, setStats] = useState({
@@ -95,7 +89,6 @@ export function SuperAdminVoiceOrders() {
         limit: 20,
         status: filters.status as VoiceOrderStatus | '',
         search: filters.search || undefined,
-        storeId: filters.storeId || undefined,
       });
       const data = res.data as unknown as VoiceOrder[];
       const pagination = (res as unknown as { pagination: { total: number } }).pagination;
@@ -120,14 +113,6 @@ export function SuperAdminVoiceOrders() {
   }, [filters]);
 
   useEffect(() => { loadOrders(1); }, [loadOrders]);
-
-  const getStoreName = (vo: VoiceOrder): string => {
-    if (typeof vo.storeId === 'object' && vo.storeId !== null) {
-      const s = vo.storeId as StoreInfo;
-      return s.companyName || s.shopName || s._id;
-    }
-    return String(vo.storeId);
-  };
 
   // ── Stat cards ─────────────────────────────────────────────────────────────
 
@@ -227,7 +212,7 @@ export function SuperAdminVoiceOrders() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50/80 dark:bg-zinc-950/50">
-                  {['ID', 'Store', 'Customer', 'Duration', 'Items', 'Total', 'Confidence', 'Status', 'Created', ''].map((h) => (
+                  {['ID', 'Customer', 'Duration', 'Items', 'Total', 'Confidence', 'Status', 'Created', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -244,12 +229,6 @@ export function SuperAdminVoiceOrders() {
                         className={`hover:bg-gray-50/50 dark:hover:bg-zinc-800/30 transition-colors ${expandedRow === vo._id ? 'bg-indigo-50/20 dark:bg-indigo-950/10' : ''}`}
                       >
                         <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{vo._id.slice(-8)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1.5">
-                            <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                            <span className="text-xs font-medium truncate max-w-28">{getStoreName(vo)}</span>
-                          </div>
-                        </td>
                         <td className="px-4 py-3 text-xs">{customer?.name || <span className="text-muted-foreground italic">Unknown</span>}</td>
                         <td className="px-4 py-3 text-xs tabular-nums">{formatDuration(vo.durationSeconds)}</td>
                         <td className="px-4 py-3 text-xs tabular-nums">{itemCount}</td>

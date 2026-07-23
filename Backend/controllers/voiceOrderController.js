@@ -3,16 +3,13 @@ const crypto = require("crypto");
 const VoiceOrder = require("../models/VoiceOrder");
 const Order = require("../models/Order");
 const Product = require("../models/Product");
-const Client = require("../models/Client");
 const audioStorageService = require("../services/audioStorageService");
 const transcriptionProvider = require("../services/transcriptionProvider");
 const orderExtractionProvider = require("../services/orderExtractionProvider");
 const productMatchingService = require("../services/productMatchingService");
-const { resolveClientId } = require("../utils/tenantResolver");
-const { normalizeRole } = require("../utils/clientScopedRoles");
+const { normalizeRole, isClientScopedRole } = require("../utils/clientScopedRoles");
+const { buildProductVisibilityFilter } = require("../utils/tenantResolver");
 const { resolveAction, determineStage, acquireProcessingLock } = require("../utils/voiceOrderStateMachine");
-const { resolveAccessibleStore } = require("../utils/resolveAccessibleStore");
-
 const isValidObjectId = (id) => {
   if (!id) return false;
   const s = String(id).trim();
@@ -21,23 +18,11 @@ const isValidObjectId = (id) => {
 
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000;
 
-// resolveStoreId is now delegated to the shared resolveAccessibleStore utility
-// which correctly handles: super_admin, client/client_admin/staff, AND user/customer roles.
-async function resolveStoreId(req) {
-  return resolveAccessibleStore(req);
-}
-
 async function ownershipCheck(voiceOrder, req) {
   const role = normalizeRole(req.user?.role);
   if (role === "super_admin") return true;
 
-  if (role === "user" || role === "customer") {
-    return String(voiceOrder.createdByUserId) === String(req.user._id);
-  }
-
-  const userStoreId = req.user?.clientId || (await resolveClientId(req));
-  if (!userStoreId) return false;
-  return String(voiceOrder.storeId) === String(userStoreId);
+  return String(voiceOrder.createdByUserId) === String(req.user._id);
 }
 
 async function readAudioFromStorage(vo) {
@@ -103,40 +88,14 @@ const listVoiceOrders = async (req, res) => {
       page = 1,
       limit = 20,
       status,
-      storeId: filterStoreId,
       search,
     } = req.query;
 
     const filter = {};
 
-    if (isSuperAdmin) {
-      if (isValidObjectId(filterStoreId)) {
-        filter.storeId = new mongoose.Types.ObjectId(String(filterStoreId));
-      }
-    } else {
-      const role = normalizeRole(req.user?.role);
-      // user/customer: scope to their own voice orders (createdByUserId filter below handles isolation)
-      // but we still need a storeId filter if they pass one explicitly
-      if (role === "user" || role === "customer") {
-        const suppliedStoreId = req.query?.storeId || req.body?.storeId;
-        if (isValidObjectId(suppliedStoreId)) {
-          filter.storeId = new mongoose.Types.ObjectId(String(suppliedStoreId));
-        }
-        // If no storeId supplied, list ALL their voice orders across stores (scoped by createdByUserId below)
-      } else {
-        // Client-scoped roles
-        const cId = req.user?.clientId || (await resolveClientId(req));
-        if (!isValidObjectId(cId)) {
-          return res.status(403).json({ success: false, message: "Store not resolved." });
-        }
-        filter.storeId = new mongoose.Types.ObjectId(String(cId));
-      }
-    }
-
     if (status) filter.status = status;
 
-    const userRole = normalizeRole(req.user?.role);
-    if (userRole === "user" || userRole === "customer") {
+    if (!isSuperAdmin) {
       filter.createdByUserId = req.user._id;
     }
 
@@ -159,7 +118,6 @@ const listVoiceOrders = async (req, res) => {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limitNum)
-        .populate("storeId", "companyName shopName")
         .populate("createdByUserId", "name email role")
         .lean(),
     ]);
@@ -184,7 +142,6 @@ const getVoiceOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid voice order ID." });
     }
     const vo = await VoiceOrder.findById(id)
-      .populate("storeId", "companyName shopName")
       .populate("createdByUserId", "name email role")
       .populate("createdOrderId", "orderId orderStatus totalPrice");
 
@@ -205,16 +162,6 @@ const getVoiceOrder = async (req, res) => {
 
 const createVoiceOrder = async (req, res) => {
   try {
-    const storeId = await resolveStoreId(req).catch((err) => {
-      const httpStatus = err.status || (
-        err.code === "STORE_REQUIRED" || err.code === "NO_STORE_SELECTED" ? 400
-        : err.code === "STORE_NOT_FOUND" ? 404
-        : 403
-      );
-      res.status(httpStatus).json({ success: false, message: err.message, code: err.code });
-    });
-    if (res.headersSent) return;
-
     let audioBuffer = null;
     let mimeType = null;
     let originalFileName = "recording.webm";
@@ -254,7 +201,6 @@ const createVoiceOrder = async (req, res) => {
     const { storageKey, fileSize } = await audioStorageService.saveAudio(audioBuffer, mimeType);
 
     const vo = await VoiceOrder.create({
-      storeId,
       createdByUserId: req.user._id,
       audioStorageKey: storageKey,
       originalFileName: originalFileName.slice(0, 255),
@@ -285,7 +231,7 @@ const streamAudio = async (req, res) => {
     if (!isValidObjectId(id)) {
       return res.status(400).json({ success: false, message: "Invalid voice order ID." });
     }
-    const vo = await VoiceOrder.findById(id).select("storeId audioStorageKey mimeType originalFileName");
+    const vo = await VoiceOrder.findById(id).select("audioStorageKey mimeType originalFileName");
     if (!vo) return res.status(404).json({ success: false, message: "Voice order not found." });
     if (!(await ownershipCheck(vo, req))) {
       return res.status(403).json({ success: false, message: "Access denied." });
@@ -369,7 +315,41 @@ async function runTranscriptionPipeline(vo, audioBuffer, options) {
   return { status: "transcribed", text };
 }
 
-async function runExtractionPipeline(vo) {
+async function getDashboardProductsForUser(req) {
+  // Reuse the exact same product visibility filter used by the Dashboard Products page.
+  const filter = await buildProductVisibilityFilter(req);
+
+  // Apply the same isActive logic as productController.getProducts:
+  // non-staff users (user/customer) only see isActive products.
+  const role = normalizeRole(req.user?.role);
+  const isStaff = req.user && (role === "admin" || role === "super_admin" || isClientScopedRole(req.user.role));
+  if (!isStaff) {
+    filter.isActive = true;
+  }
+
+  return Product.find(filter)
+    .select("_id name sku barcode price stock isActive category image")
+    .lean();
+}
+
+function buildItemResponse(matchedItem) {
+  const matched = !!matchedItem.matchedProductId;
+  return {
+    spokenText: matchedItem.spokenName || matchedItem.spokenText || "",
+    quantity: matchedItem.requestedQuantity || 1,
+    matched,
+    productId: matched ? String(matchedItem.matchedProductId) : null,
+    productName: matched ? matchedItem.matchedProductName : null,
+    categoryName: matched ? (matchedItem.matchedProductCategory || "") : "",
+    price: matched ? (matchedItem.matchedProductPrice || 0) : 0,
+    stockQuantity: matched ? (matchedItem.matchedProductStock ?? 0) : 0,
+    confidence: matchedItem.confidence || 0,
+    matchType: matchedItem.matchType || "",
+    requiresConfirmation: matchedItem.requiresReview || !matched,
+  };
+}
+
+async function runExtractionPipeline(vo, req) {
   const voiceOrderId = String(vo._id);
   const transcript = (vo.transcription || "").trim();
 
@@ -385,14 +365,18 @@ async function runExtractionPipeline(vo) {
     return { status: "no_transcript" };
   }
 
-  const diagExt = orderExtractionProvider.getExtractionDiagnostics();
-  if (!diagExt.configured) {
+  console.log(`[VoiceOrder] runExtractionPipeline userId=${req.user._id} transcript="${transcript.slice(0, 100)}"`);
+
+  const dashboardProducts = await getDashboardProductsForUser(req);
+  console.log(`[VoiceOrder] runExtractionPipeline dashboardProductsFound=${dashboardProducts.length}`);
+
+  if (dashboardProducts.length === 0) {
     vo.status = "extraction_failed";
     vo.matchingStatus = "failed";
-    vo.failureReason = "Order extraction provider is not configured.";
+    vo.failureReason = "No products were found in your Dashboard Products.";
     vo.processingStartedAt = null;
     await vo.save();
-    logState({ voiceOrderId, finalStatus: "extraction_failed", errorCode: "PROVIDER_NOT_CONFIGURED" });
+    logState({ voiceOrderId, finalStatus: "extraction_failed", errorCode: "NO_PRODUCTS" });
     return { status: "extraction_failed", failureReason: vo.failureReason };
   }
 
@@ -401,37 +385,108 @@ async function runExtractionPipeline(vo) {
   vo.processingStartedAt = new Date();
   await vo.save();
 
-  const storeProducts = await Product.find({
-    clientId: vo.storeId,
-    isActive: true,
-  })
-    .select("_id name sku price stock isActive")
-    .lean();
+  let extractedItems = [];
+  let extractionSource = "fallback";
+  let extractedData = null;
 
-  const productContext = storeProducts.map((p) => ({
-    id: String(p._id),
-    name: p.name,
-    sku: p.sku,
+  // ── Try AI extraction (safe — never throws on parse errors) ────────────
+  const diagExt = orderExtractionProvider.getExtractionDiagnostics();
+  if (diagExt.configured) {
+    const productContext = dashboardProducts.map((p) => ({
+      id: String(p._id),
+      name: p.name,
+      sku: p.sku,
+    }));
+
+    const aiResult = await orderExtractionProvider.safeExtractOrder(
+      transcript,
+      productContext,
+      { currency: "INR", voiceOrderId }
+    );
+
+    console.log(`[VoiceOrder] aiExtractionResult success=${aiResult.success} source=${aiResult.source}`);
+
+    if (aiResult.success && aiResult.data) {
+      extractedData = aiResult.data;
+      const rawItems = Array.isArray(aiResult.data?.items) ? aiResult.data.items : [];
+      console.log(`[VoiceOrder] aiExtraction items=${rawItems.length}`);
+
+      if (rawItems.length > 0) {
+        const matched = productMatchingService.matchItems(rawItems, dashboardProducts);
+        extractedItems = matched.map(buildItemResponse);
+        extractionSource = "ai";
+      }
+    }
+  }
+
+  // ── Fallback: direct transcription-to-product matching ─────────────────
+  if (extractedItems.length === 0) {
+    console.log(`[VoiceOrder] Using fallback extraction for transcript="${transcript.slice(0, 100)}"`);
+
+    const fallbackItems = productMatchingService.fallbackExtractItemsFromTranscription(transcript, dashboardProducts);
+
+    if (fallbackItems.length > 0) {
+      extractedItems = fallbackItems.map((fb) => ({
+        spokenText: fb.spokenText,
+        quantity: fb.quantity,
+        matched: fb.matched,
+        productId: fb.productId,
+        productName: fb.productName,
+        categoryName: fb.categoryName || "",
+        price: fb.price,
+        stockQuantity: fb.stockQuantity,
+        confidence: fb.confidence,
+        matchType: fb.matchType || "",
+        requiresConfirmation: fb.requiresConfirmation,
+      }));
+      extractionSource = "fallback";
+    }
+  }
+
+  console.log(`[VoiceOrder] final extractionSource=${extractionSource} items=${extractedItems.length}`);
+
+  const resolvedItems = extractedItems.map((item) => ({
+    spokenName: item.spokenText,
+    requestedQuantity: item.quantity,
+    matchedProductId: item.productId,
+    matchedProductName: item.productName,
+    matchedProductCategory: item.categoryName || "",
+    matchedProductPrice: item.price,
+    matchedProductStock: item.stockQuantity,
+    matchedProductIsActive: item.matched ? true : null,
+    confidence: item.confidence,
+    requiresReview: item.requiresConfirmation,
+    reviewWarning: item.matched
+      ? (item.requiresConfirmation
+          ? `Low confidence match for "${item.spokenText}".`
+          : null)
+      : `Could not find a product matching "${item.spokenText}" in your product catalogue.`,
+    confirmationError: null,
+    manuallyOverridden: false,
+    quantityAmbiguous: false,
+    alternativeProductIds: [],
+    notes: null,
   }));
 
-  const extracted = await orderExtractionProvider.extractOrder(
-    transcript,
-    productContext,
-    { currency: "INR", voiceOrderId }
-  );
-
-  const resolvedItems = productMatchingService.matchItems(extracted.items || [], storeProducts);
-
-  vo.extractedData = extracted;
+  vo.extractedData = extractedData || { items: [], customer: {}, fulfilment: { type: "unknown" }, warnings: [], overallConfidence: 0 };
   vo.resolvedItems = resolvedItems;
-  vo.overallConfidence = extracted.overallConfidence || 0;
+  vo.overallConfidence = extractedItems.reduce((max, i) => Math.max(max, i.confidence || 0), 0);
   vo.matchingStatus = "completed";
   vo.status = "ready_for_review";
   vo.processingStartedAt = null;
   await vo.save();
 
-  logState({ voiceOrderId, finalStatus: "ready_for_review" });
-  return { status: "ready_for_review", extracted, resolvedItems };
+  logState({ voiceOrderId, finalStatus: "ready_for_review", extractionSource });
+
+  const responseItems = resolvedItems.map((item) => buildItemResponse(item));
+
+  return {
+    status: "ready_for_review",
+    extractionSource,
+    items: responseItems,
+    extracted: vo.extractedData,
+    resolvedItems: vo.resolvedItems,
+  };
 }
 
 // ── Transcribe ─────────────────────────────────────────────────────────────────
@@ -543,13 +598,11 @@ const transcribeVoiceOrder = async (req, res) => {
     }
 
     // ── Phase: Extraction ────────────────────────────────────────────────
-    // Always try extraction after transcription, or if resuming from a
-    // status where transcript exists and extraction hasn't completed.
+    // Extract items using AI (with fallback to direct matching).
     try {
-      const extResult = await runExtractionPipeline(vo);
+      const extResult = await runExtractionPipeline(vo, req);
 
       if (extResult.status === "no_transcript") {
-        // Should not happen at this point, but handle gracefully
         vo.status = "transcription_failed";
         vo.failureReason = "No transcript available for extraction.";
         vo.processingStartedAt = null;
@@ -558,17 +611,27 @@ const transcribeVoiceOrder = async (req, res) => {
       }
 
       if (extResult.status === "extraction_failed") {
-        const extProvider = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "gemini").toLowerCase();
-        const extName = extProvider === "gemini" ? "Gemini" : "OpenAI";
         return res.status(207).json({
           success: true,
           data: vo,
-          message: "Transcription complete but AI extraction failed. You can retry extraction manually.",
+          message: extResult.failureReason || "No products could be matched.",
           extractionError: true,
+          items: [],
         });
       }
 
-      return res.json({ success: true, data: vo, message: "Transcription and extraction complete!" });
+      const hasItems = extResult.items && extResult.items.length > 0;
+
+      return res.json({
+        success: true,
+        data: vo,
+        message: hasItems
+          ? "Product matching complete! Review the items below."
+          : "Transcription complete but no products were matched.",
+        extractionSource: extResult.extractionSource || "fallback",
+        items: extResult.items || [],
+        extractionError: false,
+      });
     } catch (extractErr) {
       vo.status = "extraction_failed";
       vo.failureReason = buildExtractionFailureMessage(
@@ -587,9 +650,10 @@ const transcribeVoiceOrder = async (req, res) => {
       return res.status(207).json({
         success: true,
         data: vo,
-        message: "Transcription complete but AI extraction failed.",
+        message: "Product matching encountered an issue.",
         errorRef: extractErr.errorRef || null,
         extractionError: true,
+        items: [],
       });
     }
   } catch (err) {
@@ -695,7 +759,7 @@ const retryVoiceOrder = async (req, res) => {
 
     // ── Phase: Extraction ────────────────────────────────────────────────
     try {
-      const extResult = await runExtractionPipeline(vo);
+      const extResult = await runExtractionPipeline(vo, req);
       if (extResult.status === "no_transcript") {
         vo.status = "transcription_failed";
         vo.failureReason = "No transcript available for extraction.";
@@ -707,11 +771,22 @@ const retryVoiceOrder = async (req, res) => {
         return res.status(207).json({
           success: true,
           data: vo,
-          message: "Transcription complete but AI extraction failed.",
+          message: extResult.failureReason || "No products could be matched.",
           extractionError: true,
+          items: [],
         });
       }
-      return res.json({ success: true, data: vo, message: "Transcription and extraction complete!" });
+      const hasItems = extResult.items && extResult.items.length > 0;
+      return res.json({
+        success: true,
+        data: vo,
+        message: hasItems
+          ? "Product matching complete! Review the items below."
+          : "Transcription complete but no products were matched.",
+        extractionSource: extResult.extractionSource || "fallback",
+        items: extResult.items || [],
+        extractionError: !hasItems,
+      });
     } catch (extractErr) {
       vo.status = "extraction_failed";
       vo.failureReason = buildExtractionFailureMessage(extractErr.code || "UNKNOWN", "Gemini");
@@ -721,9 +796,10 @@ const retryVoiceOrder = async (req, res) => {
       return res.status(207).json({
         success: true,
         data: vo,
-        message: "Transcription complete but AI extraction failed.",
+        message: "Product matching encountered an issue.",
         errorRef: extractErr.errorRef || null,
         extractionError: true,
+        items: [],
       });
     }
   } catch (err) {
@@ -767,17 +843,25 @@ const extractVoiceOrder = async (req, res) => {
     }
 
     try {
-      const extResult = await runExtractionPipeline(vo);
+      const extResult = await runExtractionPipeline(vo, req);
       if (extResult.status === "extraction_failed") {
         return res.status(207).json({
           success: true,
           data: vo,
-          message: "Extraction failed.",
+          message: extResult.failureReason || "No products could be matched.",
           extractionError: true,
+          items: [],
           errorRef: null,
         });
       }
-      return res.json({ success: true, data: vo });
+      const hasItems = extResult.items && extResult.items.length > 0;
+      return res.json({
+        success: true,
+        data: vo,
+        extractionSource: extResult.extractionSource || "fallback",
+        items: extResult.items || [],
+        extractionError: false,
+      });
     } catch (extractErr) {
       vo.status = "extraction_failed";
       vo.failureReason = buildExtractionFailureMessage(extractErr.code || "UNKNOWN", "Gemini");
@@ -837,21 +921,18 @@ const updateDraft = async (req, res) => {
     }
 
     if (Array.isArray(rawItems)) {
-      const storeProducts = await Product.find({ clientId: vo.storeId })
-        .select("_id name price stock isActive")
-        .lean();
-      const productMap = new Map(storeProducts.map((p) => [String(p._id), p]));
+      const dashboardProductsForDraft = await getDashboardProductsForUser(req);
+      const productMap = new Map(dashboardProductsForDraft.map((p) => [String(p._id), p]));
 
-      vo.resolvedItems = rawItems.map((item, idx) => {
-        // Guarantee spokenName is always a non-empty string — DB schema requires it.
-        const spokenName = String(item.spokenName || item.name || "").trim() || `item ${idx + 1}`;
+      vo.resolvedItems = rawItems.map((item) => {
+        const spokenName = String(item.spokenName || item.name || item.spokenText || item.productName || "").trim();
 
         if (!item.matchedProductId) {
           return { ...item, spokenName, manuallyOverridden: true };
         }
         const product = productMap.get(String(item.matchedProductId));
         if (!product) {
-          return { ...item, spokenName, confirmationError: "Product not found in your store." };
+          return { ...item, spokenName, confirmationError: "Product not found in your product catalogue." };
         }
         return {
           ...item,
@@ -929,9 +1010,9 @@ async function _runConfirmLogic(req, res, voiceOrderId, session) {
 
   console.log(`[VoiceOrder Confirm] status=${vo.status} fulfilmentType=${fulfilmentType} draftData.keys=${Object.keys(draftData).join(",")}`);
 
-  const liveProducts = await Product.find({ clientId: vo.storeId, isActive: true })
-    .select("_id name price stock isActive category image")
-    .lean();
+  const liveProducts = await getDashboardProductsForUser(req);
+
+  console.log(`[VoiceOrder Confirm] dashboardProducts count=${liveProducts.length}`);
 
   // ── Convert Mongoose subdocuments → plain objects ─────────────────────────────
   // vo.resolvedItems is a Mongoose DocumentArray (subdocuments).  When these are
@@ -1041,7 +1122,7 @@ async function _runConfirmLogic(req, res, voiceOrderId, session) {
     [
       {
         orderId,
-        clientId: vo.storeId,
+        clientId: req.user?.clientId || req.user._id,
         user: req.user._id,
         customerName: customer.name || undefined,
         customerEmail: customer.email || undefined,
@@ -1084,7 +1165,7 @@ async function _runConfirmLogic(req, res, voiceOrderId, session) {
     await vo.save();
   }
 
-  console.log(`[VoiceOrder] Order created: orderId=${orderId} voiceOrderId=${vo._id} storeId=${vo.storeId} fulfilmentType=${fulfilmentType}`);
+  console.log(`[VoiceOrder] Order created: orderId=${orderId} voiceOrderId=${vo._id} fulfilmentType=${fulfilmentType}`);
 
   return res.status(201).json({
     success: true,
@@ -1206,7 +1287,7 @@ const deleteVoiceOrder = async (req, res) => {
 
     await VoiceOrder.findByIdAndDelete(id);
 
-    console.log(`[VoiceOrder] Deleted: id=${id} storeId=${vo.storeId} file=${vo.audioStorageKey}`);
+    console.log(`[VoiceOrder] Deleted: id=${id} file=${vo.audioStorageKey}`);
 
     return res.json({ success: true, message: "Voice order permanently deleted." });
   } catch (err) {

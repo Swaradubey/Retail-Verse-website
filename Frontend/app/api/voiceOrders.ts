@@ -2,7 +2,12 @@
  * Frontend API layer for AI Voice Order Capture.
  * Mirrors the patterns in orders.ts, products.ts, etc.
  */
+
 import ApiService from './apiService';
+
+const API_BASE_URL = (
+  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
+).replace(/\/+$/, "");
 
 export interface VoiceOrderItem {
   spokenName: string;
@@ -10,10 +15,12 @@ export interface VoiceOrderItem {
   requestedUnit?: string | null;
   matchedProductId?: string | null;
   matchedProductName?: string | null;
+  matchedProductCategory?: string | null;
   matchedProductPrice?: number | null;
   matchedProductStock?: number | null;
   matchedProductIsActive?: boolean | null;
   confidence: number;
+  matchType?: string;
   alternativeProductIds?: string[];
   notes?: string | null;
   manuallyOverridden?: boolean;
@@ -65,7 +72,6 @@ export type VoiceOrderStatus =
 
 export interface VoiceOrder {
   _id: string;
-  storeId: string | { _id: string; companyName?: string; shopName?: string };
   createdByUserId: string | { _id: string; name: string; email: string };
   audioStorageKey?: string;
   originalFileName: string;
@@ -98,7 +104,6 @@ export interface VoiceOrderFilters {
   page?: number;
   limit?: number;
   status?: VoiceOrderStatus | '';
-  storeId?: string;
   search?: string;
 }
 
@@ -113,7 +118,6 @@ export const voiceOrdersApi = {
     if (filters.page) params.set('page', String(filters.page));
     if (filters.limit) params.set('limit', String(filters.limit));
     if (filters.status) params.set('status', filters.status);
-    if (filters.storeId) params.set('storeId', filters.storeId);
     if (filters.search) params.set('search', filters.search);
     const qs = params.toString();
     return ApiService.get<VoiceOrderListResponse>(`/api/voice-orders${qs ? `?${qs}` : ''}`, {
@@ -131,10 +135,9 @@ export const voiceOrdersApi = {
    * Upload a recorded audio blob.
    * Uses FormData (multipart) — NOT JSON.
    */
-  uploadAudio: (blob: Blob, mimeType: string, originalFileName: string, storeId?: string, durationSeconds?: number) => {
+   uploadAudio: (blob: Blob, mimeType: string, originalFileName: string, durationSeconds?: number) => {
     const form = new FormData();
     form.append('audio', blob, originalFileName);
-    if (storeId) form.append('storeId', storeId);
     if (durationSeconds != null) form.append('durationSeconds', String(durationSeconds));
 
     const token = localStorage.getItem('eco_shop_token');
@@ -144,7 +147,7 @@ export const voiceOrdersApi = {
     headers['x-client-origin'] = window.location.origin;
     // NOTE: Do NOT set Content-Type — browser sets it automatically with boundary for FormData
 
-    const rawBase = (String(import.meta.env.VITE_API_BASE_URL ?? '').trim() || 'http://localhost:5000').replace(/\/+$/, '');
+    const rawBase = API_BASE_URL;
     const url = rawBase.endsWith('/api') ? `${rawBase}/voice-orders` : `${rawBase}/api/voice-orders`;
 
     return fetch(url, { method: 'POST', headers, body: form }).then(async (r) => {
@@ -215,27 +218,13 @@ export const voiceOrdersApi = {
    */
   getAudioUrl: (id: string): string => {
     const token = localStorage.getItem('eco_shop_token');
-    const rawBase = (String(import.meta.env.VITE_API_BASE_URL ?? '').trim() || 'http://localhost:5000').replace(/\/+$/, '');
+    const rawBase = API_BASE_URL;
     const base = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
     // Token is embedded as a query param so the browser's <audio> element can request it
     return `${base}/voice-orders/${id}/audio?t=${encodeURIComponent(token || '')}`;
   },
 
-  /**
-   * Fetch available stores for the store-selector UI (user/customer role).
-   */
-  fetchAvailableStores: (): Promise<{ id: string; name: string; logo: string | null }[]> => {
-    const token = localStorage.getItem('eco_shop_token');
-    const rawBase = (String(import.meta.env.VITE_API_BASE_URL ?? '').trim() || 'http://localhost:5000').replace(/\/+$/, '');
-    const url = rawBase.endsWith('/api') ? `${rawBase}/clients/available` : `${rawBase}/api/clients/available`;
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return fetch(url, { headers }).then(async (r) => {
-      const data = await r.json();
-      if (!r.ok) throw new Error(data?.message || `Failed to load stores (${r.status})`);
-      return (data.data || []) as { id: string; name: string; logo: string | null }[];
-    });
-  },
 };
 
+export { API_BASE_URL };
 export default voiceOrdersApi;

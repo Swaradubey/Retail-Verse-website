@@ -10,7 +10,6 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { voiceOrdersApi, type VoiceOrder, type VoiceOrderItem, type VoiceOrderStatus } from '../../api/voiceOrders';
 import { toast } from 'sonner';
-import { isSuperAdminRole } from '../../utils/staffRoles';
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -246,29 +245,36 @@ export function DashboardVoiceOrders() {
   const [historyFilter, setHistoryFilter] = useState<{ status: string; search: string }>({ status: '', search: '' });
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
-  const isSuperAdmin = isSuperAdminRole(user?.role);
-  const isUserRole = user?.role === 'user' || user?.role === 'customer';
-
-  // ── Store selector (for user/customer role) ───────────────────────────────
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
-  const [availableStores, setAvailableStores] = useState<{ id: string; name: string; logo: string | null }[]>([]);
-  const [storesLoading, setStoresLoading] = useState(false);
-  const [storesError, setStoresError] = useState<string | null>(null);
-
-  // ── Load available stores for user/customer role ──────────────────────────
-  useEffect(() => {
-    if (!isUserRole) return;
-    setStoresLoading(true);
-    voiceOrdersApi.fetchAvailableStores()
-      .then((stores) => {
-        setAvailableStores(stores);
-        if (stores.length === 1) setSelectedStoreId(stores[0].id);
-      })
-      .catch((err: unknown) => {
-        setStoresError((err instanceof Error ? err.message : null) || 'Failed to load stores.');
-      })
-      .finally(() => setStoresLoading(false));
-  }, [isUserRole]);
+  // ── Normalize item from any backend field naming convention ─────────────────
+  const normalizeItem = (item: Record<string, unknown>): VoiceOrderItem => ({
+    spokenName: String(
+      item.spokenName ??
+      item.spoken_text ??
+      item.spokenText ??
+      item.requestedProduct ??
+      item.requested_product ??
+      item.productName ??
+      item.product_name ??
+      item.name ??
+      ""
+    ),
+    requestedQuantity: Number(item.requestedQuantity ?? item.quantity ?? 1) || 1,
+    matchedProductId: String(item.matchedProductId ?? item.productId ?? item.product_id ?? item.matchedProduct?.id ?? item.product?.id ?? "") || null,
+    matchedProductName: String(item.matchedProductName ?? item.productName ?? item.product_name ?? item.matchedProduct?.name ?? item.product?.name ?? "") || null,
+    matchedProductCategory: String(item.matchedProductCategory ?? item.categoryName ?? item.category_name ?? item.matchedProduct?.category ?? "") || null,
+    matchedProductPrice: Number(item.matchedProductPrice ?? item.price ?? item.matchedProduct?.price ?? item.product?.price ?? 0) || null,
+    matchedProductStock: Number(item.matchedProductStock ?? item.stockQuantity ?? item.stock_quantity ?? item.matchedProduct?.stock ?? 0) || null,
+    matchedProductIsActive: item.matchedProductIsActive ?? item.isActive ?? null,
+    confidence: Number(item.confidence ?? 0) || 0,
+    matchType: String(item.matchType ?? item.match_type ?? "") || undefined,
+    alternativeProductIds: Array.isArray(item.alternativeProductIds) ? item.alternativeProductIds : [],
+    notes: String(item.notes ?? "") || null,
+    manuallyOverridden: Boolean(item.manuallyOverridden),
+    requiresReview: Boolean(item.requiresReview),
+    reviewWarning: String(item.reviewWarning ?? "") || null,
+    confirmationError: String(item.confirmationError ?? "") || null,
+    quantityAmbiguous: Boolean(item.quantityAmbiguous),
+  });
 
   // ── Sync review state when voice order updates ─────────────────────────────
   useEffect(() => {
@@ -286,7 +292,8 @@ export function DashboardVoiceOrders() {
         address: ex.fulfilment?.address || '',
       });
     }
-    setEditedItems(currentVo.resolvedItems || []);
+    const rawItems = currentVo.resolvedItems || [];
+    setEditedItems(rawItems.map((item) => normalizeItem(item as unknown as Record<string, unknown>)));
   }, [currentVo]);
 
   // ── Poll for status updates while processing ────────────────────────────
@@ -367,25 +374,16 @@ export function DashboardVoiceOrders() {
   const handleUploadAndCreate = async () => {
     if (!activeBlob) return;
 
-    // For user/customer: require a selected store
-    if (isUserRole && !selectedStoreId) {
-      toast.error('Please select a store before uploading your audio.');
-      return;
-    }
-
     setUploading(true);
     setTranscriptionError(null);
     try {
       const blob = activeBlob instanceof File ? activeBlob : activeBlob;
-      // Pass storeId for user/customer role; CLIENT role resolves storeId server-side
-      const storeIdToSend = isUserRole ? selectedStoreId : undefined;
 
       // 1. Upload audio file & save initial draft
       const uploadRes = await voiceOrdersApi.uploadAudio(
         blob,
         activeMimeType,
         activeFileName,
-        storeIdToSend,
         recorder.elapsed > 0 ? recorder.elapsed : undefined
       );
       const createdVo = uploadRes.data;
@@ -393,13 +391,15 @@ export function DashboardVoiceOrders() {
 
       // 2. Automatically trigger transcription, extraction, and store product matching
       const res = await voiceOrdersApi.transcribe(createdVo._id);
-      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; errorRef?: string };
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; extractionSource?: string; items?: any[]; errorRef?: string };
       setCurrentVo(data.data);
 
       if (data.extractionError) {
         toast.warning('Transcription complete, but product matching had an issue. Please review items.');
+      } else if (data.extractionSource === 'ai') {
+        toast.success(data.message || 'AI extraction complete! Review the items below.');
       } else {
-        toast.success(data.message || 'Transcription and product matching complete!');
+        toast.success(data.message || 'Product matching complete! Review the items below.');
       }
 
       // 3. Navigate to Review & Confirm after pipeline is fully processed
@@ -448,12 +448,14 @@ export function DashboardVoiceOrders() {
     setTranscriptionError(null);
     try {
       const res = await voiceOrdersApi.transcribe(currentVo._id);
-      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; errorRef?: string };
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; extractionSource?: string; items?: any[]; errorRef?: string };
       setCurrentVo(data.data);
       if (data.extractionError) {
-        toast.warning('Transcription complete, but AI extraction encountered an issue. Review the result or retry.');
+        toast.warning(data.message || 'Product matching had an issue. Review items or retry.');
+      } else if (data.extractionSource === 'ai') {
+        toast.success(data.message || 'AI extraction complete! Review the items below.');
       } else {
-        toast.success(data.message || 'Transcription and extraction complete!');
+        toast.success(data.message || 'Product matching complete! Review the items below.');
       }
       if (data.data.status === 'ready_for_review') {
         setView('review');
@@ -488,12 +490,14 @@ export function DashboardVoiceOrders() {
     setTranscriptionError(null);
     try {
       const res = await voiceOrdersApi.retry(currentVo._id);
-      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean };
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; extractionSource?: string; items?: any[] };
       setCurrentVo(data.data);
       if (data.extractionError) {
-        toast.warning('Processing completed with extraction issue. Review the result.');
+        toast.warning(data.message || 'Product matching had an issue. Review items or retry.');
+      } else if (data.extractionSource === 'ai') {
+        toast.success(data.message || 'AI extraction complete! Review the items below.');
       } else {
-        toast.success(data.message || 'Processing complete!');
+        toast.success(data.message || 'Product matching complete! Review the items below.');
       }
       if (data.data.status === 'ready_for_review') {
         setView('review');
@@ -519,8 +523,15 @@ export function DashboardVoiceOrders() {
     setTranscriptionError(null);
     try {
       const res = await voiceOrdersApi.extract(currentVo._id);
-      setCurrentVo(res.data as unknown as VoiceOrder);
-      toast.success('AI extraction complete!');
+      const data = res as unknown as { data: VoiceOrder; message?: string; extractionError?: boolean; extractionSource?: string; items?: any[] };
+      setCurrentVo(data.data);
+      if (data.extractionSource === 'ai') {
+        toast.success(data.message || 'AI extraction complete!');
+      } else if (data.items && data.items.length > 0) {
+        toast.success(data.message || 'Products matched from your catalogue. Review the items below.');
+      } else {
+        toast.warning(data.message || 'No products could be matched. Add items manually.');
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string; errorRef?: string; code?: string } } };
       const msg = axiosErr?.response?.data?.message || (err instanceof Error ? err.message : null) || 'Extraction failed.';
@@ -716,57 +727,6 @@ export function DashboardVoiceOrders() {
         {view === 'capture' && (
           <motion.div key="capture" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3 }}>
 
-            {/* ── Store selector (USER / CUSTOMER role only) ─────────────────────── */}
-            {isUserRole && (
-              <div className="mb-5">
-                {storesLoading ? (
-                  <div className="flex items-center gap-2 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/50 rounded-xl text-sm text-amber-800 dark:text-amber-200">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Loading available stores…</span>
-                  </div>
-                ) : storesError ? (
-                  <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200/60 rounded-xl text-sm text-red-700 dark:text-red-300">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>{storesError}</span>
-                  </div>
-                ) : availableStores.length === 0 ? (
-                  <div className="flex items-start gap-3 p-4 bg-orange-50 dark:bg-orange-950/30 border border-orange-200/60 rounded-xl text-sm text-orange-700 dark:text-orange-300">
-                    <Info className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>No stores are available at this time. Please contact your administrator.</span>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/50 dark:border-amber-800/30 rounded-xl space-y-2">
-                    <label htmlFor="voice-order-store-select" className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
-                      <Search className="w-4 h-4" />
-                      Select Store for this Voice Order
-                    </label>
-                    <select
-                      id="voice-order-store-select"
-                      value={selectedStoreId}
-                      onChange={(e) => setSelectedStoreId(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-lg border border-amber-200/70 dark:border-amber-700/40 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
-                    >
-                      <option value="">— Choose a store —</option>
-                      {availableStores.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
-                      ))}
-                    </select>
-                    {selectedStoreId && (
-                      <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Store selected — you can now record or upload audio.
-                      </p>
-                    )}
-                    {!selectedStoreId && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400">
-                        You must select a store before recording or uploading audio.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Privacy notice */}
             <div className="mb-5 flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-800/40 rounded-xl text-sm text-blue-800 dark:text-blue-200">
               <Info className="w-4 h-4 mt-0.5 shrink-0" />
@@ -928,8 +888,7 @@ export function DashboardVoiceOrders() {
                 <button
                   id="generate-transcription-btn"
                   onClick={handleUploadAndCreate}
-                  disabled={uploading || (isUserRole && !selectedStoreId)}
-                  title={isUserRole && !selectedStoreId ? 'Please select a store first' : undefined}
+                  disabled={uploading}
                   className="flex items-center gap-2 px-7 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 text-white font-bold shadow-lg hover:shadow-xl transition-all disabled:opacity-60 disabled:cursor-not-allowed text-sm"
                 >
                   {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
@@ -1169,6 +1128,11 @@ export function DashboardVoiceOrders() {
                       <div className="flex items-center justify-between p-4 border-b border-amber-100/50 dark:border-amber-900/30">
                         <div className="flex items-center gap-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                           <ShoppingCart className="w-4 h-4 text-amber-500" /> Order Items ({editedItems.length})
+                          {currentVo.matchingStatus === 'completed' && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 text-[10px] font-semibold">
+                              Matched
+                            </span>
+                          )}
                         </div>
                         <button onClick={addItem} className="flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:underline">
                           <Plus className="w-3 h-3" /> Add Item

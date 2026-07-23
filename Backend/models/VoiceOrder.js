@@ -43,12 +43,6 @@ const extractedItemSchema = new mongoose.Schema(
 
 const voiceOrderSchema = new mongoose.Schema(
   {
-    storeId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Client",
-      required: true,
-      index: true,
-    },
     createdByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -89,7 +83,7 @@ const voiceOrderSchema = new mongoose.Schema(
   }
 );
 
-voiceOrderSchema.index({ storeId: 1, createdAt: -1 });
-voiceOrderSchema.index({ storeId: 1, status: 1 });
+voiceOrderSchema.index({ createdByUserId: 1, createdAt: -1 });
+voiceOrderSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model("VoiceOrder", voiceOrderSchema);

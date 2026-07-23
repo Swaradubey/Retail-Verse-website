@@ -1,5 +1,43 @@
 const crypto = require("crypto");
 
+function cleanAIResponse(content = "") {
+  return content
+    .replace(/```json\s*/gi, "")
+    .replace(/```\s*/g, "")
+    .trim();
+}
+
+function extractJSONObject(content = "") {
+  const cleaned = cleanAIResponse(content);
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object") return parsed;
+  } catch {}
+
+  const objectStart = cleaned.indexOf("{");
+  const objectEnd = cleaned.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    try {
+      return JSON.parse(cleaned.slice(objectStart, objectEnd + 1));
+    } catch {}
+  }
+
+  const arrayStart = cleaned.indexOf("[");
+  const arrayEnd = cleaned.lastIndexOf("]");
+  if (arrayStart !== -1 && arrayEnd > arrayStart) {
+    try {
+      const arr = JSON.parse(cleaned.slice(arrayStart, arrayEnd + 1));
+      if (Array.isArray(arr)) {
+        return { items: arr };
+      }
+      return arr;
+    } catch {}
+  }
+
+  return null;
+}
+
 const PROVIDER = (process.env.AI_ORDER_EXTRACTION_PROVIDER || "openai").toLowerCase();
 const OPENAI_MODEL = process.env.OPENAI_ORDER_MODEL || "gpt-4o";
 const GEMINI_MODEL = process.env.GEMINI_ORDER_MODEL || "gemini-3.1-flash-lite";
@@ -104,7 +142,7 @@ function buildSystemPrompt(storeProducts) {
   return `You are an AI order assistant for a retail store. 
 Your ONLY job is to extract structured order information from the provided voice transcription.
 
-PRODUCT CATALOGUE (these are the ONLY valid products for this store — do NOT invent product IDs):
+PRODUCT CATALOGUE (these are the ONLY valid products for this merchant — do NOT invent product IDs):
 ${productList || "(No products loaded)"}
 
 RULES:
@@ -117,22 +155,18 @@ RULES:
 7. Set confidence from 0 to 1 based on how certain you are about each item match.
 8. Add warnings for: unclear product names, ambiguous quantities, missing delivery info.
 9. Detect language from the transcription and set the language field.
-10. Return ONLY valid JSON matching the required schema. No prose, no markdown code blocks.`;
+10. Return ONLY valid JSON matching the required schema. No prose, no markdown code blocks.
+11. CRITICAL: Preserve the EXACT spoken product phrase in spokenName. Never use placeholders like "item 1", "product 1", or "unknown item". The spokenName must contain the exact words the customer said.
+12. If you cannot match an item to the product catalogue, set matchedProductId to null but still keep the exact spoken phrase in spokenName.`;
 }
 
 function validateExtractionOutput(raw) {
-  let parsed;
-  try {
-    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-  } catch {
-    return { valid: false, message: "AI returned invalid JSON." };
-  }
-
+  const parsed = extractJSONObject(typeof raw === "string" ? raw : "");
   if (!parsed || typeof parsed !== "object") {
-    return { valid: false, message: "AI response is not a JSON object." };
+    return { valid: false, message: "AI returned invalid JSON.", data: null };
   }
   if (!Array.isArray(parsed.items)) {
-    return { valid: false, message: "AI response missing required 'items' array." };
+    return { valid: false, message: "AI response missing required 'items' array.", data: parsed };
   }
   if (typeof parsed.overallConfidence !== "number") {
     parsed.overallConfidence = 0;
@@ -153,14 +187,7 @@ function validateExtractionOutput(raw) {
     for (const f of FORBIDDEN_FIELDS) {
       delete item[f];
     }
-    // spokenName is required by the DB schema — guarantee it is always a non-empty string.
-    // If Gemini omitted it or returned blank, use a descriptive fallback so validation never fails.
-    if (!item.spokenName || !String(item.spokenName).trim()) {
-      item.spokenName = `item ${i + 1}`;
-    } else {
-      item.spokenName = String(item.spokenName).trim();
-    }
-    // Ensure requestedQuantity is a positive number.
+    item.spokenName = String(item.spokenName || "").trim();
     if (typeof item.requestedQuantity !== "number" || isNaN(item.requestedQuantity) || item.requestedQuantity <= 0) {
       item.requestedQuantity = 1;
     }
@@ -641,9 +668,32 @@ Return ONLY a JSON object matching the schema — no prose, no code blocks.`;
   );
 }
 
+async function safeExtractOrder(transcription, storeProducts, context = {}) {
+  try {
+    const result = await extractOrder(transcription, storeProducts, context);
+    if (result && Array.isArray(result.items)) {
+      return { success: true, data: result, source: "ai" };
+    }
+    return { success: false, data: null, source: "ai_failed", error: "AI returned no valid items." };
+  } catch (err) {
+    const isParseError = err instanceof ExtractionError && (
+      err.code === "INVALID_AI_OUTPUT" ||
+      err.code === "INVALID_AI_OUTPUT_AFTER_FALLBACK"
+    );
+    if (isParseError) {
+      console.log("[ExtractionProvider] safeExtractOrder: AI parse error, returning fallback signal:", err.message.slice(0, 200));
+      return { success: false, data: null, source: "ai_failed", error: err.message };
+    }
+    throw err;
+  }
+}
+
 module.exports = {
   extractOrder,
+  safeExtractOrder,
   validateExtractionOutput,
   getExtractionDiagnostics,
   ExtractionError,
+  extractJSONObject,
+  cleanAIResponse,
 };
