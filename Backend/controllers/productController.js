@@ -601,6 +601,21 @@ const updateProduct = async (req, res) => {
       updatedAt: updated.updatedAt,
     });
 
+    if (normalizedPayload.stock !== undefined) {
+      try {
+        const { updateInventory } = require('../services/inventoryService');
+        await updateInventory({
+          tenantId: resolvedClientId || updated.clientId || updated.merchantId,
+          productId: updated._id,
+          quantity: updated.stock,
+          source: 'product_update',
+          referenceId: req.user?._id
+        });
+      } catch (syncErr) {
+        console.error(`[productController] Central inventory sync warning: ${syncErr.message}`);
+      }
+    }
+
     const formatted = await loadProductFormatted(updated._id, req);
     const responsePayload = {
       success: true,
@@ -641,13 +656,6 @@ const updateProductStock = async (req, res) => {
         message: "Product not found (Invalid ID)",
       });
     }
-
-    if (!isValidObjectId(req.params.id)) {
-      return res.status(404).json({
-        success: false,
-        message: "Product not found (Invalid ID)",
-      });
-    }
     let query = { _id: req.params.id };
     applyScope(query, scopeQuery);
 
@@ -665,14 +673,22 @@ const updateProductStock = async (req, res) => {
       });
     }
 
-    existing.stock = stock;
-    const product = await existing.save({ validateBeforeSave: true });
-    const formatted = await loadProductFormatted(product._id, req);
+    const { updateInventory } = require('../services/inventoryService');
+    const syncRes = await updateInventory({
+      tenantId: resolvedClientId || existing.clientId || existing.merchantId,
+      productId: existing._id,
+      quantity: Number(stock),
+      source: 'manual_stock_edit',
+      referenceId: req.user?._id
+    });
+
+    const formatted = await loadProductFormatted(existing._id, req);
 
     res.status(200).json({
       success: true,
       message: "Stock updated successfully",
       data: formatted,
+      shopifyResults: syncRes.shopifyResults || []
     });
   } catch (error) {
     res.status(500).json({

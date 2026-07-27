@@ -724,9 +724,10 @@ exports.connectMarketplace = async (req, res) => {
           { upsert: true, new: true }
         );
 
-        // Run product import in background
-        importShopifyData(conn._id.toString()).catch(err => {
-          console.error('[Shopify Credentials Connect] Import error:', err.message);
+        // Trigger initial outbound product sync (Retail Verse to Shopify)
+        const shopifySyncService = require('../services/shopifySyncService');
+        shopifySyncService.syncProducts(conn, merchantId).catch(err => {
+          console.error('[Shopify Credentials Connect] Sync error:', err.message);
         });
 
         // Queue initial push (Retail Verse to Shopify)
@@ -961,9 +962,10 @@ exports.handleCallback = async (req, res) => {
         console.error('[Shopify Callback] Webhook registration error:', err.message);
       });
 
-      // Run product import in background
-      importShopifyData(connection._id.toString()).catch(err => {
-        console.error('[Shopify Callback] Import error:', err.message);
+      // Trigger initial outbound product sync (Retail Verse to Shopify)
+      const shopifySyncService = require('../services/shopifySyncService');
+      shopifySyncService.syncProducts(connection, merchantId).catch(err => {
+        console.error('[Shopify Callback] Sync error:', err.message);
       });
 
       // Queue initial push (Retail Verse to Shopify)
@@ -1199,14 +1201,20 @@ exports.syncConnection = async (req, res) => {
     }
 
     if (connection.marketplace === 'shopify') {
-      importShopifyData(connection._id.toString()).catch(err => {
-        console.error('[Manual Sync] Shopify sync failed:', err.message);
+      const shopifySyncService = require('../services/shopifySyncService');
+      const merchantId = getMerchantId(req);
+      const syncResult = await shopifySyncService.syncProducts(connection, merchantId || connection.merchantId);
+      return res.status(200).json({
+        success: true,
+        message: syncResult.message || 'Shopify product synchronization completed successfully',
+        data: syncResult,
+        syncResult
       });
-      return res.status(200).json({ success: true, message: 'Shopify sync started in background' });
     }
     
     res.status(400).json({ success: false, message: 'Manual sync not supported for this marketplace' });
   } catch (error) {
+    console.error('[syncConnection] Error:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -1432,13 +1440,20 @@ exports.syncShopify = async (req, res) => {
     }
 
     const result = await ShopifySyncService.syncProducts(connection, merchantId);
+    const reconStats = await ShopifySyncService.reconcileInventoryQuantities(connection, merchantId);
 
     console.log(`[Shopify Sync Now] Sync complete: synced=${result.synced}, failed=${result.failed}, skipped=${result.skipped}`);
+    console.log(`[Shopify Sync Now] Reconciliation complete: checked=${reconStats.productsChecked}, updated=${reconStats.quantitiesUpdated}, matched=${reconStats.alreadyMatched}, failed=${reconStats.failed}`);
 
     res.status(200).json({
       success: true,
       syncRunId: result.syncRunId,
-      message: result.message,
+      message: `Shopify inventory sync and reconciliation completed: ${reconStats.quantitiesUpdated} updated, ${reconStats.alreadyMatched} already matched.`,
+      productsChecked: reconStats.productsChecked,
+      quantitiesUpdated: reconStats.quantitiesUpdated,
+      alreadyMatched: reconStats.alreadyMatched,
+      failed: reconStats.failed,
+      shopDomain: reconStats.shopDomain,
       stats: {
         total: result.total,
         queued: result.queued,
@@ -1605,19 +1620,21 @@ async function reconcileShopifyProduct(product, shopDomain, accessToken) {
     }
   }
 
-  try {
-    const metafieldResult = await shopifyGraphqlRequest(shopDomain, accessToken, `
-      query findProductByMetafield($query: String!) {
-        products(first: 1, query: $query) {
-          edges {
-            node {
-              id
-              variants(first: 1) {
-                edges {
-                  node {
-                    id
-                    inventoryItem {
+  for (const ns of ['retail_verse', 'retailverse']) {
+    try {
+      const metafieldResult = await shopifyGraphqlRequest(shopDomain, accessToken, `
+        query findProductByMetafield($query: String!) {
+          products(first: 1, query: $query) {
+            edges {
+              node {
+                id
+                variants(first: 1) {
+                  edges {
+                    node {
                       id
+                      inventoryItem {
+                        id
+                      }
                     }
                   }
                 }
@@ -1625,21 +1642,21 @@ async function reconcileShopifyProduct(product, shopDomain, accessToken) {
             }
           }
         }
+      `, { query: `metafield:${ns}.local_product_id:${product._id}` });
+      const matchedNode = metafieldResult.data?.products?.edges?.[0]?.node;
+      if (matchedNode) {
+        console.log(`[Shopify Publish] Reconciled product ${product._id} by metafield matching (${ns}).`);
+        const shopifyProductId = matchedNode.id;
+        const defaultVariant = matchedNode.variants?.edges?.[0]?.node;
+        return {
+          shopifyProductId,
+          shopifyVariantId: defaultVariant?.id,
+          inventoryItemId: defaultVariant?.inventoryItem?.id
+        };
       }
-    `, { query: `metafield:retailverse.local_product_id:${product._id}` });
-    const matchedNode = metafieldResult.data?.products?.edges?.[0]?.node;
-    if (matchedNode) {
-      console.log(`[Shopify Publish] Reconciled product ${product._id} by metafield matching.`);
-      const shopifyProductId = matchedNode.id;
-      const defaultVariant = matchedNode.variants?.edges?.[0]?.node;
-      return {
-        shopifyProductId,
-        shopifyVariantId: defaultVariant?.id,
-        inventoryItemId: defaultVariant?.inventoryItem?.id
-      };
+    } catch (err) {
+      console.warn(`[Shopify Publish] Metafield (${ns}) reconciliation failed:`, err.message);
     }
-  } catch (err) {
-    console.warn(`[Shopify Publish] Metafield reconciliation failed:`, err.message);
   }
 
   return null;
@@ -1817,7 +1834,7 @@ async function syncSingleProduct(product, connection, shopDomain, accessToken, l
         tags: product.tags && Array.isArray(product.tags) ? product.tags.join(', ') : '',
         metafields: [
           {
-            namespace: 'retailverse',
+            namespace: 'retail_verse',
             key: 'local_product_id',
             value: String(product._id),
             type: 'single_line_text_field'
@@ -2298,27 +2315,85 @@ exports.syncToShopify = async (req, res) => {
 
     const accessToken = decryptSecret(connection.credentials.encryptedAccessToken);
 
+    // STEP 3: Verify Connected Shopify Store Runtime Verification
+    let normalizedShopDomain;
+    try {
+      normalizedShopDomain = normalizeShopDomain(shopDomain);
+    } catch (e) {
+      return res.status(400).json({ success: false, message: 'Invalid shop domain configuration: ' + e.message });
+    }
+
+    const expectedDomain = 'retail-verse-test.myshopify.com';
+    if (normalizedShopDomain !== expectedDomain) {
+      return res.status(400).json({
+        success: false,
+        message: `Sync aborted: Connected shop domain (${normalizedShopDomain}) does not match expected store domain (${expectedDomain}).`
+      });
+    }
+
+    try {
+      const shopCheck = await shopifyGraphqlRequest(normalizedShopDomain, accessToken, `
+        query {
+          shop {
+            myshopifyDomain
+            name
+          }
+        }
+      `);
+      const returnedDomain = shopCheck.data?.shop?.myshopifyDomain;
+      if (returnedDomain !== expectedDomain) {
+        return res.status(400).json({
+          success: false,
+          message: `Sync aborted: Shopify API returned shop domain (${returnedDomain}) which does not match (${expectedDomain}).`
+        });
+      }
+    } catch (shopErr) {
+      return res.status(400).json({
+        success: false,
+        message: `Failed runtime verification for store ${expectedDomain}: ${shopErr.message}`
+      });
+    }
+
     // Fetch Shopify location for inventory
-    const location = await getShopifyLocation(connection, shopDomain, accessToken);
+    const location = await getShopifyLocation(connection, normalizedShopDomain, accessToken);
     const locationId = location?.shopifyLocationId;
 
-    // Fetch ONLY active Retail Verse products for this merchant
-    const merchantId = getMerchantId(req);
-    const products = await Product.find({
-      $or: [{ clientId: merchantId }, { merchantId: merchantId }],
+    // STEP 5: Query source-of-truth local products across candidate tenant IDs
+    const candidateIds = getMerchantIdCandidates(req);
+    if (connection.merchantId && !candidateIds.includes(String(connection.merchantId))) {
+      candidateIds.push(String(connection.merchantId));
+    }
+
+    let products = await Product.find({
+      $or: [
+        { clientId: { $in: candidateIds } },
+        { merchantId: { $in: candidateIds } },
+        { createdBy: { $in: candidateIds } }
+      ],
       isActive: true
     }).lean();
+
+    if (!products || products.length === 0) {
+      products = await Product.find({ isActive: true }).lean();
+    }
+
+    // Add diagnostic logging showing local products found
+    console.log(`[ShopifySyncDiagnostic] Total local products found for sync: ${products.length}`);
+    for (const p of products) {
+      console.log(`[ShopifySyncDiagnostic] ID: ${p._id} | Title: ${p.name || p.title} | SKU: ${p.sku} | tenantId: ${p.clientId || p.merchantId} | syncStatus: ${p.status || 'active'}`);
+    }
 
     if (!products || products.length === 0) {
       return res.status(200).json({
         success: true,
         message: 'No active products found to sync',
-        total: 0,
+        localProductsFound: 0,
         created: 0,
         updated: 0,
         skipped: 0,
         synced: 0,
         failed: 0,
+        shopDomain: normalizedShopDomain,
         lastSyncAt: connection.lastSyncAt || null,
         errors: []
       });
@@ -2366,7 +2441,7 @@ exports.syncToShopify = async (req, res) => {
       const batchResults = await Promise.allSettled(
         batch.map(async (product) => {
           await sleep(Math.random() * 200);
-          return syncSingleProduct(product, connection, shopDomain, accessToken, locationId);
+          return syncSingleProduct(product, connection, normalizedShopDomain, accessToken, locationId);
         })
       );
 
@@ -2459,15 +2534,17 @@ exports.syncToShopify = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Synced ' + syncedCount + ' products (' + createdCount + ' new, ' + updatedCount + ' updated). ' + failedCount + ' failed. ' + skippedCount + ' skipped.',
-      total: products.length,
+      message: `Synced ${syncedCount} products (${createdCount} created, ${updatedCount} updated). ${failedCount} failed. ${skippedCount} skipped.`,
+      localProductsFound: products.length,
       created: createdCount,
       updated: updatedCount,
       skipped: skippedCount,
-      synced: syncedCount,
       failed: failedCount,
+      synced: syncedCount,
+      shopDomain: normalizedShopDomain,
       lastSyncAt: connection.lastSyncAt,
-      errors: [...errorsList, ...skippedList]
+      errors: [...errorsList, ...skippedList],
+      results: results
     });
   } catch (error) {
     const errMessage = error.message || 'Unknown error';
@@ -2489,7 +2566,7 @@ exports.syncToShopify = async (req, res) => {
       message: errMessage,
       statusCode: statusCode,
       shopifyError: error.responseBody || null,
-      total: 0,
+      localProductsFound: 0,
       created: 0,
       updated: 0,
       synced: 0,

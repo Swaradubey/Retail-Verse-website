@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 // Ensure server-only check
-if (typeof window !== 'undefined') {
+if (typeof globalThis !== 'undefined' && 'window' in globalThis && (globalThis as any).window !== undefined) {
   throw new Error('This module can only be imported in server-only environments.');
 }
 

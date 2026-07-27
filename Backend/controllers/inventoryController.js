@@ -505,6 +505,21 @@ const updateInventoryItem = async (req, res) => {
       updatedAt: updatedItem.updatedAt,
     });
 
+    if (updatePayload.stock !== undefined) {
+      try {
+        const { updateInventory } = require('../services/inventoryService');
+        await updateInventory({
+          tenantId: resolvedClientId || updatedItem.clientId || updatedItem.merchantId,
+          productId: updatedItem._id,
+          quantity: updatedItem.stock,
+          source: 'inventory_item_update',
+          referenceId: req.user?._id
+        });
+      } catch (syncErr) {
+        console.error(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
+      }
+    }
+
     // Prevent false "new notification" if product was already low and still is low
     if (wasLowStock && oldUpdatedAt) {
       const newStockVal = Number(updatedItem.stock || 0);
@@ -558,31 +573,24 @@ const updateStock = async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid stock count is required" });
     }
 
-    // Track low-stock transition to prevent false duplicate notifications
-    const oldStockVal = Number(existing.stock || 0);
-    const threshold = Number(existing.lowStockThreshold || existing.minStock || 10);
-    const wasLowStock = oldStockVal > 0 && oldStockVal < threshold;
-    const oldUpdatedAt = existing.updatedAt;
+    // Call central inventory service which persists stock and syncs with Shopify
+    const { updateInventory } = require('../services/inventoryService');
+    const syncRes = await updateInventory({
+      tenantId: resolvedClientId || existing.clientId || existing.merchantId,
+      productId: existing._id,
+      quantity: Number(stock),
+      source: 'manual_stock_edit',
+      referenceId: req.user?._id
+    });
 
-    existing.stock = Number(stock);
-    const item = await existing.save({ validateBeforeSave: true });
-
-    // After save, check stock transition status
-    const newStockVal = Number(item.stock || 0);
-    const isLowStock = newStockVal > 0 && newStockVal < threshold;
-
-    // Prevent false "new notification" if product was already low and still is low
-    if (wasLowStock && isLowStock && oldUpdatedAt) {
-      await Product.updateOne({ _id: item._id }, { $set: { updatedAt: oldUpdatedAt } });
-    }
-
-    const populated = await Product.findById(item._id)
+    const populated = await Product.findById(existing._id)
       .populate({ path: "clientId", select: "companyName shopName email" })
       .lean();
     res.json({
       success: true,
       message: "Stock updated successfully",
       data: formatProductWithClient(populated),
+      shopifyResults: syncRes.shopifyResults || []
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

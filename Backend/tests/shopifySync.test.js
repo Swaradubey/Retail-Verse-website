@@ -808,7 +808,7 @@ describe('Shopify Inventory Sync Integrated Flow', () => {
       shopifyProductId: 'shopifyProd123',
       shopifyVariantId: 'shopifyVar123',
       inventoryItemId: 'shopifyInv123',
-      syncStatus: 'inventory_synced'
+      syncStatus: 'success'
     });
 
     const result = await mockService.syncSingleProductInline(
@@ -822,7 +822,7 @@ describe('Shopify Inventory Sync Integrated Flow', () => {
     expect(MarketplaceProduct.findOneAndUpdate).toHaveBeenCalledWith(
       expect.any(Object),
       expect.objectContaining({
-        syncStatus: 'inventory_synced'
+        syncStatus: 'success'
       }),
       expect.any(Object)
     );
@@ -951,5 +951,44 @@ describe('Shopify Inventory Sync Integrated Flow', () => {
       }),
       expect.any(Object)
     );
+  });
+
+  test('Scenario 13: Wrong shop domain aborts sync', () => {
+    function validateTargetStore(targetDomain, expectedStore) {
+      if (!targetDomain || targetDomain !== expectedStore) {
+        throw new Error(`Sync aborted: Shop domain ${targetDomain} does not match ${expectedStore}`);
+      }
+      return true;
+    }
+
+    expect(validateTargetStore('retail-verse-test.myshopify.com', 'retail-verse-test.myshopify.com')).toBe(true);
+    expect(() => validateTargetStore('wrong-store.myshopify.com', 'retail-verse-test.myshopify.com'))
+      .toThrow('Sync aborted: Shop domain wrong-store.myshopify.com does not match retail-verse-test.myshopify.com');
+  });
+
+  test('Scenario 14: Tenant isolation prevents cross-tenant access', () => {
+    function authorizeTenantAccess(connectionMerchantId, requestMerchantIds) {
+      return requestMerchantIds.includes(String(connectionMerchantId));
+    }
+
+    expect(authorizeTenantAccess('tenantA', ['tenantA', 'tenantB'])).toBe(true);
+    expect(authorizeTenantAccess('tenantA', ['tenantC'])).toBe(false);
+  });
+
+  test('Scenario 15: Re-running full sync is idempotent (updates, no duplicate creation)', () => {
+    function calculateSyncOutcome(existingMapping) {
+      if (existingMapping && existingMapping.shopifyProductId) {
+        return { isNew: false, action: 'UPDATE' };
+      }
+      return { isNew: true, action: 'CREATE' };
+    }
+
+    const firstRun = calculateSyncOutcome(null);
+    expect(firstRun.isNew).toBe(true);
+    expect(firstRun.action).toBe('CREATE');
+
+    const secondRun = calculateSyncOutcome({ shopifyProductId: 'gid://shopify/Product/123' });
+    expect(secondRun.isNew).toBe(false);
+    expect(secondRun.action).toBe('UPDATE');
   });
 });

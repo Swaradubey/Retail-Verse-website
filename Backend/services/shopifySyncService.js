@@ -207,9 +207,11 @@ function buildVariantInput(product, variantId) {
     v.weight = weight;
     v.weightUnit = 'KILOGRAMS';
   }
+  if (product.barcode) {
+    v.barcode = String(product.barcode);
+  }
   v.inventoryItem = { tracked: true };
   if (product.sku) v.inventoryItem.sku = product.sku;
-  if (product.barcode) v.inventoryItem.barcode = String(product.barcode);
   if (product.costPrice || product.cost) {
     const cost = Number(product.costPrice) || Number(product.cost) || 0;
     if (cost > 0) v.inventoryItem.cost = String(cost);
@@ -663,7 +665,33 @@ async function syncSingleProductInline(product, connection, shopDomain, accessTo
     console.log(`[ShopifyInventorySync] Inventory item ID: ${inventoryItemId}`);
     console.log(`[ShopifyInventorySync] Location ID: ${locationId}`);
 
-    // 5. Enable Inventory Tracking
+    // 5. Enable Inventory Tracking & Read Previous Quantity
+    let previousShopifyQuantity = 0;
+    try {
+      const prevRes = await withRetry(() => shopifyGraphqlRequest(shopDomain, accessToken, `
+        query GetPrevQty($id: ID!) {
+          inventoryItem(id: $id) {
+            id
+            tracked
+            inventoryLevels(first: 10) {
+              nodes {
+                location { id }
+                quantities(names: ["available"]) { name quantity }
+              }
+            }
+          }
+        }
+      `, { id: inventoryItemId }));
+      const invNodes = prevRes.data?.inventoryItem?.inventoryLevels?.nodes || [];
+      const matchedLocLevel = invNodes.find(n => String(n.location?.id) === String(locationId));
+      if (matchedLocLevel) {
+        const qtyObj = matchedLocLevel.quantities?.find(q => q.name === 'available');
+        if (qtyObj) previousShopifyQuantity = Number(qtyObj.quantity) || 0;
+      }
+    } catch (prevErr) {
+      console.warn(`[ShopifyInventorySync] Non-fatal error reading previous quantity: ${prevErr.message}`);
+    }
+
     const itemDetails = await withRetry(() => shopifyGraphqlRequest(shopDomain, accessToken, `
       query GetInventoryItem($id: ID!) {
         inventoryItem(id: $id) {
@@ -693,8 +721,7 @@ async function syncSingleProductInline(product, connection, shopDomain, accessTo
 
     result.inventorySynced = true;
 
-    // 9. Save Sync Mapping and Status
-    // Use 'success' as the canonical synced status so all modules agree
+    // 9. Save Sync Mapping and Detailed Status
     await MarketplaceProduct.findOneAndUpdate(
       { connectionId: connection._id, localProductId: product._id },
       {
@@ -712,7 +739,15 @@ async function syncSingleProductInline(product, connection, shopDomain, accessTo
         shopifyLocationId: locationId,
         listingStatus: 'active',
         syncStatus: 'success',
+        status: 'Synced',
+        requestedQuantity: availableStock,
+        previousShopifyQuantity,
+        finalShopifyQuantity: verifiedQty,
+        attemptCount: (mapping?.attemptCount || 0) + 1,
+        lastAttemptAt: new Date(),
         lastSyncedAt: new Date(),
+        errorCode: '',
+        errorMessage: '',
         lastError: '',
         syncError: ''
       },
@@ -762,6 +797,12 @@ async function syncSingleProductInline(product, connection, shopDomain, accessTo
         shopifyLocationId: locationId || mapping?.shopifyLocationId,
         listingStatus: 'active',
         syncStatus: detailStatus,
+        status: 'Failed',
+        requestedQuantity: availableStock,
+        attemptCount: (mapping?.attemptCount || 0) + 1,
+        lastAttemptAt: new Date(),
+        errorCode: detailStatus,
+        errorMessage: errMsg.substring(0, 500),
         syncError: errMsg.substring(0, 500),
         lastError: errMsg.substring(0, 500),
         lastSyncedAt: new Date()
@@ -1159,6 +1200,109 @@ class ShopifySyncService {
         message: err.message
       };
     }
+  }
+
+  /**
+   * Reconciles current inventory quantities for mapped Retail Verse products against Shopify.
+   * Compares local stock vs Shopify available stock level, updates mismatches, and returns summary stats.
+   */
+  async reconcileInventoryQuantities(connection, merchantId) {
+    const shopDomain = connection.storeUrl || connection.shopDomain;
+    const accessToken = decryptSecret(connection.credentials.encryptedAccessToken);
+    const locationId = await resolveShopifyLocation(connection, shopDomain, accessToken, shopifyGraphqlRequest);
+
+    const mappings = await MarketplaceProduct.find({ connectionId: connection._id }).lean();
+    let productsChecked = 0;
+    let quantitiesUpdated = 0;
+    let alreadyMatched = 0;
+    let failed = 0;
+    const details = [];
+
+    const products = await Product.find({
+      $or: [{ clientId: merchantId }, { merchantId }],
+      isActive: true
+    }).lean();
+
+    for (const product of products) {
+      productsChecked++;
+      try {
+        const localStock = await getAvailableStock(product._id);
+        const mapping = mappings.find(m => String(m.localProductId || m.productId) === String(product._id));
+        const inventoryItemId = mapping?.inventoryItemId || mapping?.shopifyInventoryItemId;
+
+        let shopifyStock = null;
+        if (inventoryItemId && locationId) {
+          try {
+            const query = `
+              query GetLevel($id: ID!) {
+                inventoryItem(id: $id) {
+                  inventoryLevels(first: 10) {
+                    nodes {
+                      location { id }
+                      quantities(names: ["available"]) { name quantity }
+                    }
+                  }
+                }
+              }
+            `;
+            const res = await shopifyGraphqlRequest(shopDomain, accessToken, query, { id: inventoryItemId });
+            const nodes = res.data?.inventoryItem?.inventoryLevels?.nodes || [];
+            const matchedLoc = nodes.find(n => String(n.location?.id) === String(locationId));
+            if (matchedLoc) {
+              const qObj = matchedLoc.quantities?.find(q => q.name === 'available');
+              if (qObj) shopifyStock = Number(qObj.quantity);
+            }
+          } catch (qErr) {}
+        }
+
+        if (shopifyStock !== null && shopifyStock === localStock) {
+          alreadyMatched++;
+          details.push({
+            productId: product._id,
+            sku: product.sku,
+            localStock,
+            shopifyStock,
+            status: 'matched'
+          });
+        } else {
+          const syncRes = await syncSingleProductInline(product, connection, shopDomain, accessToken, locationId);
+          if (syncRes.status === 'synced') {
+            quantitiesUpdated++;
+            details.push({
+              productId: product._id,
+              sku: product.sku,
+              oldShopifyQuantity: shopifyStock,
+              newShopifyQuantity: localStock,
+              status: 'updated'
+            });
+          } else {
+            failed++;
+            details.push({
+              productId: product._id,
+              sku: product.sku,
+              error: syncRes.error,
+              status: 'failed'
+            });
+          }
+        }
+      } catch (err) {
+        failed++;
+        details.push({
+          productId: product._id,
+          error: err.message,
+          status: 'failed'
+        });
+      }
+    }
+
+    return {
+      productsChecked,
+      quantitiesUpdated,
+      alreadyMatched,
+      failed,
+      shopDomain,
+      details
+    };
   }
 }
 

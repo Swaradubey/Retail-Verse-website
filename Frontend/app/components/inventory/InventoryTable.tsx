@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Package,
   AlertTriangle,
-  RefreshCw,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
@@ -26,7 +25,7 @@ import {
    TableHeader,
    TableRow,
  } from '../ui/table';
- import { InventoryItem, StockStatus, SortConfig, MarketplaceSyncStatus, MarketplaceInfo } from '../../types/inventory';
+ import { InventoryItem, StockStatus, SortConfig } from '../../types/inventory';
  import { formatINR } from '../../utils/formatINR';
 import { getProductImageUrl, getFullImageUrl } from '../../utils/imageUrl';
 
@@ -99,103 +98,7 @@ function StatusBadge({ status }: { status: StockStatus }) {
   );
 }
 
-function SyncStatusBadge({ status, error }: { status: MarketplaceSyncStatus | string; error?: string }) {
-  const normStatus = String(status).toLowerCase() as MarketplaceSyncStatus;
-  switch (normStatus) {
-    case 'synced':
-    case 'inventory_synced':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400" title="Product and inventory synced successfully">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 border border-emerald-600/20 inline-block" />
-          Synced
-        </span>
-      );
-    case 'product_synced':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-400" title="Product synced, inventory pending or failed">
-          <span className="w-2 h-2 rounded-full bg-indigo-500 border border-indigo-600/20 inline-block" />
-          Product Synced
-        </span>
-      );
-    case 'inventory_sync_failed':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400" title={error || "Product synced, but inventory sync failed"}>
-          <span className="w-2 h-2 rounded-full bg-amber-500 border border-amber-600/20 inline-block" />
-          Inventory Sync Failed
-        </span>
-      );
-    case 'missing_sku':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400" title="Product is missing a SKU">
-          <span className="w-2 h-2 rounded-full bg-rose-500 border border-rose-600/20 inline-block" />
-          Missing SKU
-        </span>
-      );
-    case 'missing_location':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400" title="Shopify inventory location could not be resolved">
-          <span className="w-2 h-2 rounded-full bg-rose-500 border border-rose-600/20 inline-block" />
-          Missing Location
-        </span>
-      );
-    case 'missing_permission':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400" title="Missing required OAuth scopes. Reconnection required.">
-          <span className="w-2 h-2 rounded-full bg-rose-500 border border-rose-600/20 inline-block" />
-          Missing Permission
-        </span>
-      );
-    case 'reconnection_required':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400" title="OAuth token invalid. Please reconnect the store.">
-          <span className="w-2 h-2 rounded-full bg-rose-500 border border-rose-600/20 inline-block" />
-          Reconnection Required
-        </span>
-      );
-    case 'processing':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse border border-amber-600/20 inline-block" />
-          Syncing
-        </span>
-      );
-    case 'queued':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-          <span className="w-2 h-2 rounded-full bg-slate-400 border border-slate-500/20 inline-block" />
-          Queued
-        </span>
-      );
-    case 'failed':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
-          <span className="w-2 h-2 rounded-full bg-rose-500 border border-rose-600/20 inline-block" />
-          Failed
-        </span>
-      );
-    case 'not_synced':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-          <span className="w-2 h-2 rounded-full bg-slate-300 border border-slate-400/20 inline-block" />
-          Not Synced
-        </span>
-      );
-    case 'not_connected':
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-          <span className="w-2 h-2 rounded-full bg-slate-300 border border-slate-400/20 inline-block" />
-          Not Connected
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-          <span className="w-2 h-2 rounded-full bg-slate-300 border border-slate-400/20 inline-block" />
-          {normStatus}
-        </span>
-      );
-  }
-}
+
 
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
@@ -385,31 +288,7 @@ function MobileCard({
             <span className="truncate inline-block max-w-[200px] align-bottom">{clientShopLabel(item)}</span>
           </p>
 
-          {item.marketplaces && item.marketplaces.length > 0 && (
-            <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-slate-100/50 dark:border-white/[0.02] pt-2">
-              {item.marketplaces.map((mp: MarketplaceInfo) => {
-                const providerLabel = mp.provider === 'shopify' ? 'Shopify' : mp.provider;
-                return (
-                  <div key={mp.connectionId} className="flex items-center gap-1 text-[11px] bg-zinc-50 dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-100 dark:border-zinc-850">
-                    <span className="font-bold capitalize text-[10px] text-slate-600 dark:text-slate-400">{providerLabel}</span>
-                    <SyncStatusBadge status={mp.status} />
-                    {mp.status === 'failed' && onRetrySync && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRetrySync(item.id, [mp.provider]);
-                        }}
-                        className="p-0.5 text-indigo-650 cursor-pointer"
-                      >
-                        <RefreshCw className="w-2.5 h-2.5" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+
 
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100 dark:border-white/[0.04]">
             <div className="flex items-center gap-3">
@@ -588,12 +467,7 @@ export function InventoryTable({
                     Client
                   </span>
                 </TableHead>
-                <TableHead className="hidden py-4 lg:table-cell">
-                  <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
-                    Marketplaces
-                  </span>
-                </TableHead>
-                <TableHead className="hidden py-4 lg:table-cell">
+                <TableHead className="hidden py-4 sm:table-cell">
                   <SortableHead
                     label="Updated"
                     active={sortConfig.key === 'updatedAt'}
@@ -719,45 +593,7 @@ export function InventoryTable({
                       </div>
                     </TableCell>
 
-                    <TableCell className="hidden py-4 lg:table-cell">
-                      <div className="flex flex-wrap gap-2 items-center">
-                        {(!item.marketplaces || item.marketplaces.length === 0) ? (
-                          <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 italic bg-slate-50 dark:bg-white/[0.02] px-2 py-0.5 rounded-md border border-slate-100 dark:border-white/[0.04]">
-                            Not Connected
-                          </span>
-                        ) : (
-                          item.marketplaces.map((mp: MarketplaceInfo) => {
-                            const providerLabel = mp.provider === 'shopify' ? 'Shopify' : mp.provider;
-                            return (
-                              <div
-                                key={mp.connectionId}
-                                className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-900 px-2 py-1 rounded-lg border border-zinc-200/50 dark:border-zinc-800"
-                              >
-                                <span className="text-[11px] font-bold capitalize text-slate-700 dark:text-slate-300">
-                                  {providerLabel}
-                                </span>
-                                <SyncStatusBadge status={mp.status} />
-                                {mp.status === 'failed' && onRetrySync && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onRetrySync(item.id, [mp.provider]);
-                                    }}
-                                    className="p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-850 rounded transition-colors text-indigo-600 dark:text-indigo-400 cursor-pointer"
-                                    title="Retry syncing this marketplace connection"
-                                  >
-                                    <RefreshCw className="w-3 h-3 animate-none hover:rotate-180 transition-transform duration-500" />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="hidden py-4 lg:table-cell">
+                    <TableCell className="hidden py-4 sm:table-cell">
                       <div>
                         <p className="text-[12px] font-medium text-slate-600 dark:text-slate-400">{formatDate(item.updatedAt)}</p>
                         <p className="text-[10px] text-slate-400 dark:text-slate-500">{relativeDate(item.updatedAt)}</p>

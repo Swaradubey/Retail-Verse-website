@@ -137,7 +137,7 @@ export function Account() {
         <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white dark:bg-[#09090b]">
           <header className="h-14 border-b border-gray-100 dark:border-white/10 flex items-center px-6 gap-4 justify-between bg-white/80 dark:bg-black/40 backdrop-blur-sm">
             <div className="flex items-center gap-3">
-              <SidebarTrigger className="-ml-1" />
+              <SidebarTrigger />
               <p className="text-sm text-muted-foreground">
                 Signed in as <span className="font-semibold text-foreground">{user?.name}</span>
               </p>

@@ -959,6 +959,19 @@ const createOrder = async (req, res) => {
             console.log(`[STOCK DEDUCTION] Success for ${item.name}. New Stock: ${updatedProduct.stock}`);
             deductedItems.push({ productId: stockId, quantity: orderedQty });
 
+            try {
+              const { updateInventory } = require('../services/inventoryService');
+              await updateInventory({
+                tenantId: clientId || updatedProduct.clientId || updatedProduct.merchantId,
+                productId: updatedProduct._id,
+                quantity: updatedProduct.stock,
+                source: isPosOrder ? 'pos_order' : 'website_order',
+                referenceId: createdOrder._id
+              });
+            } catch (syncErr) {
+              console.warn(`[orderController] Stock sync warning: ${syncErr.message}`);
+            }
+
             if (updatedProduct.stock <= 10) {
               console.warn(`[LOW STOCK] Product: ${item.name} (${stockId}), New Stock: ${updatedProduct.stock} — below threshold 10.`);
             }

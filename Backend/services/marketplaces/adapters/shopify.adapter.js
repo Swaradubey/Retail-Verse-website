@@ -230,14 +230,14 @@ class ShopifyMarketplaceAdapter extends MarketplaceAdapter {
       v.weight = weight;
       v.weightUnit = 'KILOGRAMS';
     }
+    if (product.barcode) {
+      v.barcode = String(product.barcode);
+    }
     v.inventoryItem = {
       tracked: true
     };
     if (product.sku) {
       v.inventoryItem.sku = product.sku;
-    }
-    if (product.barcode) {
-      v.inventoryItem.barcode = String(product.barcode);
     }
     // Handle cost price if defined in payload dynamically
     if (product.costPrice !== undefined || product.cost !== undefined) {

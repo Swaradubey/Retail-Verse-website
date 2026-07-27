@@ -321,6 +321,23 @@ productSchema.post("save", async function (doc) {
           });
         }
       }
+
+      // Immediately trigger inline Shopify sync for instant synchronization
+      if (marketplace === 'shopify') {
+        try {
+          const shopifySyncService = require("../services/shopifySyncService");
+          const { decryptSecret } = require("../lib/marketplaces/encryption");
+          const shopDomain = conn.storeUrl || conn.shopDomain;
+          const accessToken = conn.credentials?.encryptedAccessToken ? decryptSecret(conn.credentials.encryptedAccessToken) : null;
+          if (shopDomain && accessToken) {
+            shopifySyncService.syncSingleProductInline(doc, conn, shopDomain, accessToken).catch(err => {
+              console.warn(`[Product Hook] Auto-sync inline Shopify error for SKU ${doc.sku}:`, err.message);
+            });
+          }
+        } catch (inlineErr) {
+          console.warn("[Product Hook] Failed inline Shopify sync trigger:", inlineErr.message);
+        }
+      }
     }
   } catch (err) {
     console.error("[Product Hook] post-save error:", err.message);

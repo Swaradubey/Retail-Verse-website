@@ -222,7 +222,7 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
       }
     >
       <div className="flex h-16 items-center justify-between px-4 sm:px-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-6">
           <SidebarTrigger />
           <div className="hidden md:flex relative w-64 max-w-[min(16rem,100%)]" ref={searchRef}>
             <Search
