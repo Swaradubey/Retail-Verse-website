@@ -500,33 +500,42 @@ export function Dashboard() {
             <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6">
               {/* Expanded header */}
               <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
-                {brandLogo ? (
-                  <div
-                    className={
-                      isOverview
-                        ? 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg shadow-amber-900/20 border border-amber-200/30 dark:border-amber-800/20'
-                        : 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg border border-gray-200/50 dark:border-white/10'
-                    }
-                  >
-                    <img
-                      src={brandLogo}
-                      alt={`${dsFinalBrandName} logo`}
-                      className="w-full h-full object-contain p-0.5"
-                    />
+                <Link
+                  to="/"
+                  aria-label="Go to homepage"
+                  className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 group/logo"
+                >
+                  {brandLogo ? (
+                    <div
+                      className={
+                        isOverview
+                          ? 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg shadow-amber-900/20 border border-amber-200/30 dark:border-amber-800/20 shrink-0'
+                          : 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg border border-gray-200/50 dark:border-white/10 shrink-0'
+                      }
+                    >
+                      <img
+                        src={brandLogo}
+                        alt={`${dsFinalBrandName} logo`}
+                        className="w-full h-full object-contain p-0.5"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      className={
+                        isOverview
+                          ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-[#d4af37] via-amber-500 to-amber-700 flex items-center justify-center text-white shadow-lg shadow-amber-900/20 shrink-0'
+                          : 'w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shrink-0'
+                      }
+                    >
+                      <span className="font-bold text-lg">E</span>
+                    </div>
+                  )}
+                  <div className="flex flex-col min-w-0 flex-1 leading-tight">
+                    <span className="font-bold text-xl tracking-tight truncate">{dsFinalBrandName}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">STORE</span>
                   </div>
-                ) : (
-                  <div
-                    className={
-                      isOverview
-                        ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-[#d4af37] via-amber-500 to-amber-700 flex items-center justify-center text-white shadow-lg shadow-amber-900/20'
-                        : 'w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg'
-                    }
-                  >
-                    <span className="font-bold text-lg">E</span>
-                  </div>
-                )}
-                <span className="font-bold text-xl tracking-tight flex-1">{dsFinalBrandName}</span>
-                <SidebarTrigger className="size-7" />
+                </Link>
+                <SidebarTrigger className="size-7 shrink-0" />
               </div>
               {/* Collapsed header - centered toggle */}
               <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full h-full">
