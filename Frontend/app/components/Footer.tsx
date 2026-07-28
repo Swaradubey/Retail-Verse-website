@@ -178,6 +178,11 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
                 </Link>
               </li>
               <li>
+                <Link to="/delete-account" className="transition-colors hover:text-blue-400">
+                  Delete Account
+                </Link>
+              </li>
+              <li>
                 <a href="#" className="transition-colors hover:text-blue-400">
                   FAQ
                 </a>
@@ -228,6 +233,9 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
             </Link>
             <Link to="/terms-of-service" className="transition-colors hover:text-white/70">
               Terms of Service
+            </Link>
+            <Link to="/delete-account" className="transition-colors hover:text-white/70">
+              Delete Account
             </Link>
             <a href="#" className="transition-colors hover:text-white/70">
               Cookies

@@ -30,10 +30,10 @@ export function Header() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
-    ? 'Business Store'
+    ? 'Retail Verse'
     : isClientUser && user.businessName
       ? user.businessName
-      : brandingBrandName || 'Business Store';
+      : brandingBrandName || 'Retail Verse';
   const brandSubtitle = !user
     ? 'Premium Commerce'
     : isSuperAdmin

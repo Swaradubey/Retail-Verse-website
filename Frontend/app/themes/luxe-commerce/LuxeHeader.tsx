@@ -22,10 +22,10 @@ export function LuxeHeader() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
-    ? 'Business Store'
+    ? 'Retail Verse'
     : isClientUser && user.businessName
       ? user.businessName
-      : brandingBrandName || 'Business Store';
+      : brandingBrandName || 'Retail Verse';
 
   if (typeof window !== 'undefined') {
     window.addEventListener('scroll', () => setScrolled(window.scrollY > 40), { passive: true });

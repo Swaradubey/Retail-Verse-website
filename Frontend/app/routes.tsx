@@ -86,6 +86,7 @@ const SuperAdminClientDetail = lazy(() => import('./pages/super-admin/SuperAdmin
 const InvoiceDetail = lazy(() => import('./pages/super-admin/InvoiceDetail').then(m => ({ default: m.InvoiceDetail })));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazy(() => import('./pages/TermsOfService').then(m => ({ default: m.TermsOfService })));
+const DeleteAccount = lazy(() => import('./pages/DeleteAccount').then(m => ({ default: m.DeleteAccount })));
 const DashboardVoiceOrders = lazy(() => import('./pages/dashboard/DashboardVoiceOrders').then(m => ({ default: m.DashboardVoiceOrders })));
 const SuperAdminVoiceOrders = lazy(() => import('./pages/super-admin/SuperAdminVoiceOrders').then(m => ({ default: m.SuperAdminVoiceOrders })));
 const DashboardMarketplaces = lazy(() => import('./pages/dashboard/DashboardMarketplaces').then(m => ({ default: m.DashboardMarketplaces })));
@@ -156,6 +157,7 @@ export const router = createBrowserRouter([
       { path: 'about', element: withSuspense(<About />) },
       { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
       { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
+      { path: 'delete-account', element: withSuspense(<DeleteAccount />) },
       {
         path: 'pos',
         element: withSuspense(

@@ -21,10 +21,10 @@ export function NovaHeader() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
-    ? 'Business Store'
+    ? 'Retail Verse'
     : isClientUser && user.businessName
       ? user.businessName
-      : brandingBrandName || 'Business Store';
+      : brandingBrandName || 'Retail Verse';
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">

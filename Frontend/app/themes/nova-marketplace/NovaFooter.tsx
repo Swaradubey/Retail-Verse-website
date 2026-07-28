@@ -9,10 +9,10 @@ export function NovaFooter() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
-    ? 'Business Store'
+    ? 'Retail Verse'
     : isClientUser && user.businessName
       ? user.businessName
-      : brandingBrandName || 'Business Store';
+      : brandingBrandName || 'Retail Verse';
   return (
     <footer className="bg-[#0f172a] text-gray-400">
       <div className="max-w-[88rem] mx-auto px-4 py-12 lg:py-16">
@@ -41,6 +41,7 @@ export function NovaFooter() {
           <div>
             <h4 className="text-white text-sm font-bold uppercase mb-4">Help</h4>
             <ul className="space-y-2">
+              <li><Link to="/delete-account" className="text-sm hover:text-white transition-colors">Delete Account</Link></li>
               {['Customer Service', 'Returns & Refunds', 'Shipping Info', 'FAQ', 'Track Order'].map((item) => (
                 <li key={item}><Link to="/contact" className="text-sm hover:text-white transition-colors">{item}</Link></li>
               ))}
@@ -62,6 +63,7 @@ export function NovaFooter() {
           <div className="flex items-center gap-4">
             <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy Policy</Link>
             <Link to="/terms-of-service" className="hover:text-white transition-colors">Terms</Link>
+            <Link to="/delete-account" className="hover:text-white transition-colors">Delete Account</Link>
             <Link to="/contact" className="hover:text-white transition-colors">Support</Link>
           </div>
         </div>

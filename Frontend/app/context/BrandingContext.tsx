@@ -149,7 +149,7 @@ export function useBranding() {
 
   const brandName = isSuperAdmin
     ? 'Retail Verse'
-    : ctx.branding?.businessName || ctx.branding?.brandingName || 'Business Store';
+    : ctx.branding?.businessName || ctx.branding?.brandingName || 'Retail Verse';
 
   const footerText = isSuperAdmin
     ? `© ${new Date().getFullYear()} Retail Verse. All rights reserved. | Powered by Hexerve`

@@ -9,10 +9,10 @@ export function LuxeFooter() {
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
-    ? 'Business Store'
+    ? 'Retail Verse'
     : isClientUser && user.businessName
       ? user.businessName
-      : brandingBrandName || 'Business Store';
+      : brandingBrandName || 'Retail Verse';
   return (
     <footer className="bg-[#1a1a2e] text-white/80">
       <div className="max-w-[88rem] mx-auto px-6 py-16 lg:py-20">
@@ -50,7 +50,13 @@ export function LuxeFooter() {
           <div>
             <h4 className="text-white text-sm font-bold uppercase tracking-widest mb-6">Support</h4>
             <ul className="space-y-3">
-              {['Contact Us', 'Shipping & Returns', 'Size Guide', 'FAQ', 'Care Guide'].map((item) => (
+              <li>
+                <Link to="/contact" className="text-white/60 hover:text-white transition-colors text-sm">Contact Us</Link>
+              </li>
+              <li>
+                <Link to="/delete-account" className="text-white/60 hover:text-white transition-colors text-sm">Delete Account</Link>
+              </li>
+              {['Shipping & Returns', 'Size Guide', 'FAQ', 'Care Guide'].map((item) => (
                 <li key={item}>
                   <Link to="/contact" className="text-white/60 hover:text-white transition-colors text-sm">{item}</Link>
                 </li>
@@ -63,6 +69,7 @@ export function LuxeFooter() {
           <div className="flex flex-wrap items-center gap-6 text-sm text-white/40">
             <Link to="/privacy-policy" className="hover:text-white/60 transition-colors">Privacy Policy</Link>
             <Link to="/terms-of-service" className="hover:text-white/60 transition-colors">Terms of Service</Link>
+            <Link to="/delete-account" className="hover:text-white/60 transition-colors">Delete Account</Link>
           </div>
           <p className="text-sm text-white/40">
             &copy; 2026 {brandName}. All rights reserved.
