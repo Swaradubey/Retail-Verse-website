@@ -4,6 +4,7 @@ import { ShoppingBag, ArrowRight, Star, ShieldCheck, Zap } from 'lucide-react';
 import { Link } from 'react-router';
 import { TrustMarquee } from '../components/TrustMarquee';
 import { ResourcesSection } from '../components/ResourcesSection';
+import { SmartDigitalBusinessSection } from '../components/SmartDigitalBusinessSection';
 
 export function Home() {
   return (
@@ -103,6 +104,9 @@ export function Home() {
           </div>
         </div>
       </section>
+
+      {/* Smart Digital Business Platform Section */}
+      <SmartDigitalBusinessSection />
 
       {/* Trust & Features Marquee */}
       <TrustMarquee />
