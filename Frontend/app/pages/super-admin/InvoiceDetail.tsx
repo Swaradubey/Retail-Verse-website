@@ -20,6 +20,7 @@ import { Separator } from '../../components/ui/separator';
 import ApiService from '../../api/apiService';
 import { toast } from 'sonner';
 import { formatINR, formatINRForPDF } from '../../utils/formatINR';
+import { getFullImageUrl } from '../../utils/imageUrl';
 
 export function InvoiceDetail() {
   const { orderId } = useParams<{ orderId: string }>();
@@ -97,40 +98,90 @@ export function InvoiceDetail() {
         invoice?.totalAmount ||
         subtotal + tax;
 
+      const business = invoice?.business || {};
+
+      const businessName = business.name || "";
+      const businessTagline = business.tagline || "";
+      const businessAddress = business.address || "";
+      const businessEmail = business.email || "";
+      const businessPhone = business.phone || "";
+      const businessLogoUrl = getFullImageUrl(business.logo);
+
+      let yCursor = 20;
+
+      if (businessLogoUrl) {
+        try {
+          const logoExt = businessLogoUrl.split('.').pop()?.toLowerCase();
+          const logoFormat = logoExt === 'png' ? 'PNG' : 'JPEG';
+          doc.addImage(businessLogoUrl, logoFormat, 14, yCursor - 5, 30, 10);
+        } catch {
+          // logo as text fallback
+        }
+      }
+
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(22);
-      doc.text("RETAIL VERSE", 14, 20);
+      doc.setFontSize(18);
+      const nameStr = businessName ? businessName.toUpperCase() : "INVOICE";
+      doc.text(nameStr, 14, yCursor);
+
+      yCursor += 7;
+      if (businessTagline) {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(9);
+        doc.text(businessTagline, 14, yCursor);
+        yCursor += 6;
+        doc.setFont("helvetica", "normal");
+      }
+
+      if (businessAddress) {
+        doc.setFontSize(9);
+        doc.text(businessAddress, 14, yCursor);
+        yCursor += 5;
+      }
+      if (businessPhone) {
+        doc.setFontSize(9);
+        doc.text(`Phone: ${businessPhone}`, 14, yCursor);
+        yCursor += 5;
+      }
+      if (businessEmail) {
+        doc.setFontSize(9);
+        doc.text(businessEmail, 14, yCursor);
+        yCursor += 5;
+      }
+
+      if (!businessName) {
+        yCursor = 27;
+      }
 
       doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
       doc.text("INVOICE", pageWidth - 14, 20, { align: "right" });
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text("Premium E-Commerce", 14, 27);
-      doc.text("123 Business Avenue Suite 500", 14, 34);
-      doc.text("New Delhi, India 110001", 14, 40);
-      doc.text("contact@retailverse.com", 14, 46);
-
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
       doc.text(`Invoice No: ${invoiceNo}`, pageWidth - 14, 34, { align: "right" });
       doc.text(`Order ID: ${orderId}`, pageWidth - 14, 42, { align: "right" });
 
-      doc.line(14, 55, pageWidth - 14, 55);
+      const headerEndY = Math.max(yCursor + 8, 55);
+      doc.line(14, headerEndY, pageWidth - 14, headerEndY);
 
+      const billToY = headerEndY + 10;
       doc.setFontSize(12);
-      doc.text("Billed To", 14, 65);
+      doc.text("Billed To", 14, billToY);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text(String(customerName), 14, 73);
-      doc.text(String(customerEmail), 14, 80);
+      doc.text(String(customerName), 14, billToY + 8);
+      doc.text(String(customerEmail), 14, billToY + 15);
 
       doc.setFont("helvetica", "bold");
-      doc.text("Payment Details", pageWidth - 14, 65, { align: "right" });
+      doc.text("Payment Details", pageWidth - 14, billToY, { align: "right" });
 
       doc.setFont("helvetica", "normal");
-      doc.text(`Method: ${paymentMethod}`, pageWidth - 14, 73, { align: "right" });
-      doc.text(`Status: ${paymentStatus}`, pageWidth - 14, 80, { align: "right" });
+      doc.text(`Method: ${paymentMethod}`, pageWidth - 14, billToY + 8, { align: "right" });
+      doc.text(`Status: ${paymentStatus}`, pageWidth - 14, billToY + 15, { align: "right" });
+
+      const tableStartY = billToY + 27;
 
       const tableBody = items.map((item: any) => {
         const name =
@@ -153,7 +204,7 @@ export function InvoiceDetail() {
       });
 
       autoTable(doc, {
-        startY: 92,
+        startY: tableStartY,
         head: [["Item", "Qty", "Price", "Amount"]],
         body: tableBody,
         theme: "grid",
@@ -168,13 +219,22 @@ export function InvoiceDetail() {
         }
       });
 
-      let finalY = (doc as any).lastAutoTable.finalY + 10;
+      let finalY = (doc as any).lastAutoTable.finalY + 8;
+
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const bottomMargin = 20;
+
+      if (finalY + 30 > pageHeight - bottomMargin) {
+        doc.addPage();
+        finalY = 20;
+      }
 
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
       doc.text("Subtotal:", pageWidth - 60, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
-      finalY += 8;
+      finalY += 7;
       doc.text("Tax:", pageWidth - 60, finalY);
       doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
 
@@ -281,15 +341,29 @@ export function InvoiceDetail() {
               <div className="flex flex-col justify-between gap-8 sm:flex-row sm:items-start">
                 <div>
                   <div className="flex items-center gap-3 mb-6">
-                    {invoice.business?.logo ? (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white overflow-hidden shadow-lg">
-                        <img src={invoice.business.logo} alt={invoice.business.name || "Business Logo"} className="h-full w-full object-cover" />
-                      </div>
-                    ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D4AF37] text-white shadow-lg">
-                        <Receipt className="h-7 w-7" />
-                      </div>
-                    )}
+                    {(() => {
+                      const logoUrl = getFullImageUrl(invoice.business?.logo);
+                      return logoUrl ? (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white overflow-hidden shadow-lg">
+                          <img
+                            src={logoUrl}
+                            alt={invoice.business?.name || "Store logo"}
+                            className="h-full w-full object-cover"
+                            crossOrigin="anonymous"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).onerror = null;
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              const parent = (e.target as HTMLImageElement).closest('.flex');
+                              if (parent) (parent as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D4AF37] text-white shadow-lg">
+                          <Receipt className="h-7 w-7" />
+                        </div>
+                      );
+                    })()}
                     <div>
                       <h1 className="text-2xl font-black tracking-tight uppercase">
                         {invoice.business?.name || "Business Profile"}

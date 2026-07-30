@@ -22,6 +22,7 @@ import {
   Download,
   Mail,
   X,
+  Receipt,
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -713,7 +714,8 @@ export function Pos() {
         totalAmount: order.totalPrice,
         paymentMethod: order.paymentMethod,
         paymentStatus: "Pending (Offline)",
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        business: order.business || null
       });
       setModalStep('invoice');
     } else {
@@ -757,7 +759,8 @@ export function Pos() {
             totalAmount: order.totalPrice,
             paymentMethod: order.paymentMethod,
             paymentStatus: order.paymentStatus || "Completed",
-            createdAt: order.createdAt || new Date().toISOString()
+            createdAt: order.createdAt || new Date().toISOString(),
+            business: order.business || null
           });
         }
       } catch (err) {
@@ -1253,40 +1256,90 @@ export function Pos() {
         invoice?.totalAmount ||
         subtotal + tax;
 
+      const business = invoice?.business || order?.business || {};
+
+      const businessName = business.name || "";
+      const businessTagline = business.tagline || "";
+      const businessAddress = business.address || "";
+      const businessEmail = business.email || "";
+      const businessPhone = business.phone || "";
+      const businessLogoUrl = getFullImageUrl(business.logo);
+
+      let yCursor = 20;
+
+      if (businessLogoUrl) {
+        try {
+          const logoExt = businessLogoUrl.split('.').pop()?.toLowerCase();
+          const logoFormat = logoExt === 'png' ? 'PNG' : 'JPEG';
+          doc.addImage(businessLogoUrl, logoFormat, 14, yCursor - 5, 30, 10);
+        } catch {
+          // logo as text fallback
+        }
+      }
+
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(22);
-      doc.text("RETAIL VERSE", 14, 20);
+      doc.setFontSize(18);
+      const nameStr = businessName ? businessName.toUpperCase() : "INVOICE";
+      doc.text(nameStr, 14, yCursor);
+
+      yCursor += 7;
+      if (businessTagline) {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(9);
+        doc.text(businessTagline, 14, yCursor);
+        yCursor += 6;
+        doc.setFont("helvetica", "normal");
+      }
+
+      if (businessAddress) {
+        doc.setFontSize(9);
+        doc.text(businessAddress, 14, yCursor);
+        yCursor += 5;
+      }
+      if (businessPhone) {
+        doc.setFontSize(9);
+        doc.text(`Phone: ${businessPhone}`, 14, yCursor);
+        yCursor += 5;
+      }
+      if (businessEmail) {
+        doc.setFontSize(9);
+        doc.text(businessEmail, 14, yCursor);
+        yCursor += 5;
+      }
+
+      if (!businessName) {
+        yCursor = 27;
+      }
 
       doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
       doc.text("INVOICE", pageWidth - 14, 20, { align: "right" });
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.text("Premium E-Commerce", 14, 27);
-      doc.text("123 Business Avenue Suite 500", 14, 34);
-      doc.text("New Delhi, India 110001", 14, 40);
-      doc.text("contact@retailverse.com", 14, 46);
-
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
       doc.text(`Invoice No: ${invoiceNo}`, pageWidth - 14, 34, { align: "right" });
       doc.text(`Order ID: ${orderId}`, pageWidth - 14, 42, { align: "right" });
 
-      doc.line(14, 55, pageWidth - 14, 55);
+      const headerEndY = Math.max(yCursor + 8, 55);
+      doc.line(14, headerEndY, pageWidth - 14, headerEndY);
 
+      const billToY = headerEndY + 10;
       doc.setFontSize(12);
-      doc.text("Billed To", 14, 65);
+      doc.text("Billed To", 14, billToY);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text(String(customerName), 14, 73);
-      doc.text(String(customerEmail), 14, 80);
+      doc.text(String(customerName), 14, billToY + 8);
+      doc.text(String(customerEmail), 14, billToY + 15);
 
       doc.setFont("helvetica", "bold");
-      doc.text("Payment Details", pageWidth - 14, 65, { align: "right" });
+      doc.text("Payment Details", pageWidth - 14, billToY, { align: "right" });
 
       doc.setFont("helvetica", "normal");
-      doc.text(`Method: ${paymentMethod}`, pageWidth - 14, 73, { align: "right" });
-      doc.text(`Status: ${paymentStatus}`, pageWidth - 14, 80, { align: "right" });
+      doc.text(`Method: ${paymentMethod}`, pageWidth - 14, billToY + 8, { align: "right" });
+      doc.text(`Status: ${paymentStatus}`, pageWidth - 14, billToY + 15, { align: "right" });
+
+      const tableStartY = billToY + 27;
 
       const tableBody = items.map((item: any) => {
         const name =
@@ -1309,7 +1362,7 @@ export function Pos() {
       });
 
       autoTable(doc, {
-        startY: 92,
+        startY: tableStartY,
         head: [["Item", "Qty", "Price", "Amount"]],
         body: tableBody,
         theme: "grid",
@@ -1324,13 +1377,22 @@ export function Pos() {
         }
       });
 
-      let finalY = (doc as any).lastAutoTable.finalY + 10;
+      let finalY = (doc as any).lastAutoTable.finalY + 8;
+
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const bottomMargin = 20;
+
+      if (finalY + 30 > pageHeight - bottomMargin) {
+        doc.addPage();
+        finalY = 20;
+      }
 
       doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
       doc.text("Subtotal:", pageWidth - 60, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
-      finalY += 8;
+      finalY += 7;
       doc.text("Tax:", pageWidth - 60, finalY);
       doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
 
@@ -1784,32 +1846,68 @@ export function Pos() {
                       {/* Premium Accent Corner */}
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#b89146]/5 -mr-16 -mt-16 rounded-full blur-2xl print:hidden"></div>
 
-                      {/* Invoice Header */}
-                      <div className="flex justify-between items-start mb-8 pb-6 border-b border-[#e6d5b8]/50 relative z-10">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="h-8 w-1.5 bg-[#b89146] rounded-full"></div>
-                            <h3 className="text-3xl font-black text-[#111111] tracking-tight">INVOICE</h3>
+                      {/* Store / Business Header */}
+                      <div className="mb-6 pb-6 border-b border-[#e6d5b8]/50 relative z-10">
+                        <div className="flex items-start gap-4">
+                          {(() => {
+                            const logoUrl = getFullImageUrl(latestInvoiceData.business?.logo);
+                            return logoUrl ? (
+                              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white overflow-hidden shadow-sm border border-[#e6d5b8]/20 shrink-0">
+                                <img
+                                  src={logoUrl}
+                                  alt={latestInvoiceData.business?.name || "Store logo"}
+                                  className="h-full w-full object-cover"
+                                  crossOrigin="anonymous"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).onerror = null;
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                    const parent = (e.target as HTMLImageElement).closest('.flex');
+                                    if (parent) (parent as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            ) : null;
+                          })()}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-xl font-black text-[#111111] tracking-tight uppercase truncate">
+                              {latestInvoiceData.business?.name || "INVOICE"}
+                            </h3>
+                            {latestInvoiceData.business?.tagline ? (
+                              <p className="text-xs text-[#b89146] font-medium italic mt-0.5">{latestInvoiceData.business.tagline}</p>
+                            ) : null}
+                            <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                              {latestInvoiceData.business?.address ? (
+                                <p className="text-[10px] text-gray-500">{latestInvoiceData.business.address}</p>
+                              ) : null}
+                              {latestInvoiceData.business?.phone ? (
+                                <p className="text-[10px] text-gray-500">Ph: {latestInvoiceData.business.phone}</p>
+                              ) : null}
+                              {latestInvoiceData.business?.email ? (
+                                <p className="text-[10px] text-gray-500">{latestInvoiceData.business.email}</p>
+                              ) : null}
+                            </div>
                           </div>
-                          <p className="text-sm text-[#b89146] font-bold tracking-wider">{latestInvoiceData.invoiceNumber}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Order ID:</p>
-                            <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5">{latestInvoiceData.orderId}</p>
+                          <div className="text-right shrink-0">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-4">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {latestInvoiceData.paymentStatus === 'Paid' || latestInvoiceData.paymentStatus === 'Completed' ? 'Payment Success' : latestInvoiceData.paymentStatus}
+                            </div>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Date</p>
+                            <p className="text-sm font-bold text-[#111111]">
+                              {new Date(latestInvoiceData.createdAt || Date.now()).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'long',
+                                year: 'numeric'
+                              })}
+                            </p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-4">
-                            <CheckCircle2 className="h-3 w-3" />
-                            {latestInvoiceData.paymentStatus === 'Paid' || latestInvoiceData.paymentStatus === 'Completed' ? 'Payment Success' : latestInvoiceData.paymentStatus}
-                          </div>
-                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Date</p>
-                          <p className="text-sm font-bold text-[#111111]">
-                            {new Date(latestInvoiceData.createdAt || Date.now()).toLocaleDateString('en-IN', {
-                              day: '2-digit',
-                              month: 'long',
-                              year: 'numeric'
-                            })}
-                          </p>
+                        <div className="flex items-center gap-2 mt-3">
+                          <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Invoice No:</p>
+                          <p className="text-xs text-[#b89146] font-bold tracking-wider">{latestInvoiceData.invoiceNumber}</p>
+                          <span className="text-gray-300 mx-1">|</span>
+                          <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Order ID:</p>
+                          <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5">{latestInvoiceData.orderId}</p>
                         </div>
                       </div>
 

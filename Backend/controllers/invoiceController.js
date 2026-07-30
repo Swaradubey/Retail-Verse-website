@@ -12,6 +12,7 @@ const { isValidObjectId, resolveClientId } = require("../utils/tenantResolver");
 async function resolveBusinessProfile(clientInput) {
   const business = {
     name: "",
+    tagline: "",
     logo: "",
     address: "",
     email: "",
@@ -40,6 +41,7 @@ async function resolveBusinessProfile(clientInput) {
 
   if (client) {
     business.name = client.companyName || client.shopName || "";
+    business.tagline = client.brandingName || "";
     business.logo = client.logo || "";
     business.address = client.permanentAddress || "";
     business.email = client.email || "";
@@ -546,7 +548,7 @@ const sendInvoiceSMS = async (req, res) => {
       });
     }
 
-    const storeName = process.env.SMTP_FROM_NAME || "RetailVerse";
+    const storeName = invoiceData?.business?.name || process.env.SMTP_FROM_NAME || "Invoice";
     const total = invoiceData.totalAmount || invoiceData.subtotal || 0;
     const formattedTotal = total.toLocaleString("en-IN", { minimumFractionDigits: 2 });
     const orderId = invoiceData.orderId || invoiceData.invoiceNumber || "N/A";

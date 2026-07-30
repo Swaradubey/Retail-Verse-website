@@ -220,6 +220,13 @@ function buildInvoiceEmailHtml(invoice) {
     year: "numeric",
   });
 
+  const business = invoice.business || {};
+  const businessName = business.name || "";
+  const businessAddress = business.address || "";
+  const businessEmail = business.email || "";
+  const businessPhone = business.phone || "";
+  const businessLogo = business.logo || "";
+
   const itemsHtml = (invoice.items || [])
     .map(
       (item, idx) => `
@@ -252,10 +259,12 @@ function buildInvoiceEmailHtml(invoice) {
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
+                    ${businessLogo ? `<img src="${businessLogo}" alt="Logo" style="max-height: 48px; max-width: 120px; object-fit: contain; display: block; margin-bottom: 12px;" />` : ""}
                     <div style="display: inline-block; width: 5px; height: 32px; background-color: #b89146; border-radius: 3px; vertical-align: middle; margin-right: 10px;"></div>
-                    <span style="font-size: 28px; font-weight: 900; color: #111111; letter-spacing: -0.5px; vertical-align: middle;">INVOICE</span>
+                    <span style="font-size: 12px; font-weight: 900; color: #111111; letter-spacing: 0px; vertical-align: middle;">${businessName ? businessName.toUpperCase() : "INVOICE"}</span>
+                    ${businessName ? `<br><span style="font-size: 10px; font-weight: 400; color: #888;">${businessAddress ? businessAddress + (businessPhone || businessEmail ? " | " : "") : ""}${businessPhone ? "Ph: " + businessPhone : ""}${businessEmail ? (businessPhone ? " | " : "") + businessEmail : ""}</span>` : ""}
                     <br>
-                    <span style="font-size: 14px; font-weight: 700; color: #b89146; letter-spacing: 1px; margin-top: 4px; display: inline-block;">${invoice.invoiceNumber}</span>
+                    <span style="font-size: 14px; font-weight: 700; color: #b89146; letter-spacing: 1px; margin-top: 8px; display: inline-block;">${invoice.invoiceNumber}</span>
                   </td>
                   <td style="text-align: right; vertical-align: top;">
                     <div style="display: inline-block; background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">
@@ -346,7 +355,7 @@ function buildInvoiceEmailHtml(invoice) {
           <tr>
             <td style="padding: 24px 32px; text-align: center; border-top: 1px solid #f0e6d2; background-color: rgba(184,145,70,0.03);">
               <p style="margin: 0; font-size: 12px; color: #999; font-style: italic;">Thank you for your business. We hope to see you again soon!</p>
-              <p style="margin: 8px 0 0 0; font-size: 10px; color: #ccc;">This invoice was generated automatically by RetailVerse POS.</p>
+              ${businessName ? `<p style="margin: 8px 0 0 0; font-size: 10px; color: #ccc;">${businessName}</p>` : ""}
             </td>
           </tr>
 

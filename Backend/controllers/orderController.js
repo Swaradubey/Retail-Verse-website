@@ -1057,10 +1057,35 @@ const createOrder = async (req, res) => {
         }
       }
 
+      // Resolve client business profile for the response
+      let business = null;
+      if (responseOrder.clientId) {
+        try {
+          const clientDoc = await Client.findById(responseOrder.clientId);
+          if (clientDoc) {
+            business = {
+              name: clientDoc.companyName || clientDoc.shopName || "",
+              tagline: clientDoc.brandingName || "",
+              address: clientDoc.permanentAddress || "",
+              email: clientDoc.email || "",
+              phone: clientDoc.phone || "",
+              logo: clientDoc.logo || null,
+            };
+          }
+        } catch (bErr) {
+          console.warn("[createOrder] Failed to resolve business profile:", bErr.message);
+        }
+      }
+
+      const orderData = enrichOrderTracking(responseOrder);
+      if (business) {
+        orderData.business = business;
+      }
+
       res.status(201).json({
         success: true,
         message: "Order placed successfully",
-        data: enrichOrderTracking(responseOrder),
+        data: orderData,
       });
 
     } catch (saveError) {
@@ -1071,10 +1096,32 @@ const createOrder = async (req, res) => {
             "[BACKEND] Duplicate key on offlineOrderId; returning existing:",
             existingDup.orderId
           );
+          let dupBusiness = null;
+          if (existingDup.clientId) {
+            try {
+              const dupClient = await Client.findById(existingDup.clientId);
+              if (dupClient) {
+                dupBusiness = {
+                  name: dupClient.companyName || dupClient.shopName || "",
+                  tagline: dupClient.brandingName || "",
+                  address: dupClient.permanentAddress || "",
+                  email: dupClient.email || "",
+                  phone: dupClient.phone || "",
+                  logo: dupClient.logo || null,
+                };
+              }
+            } catch (bErr) {
+              console.warn("[createOrder] Failed to resolve business profile for duplicate:", bErr.message);
+            }
+          }
+          const dupOrderData = enrichOrderTracking(existingDup);
+          if (dupBusiness) {
+            dupOrderData.business = dupBusiness;
+          }
           return res.status(200).json({
             success: true,
             message: "Order already recorded",
-            data: enrichOrderTracking(existingDup),
+            data: dupOrderData,
           });
         }
       }
