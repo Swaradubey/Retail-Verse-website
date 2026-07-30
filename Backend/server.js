@@ -179,6 +179,7 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Session middleware (required for Passport OAuth flow)
 app.use(

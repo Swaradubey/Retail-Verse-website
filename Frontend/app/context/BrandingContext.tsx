@@ -112,6 +112,16 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   const reloadBranding = useCallback(async () => {
     setIsLoading(true);
     try {
+      const targetClientId = authUser?.clientId || localStorage.getItem(SELECTED_CLIENT_ID_KEY);
+      if (targetClientId) {
+        const res = await ApiService.get(`/api/public/branding/${targetClientId}`);
+        if (res && res.success && res.branding) {
+          setBranding(res.branding);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const hostname = window.location.hostname;
       if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
         const res = await ApiService.get(`/api/public/branding?domain=${hostname}`);
@@ -126,7 +136,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     }
     setBranding(null);
     setIsLoading(false);
-  }, []);
+  }, [authUser]);
 
   return (
     <BrandingContext.Provider value={{ branding, isLoading, updateBranding, reloadBranding }}>
@@ -155,7 +165,7 @@ export function useBranding() {
     ? `© ${new Date().getFullYear()} Retail Verse. All rights reserved. | Powered by Hexerve`
     : ctx.branding?.footerText || `© 2026 ${brandName}. All rights reserved. | Powered by Hexerve`;
 
-  const logo = isSuperAdmin ? '' : ctx.branding?.logo || '';
+  const logo = isSuperAdmin ? '' : ctx.branding?.logo || (user as any)?.storeSettings?.logoUrl || '';
   const primaryColor = isSuperAdmin ? '' : ctx.branding?.primaryColor || '';
 
   return {

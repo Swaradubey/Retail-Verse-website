@@ -14,12 +14,17 @@ import {
   Eye,
   EyeOff,
   Palette,
+  Upload,
+  Trash2,
+  Image,
+  ShoppingBag,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Switch } from '../../components/ui/switch';
 import { useAuth } from '../../context/AuthContext';
+import { useBranding } from '../../context/BrandingContext';
 import { normalizeRole } from '../../utils/staffRoles';
 import {
   settingsApi,
@@ -31,6 +36,7 @@ import {
   type SettingsSecurity,
   type SettingsBilling,
 } from '../../api/settings';
+import { getFullImageUrl } from '../../utils/imageUrl';
 import { SuperAdminThemeManagement } from './SuperAdminThemeManagement';
 import { ClientThemeManagement } from './ClientThemeManagement';
 
@@ -94,6 +100,7 @@ function defaultPayloadFromAuth(user: {
       timezone: 'UTC',
       taxRate: 0,
       language: 'en',
+      logoUrl: null,
     },
     notifications: {
       emailNotifications: true,
@@ -151,8 +158,10 @@ function isKnownCountry(value: string): value is (typeof COUNTRY_OPTIONS)[number
 
 export function DashboardSettings() {
   const { user, token, patchUser, isLoading: authLoading } = useAuth();
+  const { reloadBranding } = useBranding();
   const [activeTab, setActiveTab] = useState('profile');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   const [baseline, setBaseline] = useState<SettingsPayload | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -162,6 +171,19 @@ export function DashboardSettings() {
   const [notifications, setNotifications] = useState<SettingsNotifications | null>(null);
   const [security, setSecurity] = useState<SettingsSecurity | null>(null);
   const [billing, setBilling] = useState<SettingsBilling | null>(null);
+
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoError, setLogoError] = useState<string>('');
+  const [removeLogo, setRemoveLogo] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (logoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(logoPreview);
+      }
+    };
+  }, [logoPreview]);
 
   // Razorpay Integration States
   const [razorpayEnabled, setRazorpayEnabled] = useState(false);
@@ -300,6 +322,13 @@ export function DashboardSettings() {
 
   const resetStore = async () => {
     setSectionError(null);
+    setLogoFile(null);
+    if (logoPreview && logoPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(logoPreview);
+    }
+    setLogoPreview('');
+    setLogoError('');
+    setRemoveLogo(false);
     if (!token) {
       if (!baseline) return;
       setStore(clonePayload(baseline).store);
@@ -480,10 +509,28 @@ export function DashboardSettings() {
     setSavingSection('store');
     setSectionError(null);
     try {
+      let finalLogoUrl = store.logoUrl || null;
+      let logoWasChanged = false;
+
+      if (logoFile) {
+        const uploadRes = await settingsApi.uploadLogo(logoFile);
+        if (uploadRes.success && uploadRes.logoUrl) {
+          finalLogoUrl = uploadRes.logoUrl;
+          logoWasChanged = true;
+        } else {
+          throw new Error(uploadRes.message || 'Failed to upload logo');
+        }
+      } else if (baseline?.store?.logoUrl !== store.logoUrl) {
+        logoWasChanged = true;
+      }
+
+      const storeToSave = { ...store, logoUrl: finalLogoUrl };
       const body = buildFullUpdateBody();
       if (!body) {
         throw new Error('Form is not ready to save');
       }
+      body.store = storeToSave;
+
       console.log('[Settings Page] PUT /api/settings payload', JSON.stringify(body));
       const res = await settingsApi.updateFull(body);
       console.log('[Settings Page] PUT /api/settings response', res);
@@ -491,7 +538,21 @@ export function DashboardSettings() {
         const normalized = normalizeSettingsPayload(res.data as SettingsPayload);
         setBaseline(clonePayload(normalized));
         applyPayload(normalized);
-        toast.success('Settings saved successfully');
+        setLogoFile(null);
+        if (logoPreview && logoPreview.startsWith('blob:')) {
+          URL.revokeObjectURL(logoPreview);
+        }
+        setLogoPreview('');
+        setLogoError('');
+        setRemoveLogo(false);
+        if (reloadBranding) {
+          await reloadBranding();
+        }
+        if (logoWasChanged) {
+          toast.success('Website logo updated successfully.');
+        } else {
+          toast.success('Settings saved successfully');
+        }
       } else {
         throw new Error(res.message || 'Save failed');
       }
@@ -499,7 +560,7 @@ export function DashboardSettings() {
       console.error('[Settings Page] PUT /api/settings error', e);
       const msg = e instanceof Error ? e.message : 'Failed to save settings';
       setSectionError(msg);
-      toast.error('Failed to save settings');
+      toast.error(msg);
     } finally {
       setSavingSection(null);
     }
@@ -721,6 +782,63 @@ export function DashboardSettings() {
     }
   };
 
+  const onPickLogo = () => logoFileInputRef.current?.click();
+
+  const handleLogoFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    const allowedTypes = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+    ];
+
+    const maxFileSize = 2 * 1024 * 1024;
+
+    if (!allowedTypes.includes(file.type)) {
+      setLogoError("Please upload a PNG, JPG, JPEG or WEBP image.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > maxFileSize) {
+      setLogoError("Logo file must be smaller than 2 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    setLogoError("");
+    setLogoFile(file);
+
+    const previewUrl = URL.createObjectURL(file);
+
+    setLogoPreview((previousPreview) => {
+      if (
+        previousPreview &&
+        previousPreview.startsWith("blob:")
+      ) {
+        URL.revokeObjectURL(previousPreview);
+      }
+
+      return previewUrl;
+    });
+
+    setRemoveLogo(false);
+  };
+
+  const handleRemoveLogo = () => {
+    setLogoFile(null);
+    if (logoPreview && logoPreview.startsWith("blob:")) {
+      URL.revokeObjectURL(logoPreview);
+    }
+    setLogoPreview("");
+    setLogoError("");
+    setRemoveLogo(true);
+    setStore((prev) => (prev ? { ...prev, logoUrl: null } : prev));
+  };
+
   const onPickPhoto = () => fileInputRef.current?.click();
 
   const onPhotoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -772,6 +890,13 @@ export function DashboardSettings() {
         accept="image/png,image/jpeg,image/webp"
         className="hidden"
         onChange={onPhotoFile}
+      />
+      <input
+        ref={logoFileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={handleLogoFile}
       />
 
       <div className="w-full lg:w-72 space-y-2">
@@ -1026,6 +1151,79 @@ export function DashboardSettings() {
                 {sectionError && activeTab === 'store' && (
                   <p className="text-sm text-rose-500 font-medium">{sectionError}</p>
                 )}
+
+                {/* Website Logo Management Section */}
+                <div className="p-6 rounded-2xl bg-gray-50/50 dark:bg-white/5 border border-gray-100 dark:border-white/10 space-y-4">
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">Website Logo</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Upload the logo displayed on your online store.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 pt-1">
+                    <div className="relative group">
+                      <div className="w-24 h-24 rounded-2xl bg-white dark:bg-black/40 overflow-hidden border-2 border-dashed border-gray-200 dark:border-white/10 flex items-center justify-center p-2 shadow-inner">
+                        {logoPreview || store.logoUrl ? (
+                          <img
+                            src={logoPreview || getFullImageUrl(store.logoUrl)}
+                            alt={`${store.storeName || 'Store'} logo`}
+                            className="w-full h-full object-contain"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).onerror = null;
+                              (e.target as HTMLImageElement).src = '';
+                            }}
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-muted-foreground p-2 text-center">
+                            <ShoppingBag className="w-8 h-8 opacity-40 mb-1 text-blue-600" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider opacity-60">No Logo</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground max-w-[400px] leading-relaxed">
+                        Recommended: 512 × 512 px. PNG, JPG or WEBP. Maximum 2 MB.
+                      </p>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 rounded-xl text-xs font-bold border-gray-200 dark:border-white/10 flex items-center gap-2"
+                          onClick={onPickLogo}
+                          disabled={disabledForm}
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload New Logo
+                        </Button>
+                        {(logoPreview || store.logoUrl) && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 rounded-xl text-xs font-bold text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 flex items-center gap-2"
+                            onClick={handleRemoveLogo}
+                            disabled={disabledForm}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Remove Logo
+                          </Button>
+                        )}
+                      </div>
+                      {logoError && (
+                        <p className="text-xs text-rose-500 font-semibold">{logoError}</p>
+                      )}
+                      {logoFile && !logoError && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          New logo selected ({logoFile.name}). Click "Save Changes" to apply.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid gap-6 md:grid-cols-2">
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-[12px] font-bold text-muted-foreground uppercase tracking-wider ml-1">

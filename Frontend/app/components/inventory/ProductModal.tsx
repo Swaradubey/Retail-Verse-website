@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, AlertCircle, Package, Hash, Tag, IndianRupee, Database, Image as ImageIcon, FileText, Camera, Store } from 'lucide-react';
+import { X, Save, AlertCircle, Package, Hash, Tag, IndianRupee, Database, Image as ImageIcon, FileText, Camera, Store, Barcode } from 'lucide-react';
 import api from '../../api/apiService';
 import * as marketplaceApi from '../../services/marketplaceApi';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -65,8 +65,32 @@ export function ProductModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const skuInputRef = useRef<HTMLInputElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showCameraCapture, setShowCameraCapture] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isSkuFocused, setIsSkuFocused] = useState(false);
+  const [scanStatusMessage, setScanStatusMessage] = useState<string | null>(null);
+
+  const focusSkuInput = () => {
+    skuInputRef.current?.focus();
+  };
+
+  const handleSkuKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const scannedSku = formData.sku?.trim();
+      if (scannedSku) {
+        setScanStatusMessage("Barcode captured");
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+        statusTimeoutRef.current = setTimeout(() => {
+          setScanStatusMessage(null);
+        }, 2500);
+      }
+      categoryRef.current?.focus();
+    }
+  };
 
   const stopCameraStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -128,10 +152,17 @@ export function ProductModal({
     if (!isOpen) {
       stopCameraStream();
       setShowCameraCapture(false);
+      setScanStatusMessage(null);
+      setIsSkuFocused(false);
     }
   }, [isOpen, stopCameraStream]);
 
-  useEffect(() => () => stopCameraStream(), [stopCameraStream]);
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    };
+  }, [stopCameraStream]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -250,7 +281,7 @@ export function ProductModal({
       // backend fields (name, sku, category, price, stock) are always present.
       mappedPayload = {
         name: formData.productName || product.name || '',
-        sku: formData.sku || product.sku || '',
+        sku: (formData.sku || product.sku || '').trim(),
         category: formData.category || product.category || '',
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
@@ -259,8 +290,8 @@ export function ProductModal({
       };
     } else {
       mappedPayload = {
-        name: formData.productName,
-        sku: formData.sku,
+        name: formData.productName.trim(),
+        sku: formData.sku.trim(),
         category: formData.category,
         price: formData.unitPrice,
         stock: formData.stockLevel,
@@ -410,15 +441,45 @@ export function ProductModal({
                         <Hash className="w-4 h-4 text-indigo-500" />
                         SKU Code
                       </label>
-                      <input
-                        type="text"
-                        name="sku"
-                        required
-                        value={formData.sku}
-                        onChange={handleChange}
-                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-400"
-                        placeholder="e.g. WL-HS-101"
-                      />
+                      <div className="relative flex items-center">
+                        <input
+                          ref={skuInputRef}
+                          type="text"
+                          name="sku"
+                          required
+                          maxLength={100}
+                          value={formData.sku}
+                          onChange={handleChange}
+                          onKeyDown={handleSkuKeyDown}
+                          onFocus={() => setIsSkuFocused(true)}
+                          onBlur={() => setIsSkuFocused(false)}
+                          className="w-full pl-4 pr-11 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-400"
+                          placeholder="Scan barcode or enter SKU"
+                        />
+                        <button
+                          type="button"
+                          onClick={focusSkuInput}
+                          aria-label="Focus SKU field for barcode scanning"
+                          title="Focus SKU field for barcode scanning"
+                          className="absolute right-2 p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        >
+                          <Barcode className="w-5 h-5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-gray-500 dark:text-gray-400">
+                          Click the SKU field and scan the product barcode.
+                        </span>
+                        {scanStatusMessage ? (
+                          <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                            {scanStatusMessage}
+                          </span>
+                        ) : isSkuFocused ? (
+                          <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                            Scanner ready
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
 
                     {/* Category */}
@@ -428,6 +489,7 @@ export function ProductModal({
                         Category
                       </label>
                       <select
+                        ref={categoryRef}
                         name="category"
                         required
                         value={formData.category}

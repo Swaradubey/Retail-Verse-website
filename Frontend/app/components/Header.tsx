@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
 import { canAccessInventoryEditor } from '../utils/inventoryPermissions';
 import { accountRoleBadgeText, accountRoleSubtitle, isCustomerAccountRole, isStaffRole, isSuperAdminRole, normalizeRole } from '../utils/staffRoles';
+import { getFullImageUrl } from '../utils/imageUrl';
 
 const HIDDEN_HEADER_ROLES = [
   'employee',
@@ -26,9 +27,10 @@ export function Header() {
   const hideStorefrontNavForSuperAdmin = Boolean(user && isSuperAdminRole(user.role));
 
   /** Dynamic brand name: super_admin always sees default; client user uses businessName; otherwise BrandingContext or default */
-  const { brandName: brandingBrandName, isLoading: brandingLoading } = useBranding();
+  const { brandName: brandingBrandName, logo: brandingLogo, isLoading: brandingLoading } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
+  const logoUrl = isSuperAdmin ? '' : brandingLogo || (user as any)?.storeSettings?.logoUrl || '';
   const brandName = isSuperAdmin
     ? 'Retail Verse'
     : isClientUser && user.businessName
@@ -76,9 +78,21 @@ export function Header() {
 
 
             <Link to="/" className="flex items-center gap-3 transition-opacity duration-300 hover:opacity-80">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
-                <ShoppingBag className="h-6 w-6 text-white" />
-              </div>
+              {logoUrl ? (
+                <img
+                  src={getFullImageUrl(logoUrl)}
+                  alt={`${brandName} logo`}
+                  className="h-11 max-w-[160px] object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).onerror = null;
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+                  <ShoppingBag className="h-6 w-6 text-white" />
+                </div>
+              )}
               <div className="flex flex-col leading-none">
                 <span className="text-lg font-bold tracking-tight text-[#111111] sm:text-xl">
                   {brandName}

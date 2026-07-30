@@ -18,6 +18,7 @@ export interface SettingsStore {
   timezone: string;
   taxRate: number;
   language: string;
+  logoUrl?: string | null;
 }
 
 export interface SettingsNotifications {
@@ -74,6 +75,12 @@ export const settingsApi = {
 
   updateStore: (body: Partial<SettingsStore>) =>
     ApiService.put<SettingsPayload>("/api/settings/store", body),
+
+  uploadLogo: (file: File) => {
+    const formData = new FormData();
+    formData.append("logo", file);
+    return ApiService.post<{ success: boolean; message: string; logoUrl: string }>("/api/settings/logo", formData);
+  },
 
   updateNotifications: (body: Partial<SettingsNotifications>) =>
     ApiService.put<SettingsPayload>("/api/settings/notifications", body),

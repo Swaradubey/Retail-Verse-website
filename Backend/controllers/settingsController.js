@@ -1,5 +1,8 @@
 const User = require("../models/User");
 const UserSettings = require("../models/UserSettings");
+const Client = require("../models/Client");
+const fs = require("fs");
+const path = require("path");
 const { validationResult } = require("express-validator");
 
 /** Base64 data URLs for avatars (~400KB binary) exceed short URL limits; keep under MongoDB practical size. */
@@ -16,8 +19,45 @@ function subdocToPlain(sub) {
   return { ...sub };
 }
 
+async function syncClientLogo(user, logoUrl) {
+  try {
+    const finalLogo = logoUrl || "";
+    let client = null;
+    if (user.clientId) {
+      client = await Client.findById(user.clientId);
+    } else {
+      client = await Client.findOne({ userId: user._id });
+    }
+    if (client) {
+      client.logo = finalLogo;
+      await client.save();
+    }
+  } catch (err) {
+    console.error("[settingsController] syncClientLogo error:", err.message);
+  }
+}
+
+function cleanupOldLogoFile(oldLogoUrl, newLogoUrl) {
+  if (!oldLogoUrl || oldLogoUrl === newLogoUrl) return;
+  if (typeof oldLogoUrl === "string" && oldLogoUrl.startsWith("/uploads/logos/")) {
+    const filename = path.basename(oldLogoUrl);
+    const logosDir = path.resolve(__dirname, "../uploads/logos");
+    const fullPath = path.join(logosDir, filename);
+    if (fullPath.startsWith(logosDir) && fs.existsSync(fullPath)) {
+      fs.unlink(fullPath, (err) => {
+        if (err) console.error("[settingsController] cleanupOldLogoFile error:", err.message);
+      });
+    }
+  }
+}
+
 function mergeStore(src) {
   const s = src && typeof src === "object" ? src : {};
+  let logoUrl = null;
+  if (s.logoUrl !== undefined && s.logoUrl !== null) {
+    const str = String(s.logoUrl).trim();
+    logoUrl = str.length > 0 ? str : null;
+  }
   return {
     storeName: String(s.storeName ?? "").trim(),
     storeEmail: String(s.storeEmail ?? "").trim(),
@@ -27,6 +67,7 @@ function mergeStore(src) {
     timezone: String(s.timezone ?? "UTC").trim() || "UTC",
     taxRate: Math.min(100, Math.max(0, Number(s.taxRate) || 0)),
     language: String(s.language ?? "en").trim() || "en",
+    logoUrl,
   };
 }
 
@@ -108,6 +149,7 @@ async function mirrorUserToSettingsDoc(user) {
         currency,
         notifications: n.emailNotifications,
         security2FA: sec.twoFactorEnabled,
+        logoUrl: s.logoUrl,
       },
     },
     { new: true, upsert: true, runValidators: true }
@@ -201,6 +243,7 @@ const updateSettings = async (req, res) => {
       }
     }
 
+    let oldLogoUrl = user.storeSettings ? user.storeSettings.logoUrl : null;
     if (body.store && typeof body.store === "object") {
       const prev = mergeStore(subdocToPlain(user.storeSettings));
       user.storeSettings = mergeStore({ ...prev, ...body.store });
@@ -272,6 +315,12 @@ const updateSettings = async (req, res) => {
     }
 
     await user.save();
+    const newLogoUrl = user.storeSettings ? user.storeSettings.logoUrl : null;
+    if (oldLogoUrl !== newLogoUrl) {
+      cleanupOldLogoFile(oldLogoUrl, newLogoUrl);
+    }
+    await syncClientLogo(user, newLogoUrl);
+
     const settingsDoc = await mirrorUserToSettingsDoc(user);
     const fresh = await User.findById(uid).select("-password");
     console.log("[SETTINGS UPDATE] saved doc:", settingsDoc?.toObject?.() ? settingsDoc.toObject() : settingsDoc);
@@ -419,9 +468,27 @@ const updateStore = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
+    const oldLogoUrl = user.storeSettings ? user.storeSettings.logoUrl : null;
     const prev = mergeStore(subdocToPlain(user.storeSettings));
-    user.storeSettings = mergeStore({ ...prev, ...req.body });
+    
+    let logoToSave = prev.logoUrl;
+    if (req.file) {
+      logoToSave = `/uploads/logos/${req.file.filename}`;
+    } else if (req.body.logoUrl !== undefined) {
+      logoToSave =
+        req.body.logoUrl === null || req.body.logoUrl === ""
+          ? null
+          : req.body.logoUrl;
+    }
+
+    user.storeSettings = mergeStore({ ...prev, ...req.body, logoUrl: logoToSave });
     await user.save();
+    const newLogoUrl = user.storeSettings ? user.storeSettings.logoUrl : null;
+    if (oldLogoUrl !== newLogoUrl) {
+      cleanupOldLogoFile(oldLogoUrl, newLogoUrl);
+    }
+    await syncClientLogo(user, newLogoUrl);
+
     await mirrorUserToSettingsDoc(user);
     const fresh = await User.findById(user._id).select("-password");
     res.json({
@@ -545,6 +612,47 @@ const updateBilling = async (req, res) => {
   }
 };
 
+const uploadLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No logo file uploaded" });
+    }
+
+    const file = req.file;
+    const allowedMimeTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp", "image/svg+xml"];
+    
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file format. Only PNG, JPG, WEBP, and SVG are accepted.",
+      });
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+      return res.status(400).json({
+        success: false,
+        message: "File size exceeds maximum limit of 2 MB.",
+      });
+    }
+
+    const publicUrl = `/uploads/logos/${file.filename}`;
+    return res.json({
+      success: true,
+      message: "Logo uploaded successfully",
+      logoUrl: publicUrl,
+    });
+  } catch (error) {
+    console.error("[settingsController] uploadLogo error:", error);
+    return res.status(500).json({ success: false, message: error.message || "Failed to upload logo" });
+  }
+};
+
 module.exports = {
   getSettings,
   updateSettings,
@@ -554,4 +662,5 @@ module.exports = {
   updateNotifications,
   updateSecurity,
   updateBilling,
+  uploadLogo,
 };

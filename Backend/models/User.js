@@ -11,6 +11,7 @@ const storeSettingsSchema = new mongoose.Schema(
     timezone: { type: String, trim: true, default: "UTC" },
     taxRate: { type: Number, default: 0 },
     language: { type: String, trim: true, default: "en" },
+    logoUrl: { type: String, trim: true, default: null },
   },
   { _id: false }
 );

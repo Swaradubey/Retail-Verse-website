@@ -1,22 +1,8 @@
-/**
- * Standardized API service for the EcoShop frontend.
- * Handles base URL, headers, authentication, and error parsing.
- *
- * Environment variable used: VITE_API_BASE_URL
- *   Local:      http://localhost:5000   (set in .env)
- *   Production: https://your-backend.onrender.com  (set in Vercel env vars)
- */
+
 
 const TOKEN_KEY = "eco_shop_token";
 
-/**
- * Read the env var once at module load time.
- * VITE_API_BASE_URL may be:
- *   - "http://localhost:5000"                  (local dev without /api suffix)
- *   - "http://localhost:5000/api"               (local dev with /api suffix)
- *   - "https://your-backend.onrender.com"       (production without /api suffix)
- *   - "https://your-backend.onrender.com/api"   (production with /api suffix)
- */
+
 const _RAW_API_BASE: string = (
   String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
 ).replace(/\/+$/, "");
@@ -65,10 +51,10 @@ class ApiService {
   ): Promise<ApiResponse<T>> {
     const url = buildApiUrl(endpoint);
     const pageName = options.pageName || "Unknown Page";
-    
+
     // Auto-inject Authorization header if token exists
     const token = localStorage.getItem(TOKEN_KEY);
-    
+
     // Get user from storage to check role and clientId
     let userRole = "";
     let userClientId = null;
@@ -84,7 +70,7 @@ class ApiService {
     }
 
     const isPrivileged = userRole === "admin" || userRole === "super_admin";
-    
+
     // Priority for x-client-id:
     // 1. User's own clientId or linkedClientId or assignedClient (works for admins, managers, and assigned customers)
     // 2. localStorage retail_verse_client_id if guest or unassigned (STRICTLY for non-privileged users)
@@ -112,12 +98,14 @@ class ApiService {
     const normalizedRole = String(userRole || "").toLowerCase().trim().replace(/[_-]/g, " ");
     const isAdmin = normalizedRole === "admin";
     const isSuperAdmin = normalizedRole === "super admin" || normalizedRole === "superadmin";
-    
+
     const shouldSendClientId = clientId && !isSuperAdmin && !isAdmin && clientId !== "null" && clientId !== "undefined" && clientId !== "all";
 
 
+    const isFormData = options.body instanceof FormData;
+
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(shouldSendClientId ? { "x-client-id": String(clientId) } : {}),
       "x-client-domain": window.location.hostname,
@@ -128,9 +116,9 @@ class ApiService {
     try {
       // Requirement 16: Log Request URL, Method, Page Name
       console.log(`[ApiService] [${pageName}] ${options.method || 'GET'} ${url}`);
-      
+
       const response = await fetch(url, { ...options, headers });
-      
+
       // Requirement 16: Log Status
       console.log(`[ApiService] [${pageName}] Status: ${response.status}`);
 
@@ -150,12 +138,12 @@ class ApiService {
           console.error(`[ApiService] Dashboard API Request Failed: URL="${url}" Status=${response.status}`);
         }
         console.error(`[ApiService] [${pageName}] Error:`, data.message || response.statusText);
-        
+
         if (response.status === 401) {
           localStorage.removeItem(TOKEN_KEY);
           localStorage.removeItem("eco_shop_user");
         }
-        
+
         throw new Error(data.message || data.error || `Request failed with status ${response.status}`);
       }
 
@@ -174,7 +162,7 @@ class ApiService {
     return this.request<T>(endpoint, {
       ...options,
       method: "POST",
-      body: JSON.stringify(body),
+      body: body instanceof FormData ? body : (typeof body === "string" ? body : JSON.stringify(body)),
     });
   }
 
@@ -182,7 +170,7 @@ class ApiService {
     return this.request<T>(endpoint, {
       ...options,
       method: "PUT",
-      body: JSON.stringify(body),
+      body: body instanceof FormData ? body : (typeof body === "string" ? body : JSON.stringify(body)),
     });
   }
 
@@ -190,7 +178,7 @@ class ApiService {
     return this.request<T>(endpoint, {
       ...options,
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: body instanceof FormData ? body : (typeof body === "string" ? body : JSON.stringify(body)),
     });
   }
 

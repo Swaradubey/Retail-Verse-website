@@ -15,6 +15,7 @@ const userSettingsSchema = new mongoose.Schema(
     currency: { type: String, default: "INR" },
     notifications: { type: Boolean, default: true },
     security2FA: { type: Boolean, default: false },
+    logoUrl: { type: String, default: null },
   },
   { timestamps: true, collection: "settings" }
 );
