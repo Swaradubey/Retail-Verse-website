@@ -3,6 +3,7 @@ import { Search, ShoppingBag, Heart, Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { useBranding } from '../../context/BrandingContext';
 import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
 
 const NAV_ITEMS = [
   { label: 'New In', href: '/shop' },
@@ -19,6 +20,7 @@ export function LuxeHeader() {
   const [scrolled, setScrolled] = useState(false);
   const { brandName: brandingBrandName } = useBranding();
   const { user } = useAuth();
+  const { cartCount } = useCart();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
@@ -89,7 +91,7 @@ export function LuxeHeader() {
             </Link>
             <Link to="/cart" className="p-2 text-gray-600 hover:text-[#1a1a2e] transition-colors relative" aria-label="Cart">
               <ShoppingBag className="w-5 h-5" />
-              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#c9a96e] text-white text-[9px] font-bold rounded-full flex items-center justify-center">0</span>
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-[#c9a96e] text-white text-[9px] font-bold rounded-full flex items-center justify-center">{cartCount}</span>
             </Link>
           </div>
         </div>

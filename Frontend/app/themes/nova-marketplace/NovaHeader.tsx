@@ -3,6 +3,7 @@ import { Search, ShoppingCart, Menu, X, ChevronDown, MapPin, Phone, ShoppingBag 
 import { useState } from 'react';
 import { useBranding } from '../../context/BrandingContext';
 import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
 
 const CATEGORIES = [
   { label: 'Electronics', href: '/shop' },
@@ -18,6 +19,7 @@ export function NovaHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { brandName: brandingBrandName } = useBranding();
   const { user } = useAuth();
+  const { cartCount } = useCart();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const brandName = isSuperAdmin
@@ -78,7 +80,7 @@ export function NovaHeader() {
           <Link to="/cart" className="ml-auto flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-semibold">
             <ShoppingCart className="w-4 h-4" />
             <span className="hidden sm:inline">Cart</span>
-            <span className="bg-white text-blue-600 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center">0</span>
+            <span className="bg-white text-blue-600 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center">{cartCount}</span>
           </Link>
         </div>
       </div>

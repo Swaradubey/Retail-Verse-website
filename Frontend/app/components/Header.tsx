@@ -157,11 +157,9 @@ export function Header() {
                   className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
                 >
                   <ShoppingCart className="h-5 w-5" />
-                  {cartCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[10px] font-bold text-black shadow-sm">
-                      {cartCount}
-                    </span>
-                  )}
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[10px] font-bold text-black shadow-sm">
+                    {cartCount}
+                  </span>
                 </Link>
               )}
 
@@ -225,11 +223,9 @@ export function Header() {
                   className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
                 >
                   <ShoppingCart className="h-4.5 w-4.5" />
-                  {cartCount > 0 && (
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
-                      {cartCount}
-                    </span>
-                  )}
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
+                    {cartCount}
+                  </span>
                 </Link>
               )}
 

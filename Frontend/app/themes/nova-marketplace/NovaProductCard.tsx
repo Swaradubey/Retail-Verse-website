@@ -1,7 +1,11 @@
+import React from 'react';
 import { Link } from 'react-router';
 import { ShoppingCart, Star, Heart } from 'lucide-react';
+import { useCart } from '../../context/CartContext';
+import { Product as ShopProduct } from '../../types/product';
 
 interface Product {
+  id?: string;
   _id?: string;
   name?: string;
   slug?: string;
@@ -17,11 +21,32 @@ interface Product {
 }
 
 export function NovaProductCard({ product }: { product: Product }) {
+  const { addToCart } = useCart();
   const outOfStock = product.stock !== undefined && product.stock <= 0;
+
+  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addToCart({
+      id: product.id || product._id || '',
+      _id: product._id,
+      name: product.name || 'Product',
+      slug: product.slug || '',
+      price: product.price || 0,
+      originalPrice: product.originalPrice,
+      description: '',
+      category: product.category || 'General',
+      image: product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=600&auto=format&fit=crop',
+      images: [product.image].filter(Boolean) as string[],
+      stock: product.stock ?? 100,
+      rating: product.rating || 0,
+      reviews: product.numReviews || 0,
+    } as ShopProduct);
+  };
 
   return (
     <div className="group bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-lg hover:border-blue-200 transition-all duration-300">
-      <Link to={`/product/${product.slug || product._id}`} className="block relative aspect-square bg-gray-50 overflow-hidden">
+      <Link to={`/product/${product.slug || product._id || product.id}`} className="block relative aspect-square bg-gray-50 overflow-hidden">
         <img
           src={product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=600&auto=format&fit=crop'}
           alt={product.name || 'Product'}
@@ -43,7 +68,7 @@ export function NovaProductCard({ product }: { product: Product }) {
       </Link>
       <div className="p-4">
         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1">{product.category || 'General'}</p>
-        <Link to={`/product/${product.slug || product._id}`} className="block text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors mb-2 line-clamp-2">
+        <Link to={`/product/${product.slug || product._id || product.id}`} className="block text-sm font-semibold text-gray-800 hover:text-blue-600 transition-colors mb-2 line-clamp-2">
           {product.name || 'Product Name'}
         </Link>
         <div className="flex items-center gap-1 mb-2">
@@ -63,7 +88,12 @@ export function NovaProductCard({ product }: { product: Product }) {
               <span className="text-xs text-gray-400 line-through">${product.originalPrice.toFixed(2)}</span>
             )}
           </div>
-          <button disabled={outOfStock} className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${outOfStock ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`} aria-label="Add to cart">
+          <button
+            onClick={handleAddToCart}
+            disabled={outOfStock}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${outOfStock ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+            aria-label="Add to cart"
+          >
             <ShoppingCart className="w-4 h-4" />
           </button>
         </div>

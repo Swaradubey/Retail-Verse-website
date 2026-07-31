@@ -1,5 +1,7 @@
 import { ShoppingCart, Heart, Truck, ShieldCheck, RotateCcw, Star, Minus, Plus } from 'lucide-react';
 import { useState } from 'react';
+import { useCart } from '../../context/CartContext';
+import { Product as ShopProduct } from '../../types/product';
 
 interface ProductDetailProps {
   product: any;
@@ -7,6 +9,26 @@ interface ProductDetailProps {
 
 export function NovaProductDetail({ product }: ProductDetailProps) {
   const [qty, setQty] = useState(1);
+  const { addToCart } = useCart();
+
+  const handleAddToCart = () => {
+    if (!product) return;
+    addToCart({
+      id: product.id || product._id || '',
+      _id: product._id,
+      name: product.name || 'Product',
+      slug: product.slug || '',
+      price: product.price || 0,
+      originalPrice: product.originalPrice,
+      description: product.description || '',
+      category: product.category || 'General',
+      image: product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=800&auto=format&fit=crop',
+      images: [product.image].filter(Boolean) as string[],
+      stock: product.stock ?? 100,
+      rating: product.rating || 0,
+      reviews: product.numReviews || 0,
+    } as ShopProduct, qty);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 pt-20 pb-10">
@@ -35,7 +57,7 @@ export function NovaProductDetail({ product }: ProductDetailProps) {
                   <div className="flex items-center gap-2 mb-4">
                     <div className="flex items-center">
                       {Array.from({ length: 5 }, (_, i) => (
-                        <span key={i} className={`text-sm ${i < Math.round(product.rating) ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
+                        <span key={i} className={`text-xs ${i < Math.round(product.rating) ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
                       ))}
                     </div>
                     <span className="text-xs text-gray-500">{product.numReviews || 0} reviews</span>
@@ -68,7 +90,10 @@ export function NovaProductDetail({ product }: ProductDetailProps) {
                 </div>
 
                 <div className="flex gap-3">
-                  <button className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/25">
+                  <button
+                    onClick={handleAddToCart}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-500/25"
+                  >
                     <ShoppingCart className="w-4 h-4" /> Add to Cart
                   </button>
                   <button className="w-12 h-12 border border-gray-300 rounded-lg flex items-center justify-center hover:bg-gray-50 transition-colors">

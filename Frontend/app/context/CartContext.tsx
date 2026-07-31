@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CartItem, Product } from '../types/product';
+import { toast } from 'sonner';
 
 interface CartContextType {
   cart: CartItem[];
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product, quantityToAdd?: number) => void;
   removeFromCart: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -25,25 +26,44 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    localStorage.setItem('cart', JSON.stringify(cart));
+    try {
+      localStorage.setItem('cart', JSON.stringify(cart));
+    } catch (e) {
+      console.error('Failed to save cart to localStorage:', e);
+    }
   }, [cart]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = (product: Product, quantityToAdd: number = 1) => {
+    const targetId = product.id || product._id;
+    if (!targetId) return;
+
+    const normalizedProduct: CartItem = {
+      ...product,
+      id: targetId,
+      _id: product._id || targetId,
+      image: product.image || (product.images && product.images[0]) || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=600&auto=format&fit=crop',
+      quantity: 1,
+    };
+
     setCart((prevCart) => {
-      const existingItem = prevCart.find((item) => item.id === product.id);
-      if (existingItem) {
-        return prevCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+      const existingIndex = prevCart.findIndex(
+        (item) => (item.id || item._id) === targetId
+      );
+      if (existingIndex > -1) {
+        return prevCart.map((item, idx) =>
+          idx === existingIndex
+            ? { ...item, quantity: item.quantity + quantityToAdd }
             : item
         );
       }
-      return [...prevCart, { ...product, quantity: 1 }];
+      return [...prevCart, { ...normalizedProduct, quantity: quantityToAdd }];
     });
+
+    toast.success(`Added ${product.name || 'item'} to cart`);
   };
 
   const removeFromCart = (productId: string) => {
-    setCart((prevCart) => prevCart.filter((item) => item.id !== productId));
+    setCart((prevCart) => prevCart.filter((item) => (item.id || item._id) !== productId));
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
@@ -53,7 +73,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
     setCart((prevCart) =>
       prevCart.map((item) =>
-        item.id === productId ? { ...item, quantity } : item
+        (item.id || item._id) === productId ? { ...item, quantity } : item
       )
     );
   };
@@ -93,3 +113,4 @@ export function useCart() {
   }
   return context;
 }
+

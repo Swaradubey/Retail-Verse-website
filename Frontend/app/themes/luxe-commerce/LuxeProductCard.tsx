@@ -1,7 +1,11 @@
+import React from 'react';
 import { Link } from 'react-router';
 import { Heart, ShoppingBag } from 'lucide-react';
+import { useCart } from '../../context/CartContext';
+import { Product as ShopProduct } from '../../types/product';
 
 interface Product {
+  id?: string;
   _id?: string;
   name?: string;
   slug?: string;
@@ -15,8 +19,30 @@ interface Product {
 }
 
 export function LuxeProductCard({ product }: { product: Product }) {
+  const { addToCart } = useCart();
+
+  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addToCart({
+      id: product.id || product._id || '',
+      _id: product._id,
+      name: product.name || 'Product',
+      slug: product.slug || '',
+      price: product.price || 0,
+      originalPrice: product.originalPrice,
+      description: '',
+      category: product.category || 'General',
+      image: product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=600&auto=format&fit=crop',
+      images: [product.image].filter(Boolean) as string[],
+      stock: 100,
+      rating: product.rating || 0,
+      reviews: 0,
+    } as ShopProduct);
+  };
+
   return (
-    <Link to={`/product/${product.slug || product._id}`} className="group block">
+    <Link to={`/product/${product.slug || product._id || product.id}`} className="group block">
       <div className="relative bg-[#fcfbf8] overflow-hidden mb-4">
         <div className="aspect-[3/4] overflow-hidden">
           <img
@@ -36,7 +62,10 @@ export function LuxeProductCard({ product }: { product: Product }) {
           </button>
         </div>
         <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-          <button className="w-full bg-[#1a1a2e] text-white text-[11px] font-bold uppercase tracking-widest py-3 flex items-center justify-center gap-2 hover:bg-[#c9a96e] transition-colors">
+          <button
+            onClick={handleAddToCart}
+            className="w-full bg-[#1a1a2e] text-white text-[11px] font-bold uppercase tracking-widest py-3 flex items-center justify-center gap-2 hover:bg-[#c9a96e] transition-colors"
+          >
             <ShoppingBag className="w-3.5 h-3.5" />
             Quick Add
           </button>

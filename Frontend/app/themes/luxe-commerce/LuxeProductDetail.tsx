@@ -1,10 +1,33 @@
 import { Heart, ShoppingBag, Truck, ShieldCheck, RotateCcw } from 'lucide-react';
+import { useCart } from '../../context/CartContext';
+import { Product as ShopProduct } from '../../types/product';
 
 interface ProductDetailProps {
   product: any;
 }
 
 export function LuxeProductDetail({ product }: ProductDetailProps) {
+  const { addToCart } = useCart();
+
+  const handleAddToCart = () => {
+    if (!product) return;
+    addToCart({
+      id: product.id || product._id || '',
+      _id: product._id,
+      name: product.name || 'Product',
+      slug: product.slug || '',
+      price: product.price || 0,
+      originalPrice: product.originalPrice,
+      description: product.description || '',
+      category: product.category || 'General',
+      image: product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=800&auto=format&fit=crop',
+      images: [product.image].filter(Boolean) as string[],
+      stock: product.stock ?? 100,
+      rating: product.rating || 0,
+      reviews: 0,
+    } as ShopProduct);
+  };
+
   return (
     <div className="min-h-screen bg-[#fcfbf8] pt-28 pb-16">
       <div className="max-w-[88rem] mx-auto px-6">
@@ -38,7 +61,10 @@ export function LuxeProductDetail({ product }: ProductDetailProps) {
             </p>
 
             <div className="space-y-4 mb-10">
-              <button className="w-full bg-[#1a1a2e] text-white py-4 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#c9a96e] transition-all duration-500">
+              <button
+                onClick={handleAddToCart}
+                className="w-full bg-[#1a1a2e] text-white py-4 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-[#c9a96e] transition-all duration-500"
+              >
                 <ShoppingBag className="w-4 h-4" />
                 Add to Bag
               </button>
