@@ -105,6 +105,7 @@ const getProducts = async (req, res) => {
       query.$or = [
         { name: { $regex: search, $options: "i" } },
         { sku: { $regex: search, $options: "i" } },
+        { barcode: { $regex: search, $options: "i" } },
         { category: { $regex: search, $options: "i" } },
         { description: { $regex: search, $options: "i" } }
       ];
@@ -285,7 +286,6 @@ const createProduct = async (req, res) => {
   }
 
   try {
-    const { sku } = req.body;
     const resolvedClientId = await resolveClientId(req);
     const role = normalizeRole(req.user?.role);
     
@@ -303,8 +303,29 @@ const createProduct = async (req, res) => {
        });
     }
 
+    // Process SKU and Barcode string formatting & fallbacks
+    let finalSku = String(req.body.sku || "").trim();
+    if (!finalSku) {
+      finalSku = "SKU-" + Date.now().toString(36).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+    }
+
+    let finalBarcode = String(req.body.barcode || "").trim();
+    if (!finalBarcode) {
+      finalBarcode = finalSku;
+    }
+
+    if (finalBarcode.length > 64) {
+      return res.status(400).json({
+        success: false,
+        message: "Barcode cannot exceed 64 characters",
+      });
+    }
+
+    req.body.sku = finalSku;
+    req.body.barcode = finalBarcode;
+
     // SKU uniqueness check (scoped to client if not global, or global if no client)
-    const skuQuery = { sku };
+    const skuQuery = { sku: finalSku };
     if (targetClientId) {
       skuQuery.clientId = targetClientId;
     } else {
@@ -315,12 +336,30 @@ const createProduct = async (req, res) => {
     if (existingProduct) {
       return res.status(400).json({
         success: false,
-        message: `A product with SKU "${sku}" already exists in your inventory.`,
+        message: `A product with SKU "${finalSku}" already exists in your inventory.`,
+      });
+    }
+
+    // Barcode uniqueness check (scoped to client/tenant)
+    const barcodeQuery = { barcode: finalBarcode };
+    if (targetClientId) {
+      barcodeQuery.clientId = targetClientId;
+    } else {
+      barcodeQuery.clientId = null;
+    }
+
+    const existingBarcode = await Product.findOne(barcodeQuery);
+    if (existingBarcode) {
+      return res.status(409).json({
+        success: false,
+        message: "A product with this barcode already exists.",
       });
     }
 
     // Prepare data
     const productData = normalizeSaleFields(req.body);
+    productData.sku = finalSku;
+    productData.barcode = finalBarcode;
     productData.createdBy = req.user._id;
     productData.createdByRole = role;
     productData.clientId = targetClientId || null;
@@ -562,16 +601,59 @@ const updateProduct = async (req, res) => {
       description: product.description,
     });
 
-    if (normalizedPayload.sku && normalizedPayload.sku !== product.sku) {
-      let skuQuery = { sku: normalizedPayload.sku };
-      applyScope(skuQuery, scopeQuery);
-      
-      const existingProduct = await Product.findOne(skuQuery);
-      if (existingProduct) {
+    if (normalizedPayload.sku !== undefined || normalizedPayload.barcode !== undefined) {
+      const targetClientId = product.clientId || resolvedClientId;
+      const currentSku = product.sku;
+      const currentBarcode = product.barcode;
+
+      let finalSku = normalizedPayload.sku !== undefined ? String(normalizedPayload.sku).trim() : currentSku;
+      if (!finalSku) finalSku = currentSku;
+
+      let finalBarcode = normalizedPayload.barcode !== undefined ? String(normalizedPayload.barcode).trim() : currentBarcode;
+      if (!finalBarcode) {
+        finalBarcode = finalSku;
+      }
+
+      if (finalBarcode.length > 64) {
         return res.status(400).json({
           success: false,
-          message: "Product with this SKU already exists",
+          message: "Barcode cannot exceed 64 characters",
         });
+      }
+
+      normalizedPayload.sku = finalSku;
+      normalizedPayload.barcode = finalBarcode;
+
+      if (finalSku !== currentSku) {
+        let skuQuery = { sku: finalSku, _id: { $ne: product._id } };
+        if (targetClientId) {
+          skuQuery.clientId = targetClientId;
+        } else {
+          skuQuery.clientId = null;
+        }
+        const existingProduct = await Product.findOne(skuQuery);
+        if (existingProduct) {
+          return res.status(400).json({
+            success: false,
+            message: `A product with SKU "${finalSku}" already exists in your inventory.`,
+          });
+        }
+      }
+
+      if (finalBarcode && finalBarcode !== currentBarcode) {
+        let barcodeQuery = { barcode: finalBarcode, _id: { $ne: product._id } };
+        if (targetClientId) {
+          barcodeQuery.clientId = targetClientId;
+        } else {
+          barcodeQuery.clientId = null;
+        }
+        const existingBarcode = await Product.findOne(barcodeQuery);
+        if (existingBarcode) {
+          return res.status(409).json({
+            success: false,
+            message: "A product with this barcode already exists.",
+          });
+        }
       }
     }
 

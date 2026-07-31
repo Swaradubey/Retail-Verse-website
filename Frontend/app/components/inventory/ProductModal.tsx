@@ -54,6 +54,7 @@ export function ProductModal({
   const [formData, setFormData] = useState({
     productName: '',
     sku: '',
+    barcode: '',
     category: '',
     unitPrice: 0,
     stockLevel: 0,
@@ -66,15 +67,21 @@ export function ProductModal({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const skuInputRef = useRef<HTMLInputElement>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
   const categoryRef = useRef<HTMLSelectElement>(null);
   const statusTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showCameraCapture, setShowCameraCapture] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [isSkuFocused, setIsSkuFocused] = useState(false);
+  const [isBarcodeFocused, setIsBarcodeFocused] = useState(false);
   const [scanStatusMessage, setScanStatusMessage] = useState<string | null>(null);
 
   const focusSkuInput = () => {
     skuInputRef.current?.focus();
+  };
+
+  const focusBarcodeInput = () => {
+    barcodeInputRef.current?.focus();
   };
 
   const handleSkuKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -82,6 +89,21 @@ export function ProductModal({
       e.preventDefault();
       const scannedSku = formData.sku?.trim();
       if (scannedSku) {
+        setScanStatusMessage("SKU captured");
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+        statusTimeoutRef.current = setTimeout(() => {
+          setScanStatusMessage(null);
+        }, 2500);
+      }
+      barcodeInputRef.current?.focus();
+    }
+  };
+
+  const handleBarcodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const scannedBarcode = formData.barcode?.trim();
+      if (scannedBarcode) {
         setScanStatusMessage("Barcode captured");
         if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
         statusTimeoutRef.current = setTimeout(() => {
@@ -180,6 +202,7 @@ export function ProductModal({
       setFormData({
         productName: product.name || '',
         sku: product.sku || '',
+        barcode: product.barcode || product.sku || '',
         category: product.category || '',
         unitPrice: product.price || 0,
         stockLevel: product.stock || 0,
@@ -190,6 +213,7 @@ export function ProductModal({
       setFormData({
         productName: '',
         sku: '',
+        barcode: '',
         category: '',
         unitPrice: 0,
         stockLevel: 0,
@@ -279,9 +303,12 @@ export function ProductModal({
     } else if (mode === 'edit' && product?._id) {
       // Merge form data with original product data so that all required
       // backend fields (name, sku, category, price, stock) are always present.
+      const finalSku = (formData.sku || product.sku || '').trim();
+      const finalBarcode = (formData.barcode || '').trim() || finalSku || (product.barcode || product.sku || '').trim();
       mappedPayload = {
         name: formData.productName || product.name || '',
-        sku: (formData.sku || product.sku || '').trim(),
+        sku: finalSku,
+        barcode: finalBarcode,
         category: formData.category || product.category || '',
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
@@ -289,9 +316,12 @@ export function ProductModal({
         description: formData.description ?? product.description ?? '',
       };
     } else {
+      const finalSku = formData.sku.trim();
+      const finalBarcode = (formData.barcode || '').trim() || finalSku;
       mappedPayload = {
         name: formData.productName.trim(),
-        sku: formData.sku.trim(),
+        sku: finalSku,
+        barcode: finalBarcode,
         category: formData.category,
         price: formData.unitPrice,
         stock: formData.stockLevel,
@@ -476,6 +506,49 @@ export function ProductModal({
                           </span>
                         ) : isSkuFocused ? (
                           <span className="font-medium text-indigo-600 dark:text-indigo-400">
+                            Scanner ready
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Barcode */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                        <Barcode className="w-4 h-4 text-purple-500" />
+                        Barcode (Optional)
+                      </label>
+                      <div className="relative flex items-center">
+                        <input
+                          ref={barcodeInputRef}
+                          type="text"
+                          name="barcode"
+                          autoComplete="off"
+                          maxLength={64}
+                          value={formData.barcode}
+                          onChange={handleChange}
+                          onKeyDown={handleBarcodeKeyDown}
+                          onFocus={() => setIsBarcodeFocused(true)}
+                          onBlur={() => setIsBarcodeFocused(false)}
+                          className="w-full pl-4 pr-11 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all placeholder:text-gray-400 font-mono"
+                          placeholder="Leave blank to use SKU as barcode"
+                        />
+                        <button
+                          type="button"
+                          onClick={focusBarcodeInput}
+                          aria-label="Focus Barcode field for barcode scanning"
+                          title="Focus Barcode field for barcode scanning"
+                          className="absolute right-2 p-1.5 rounded-lg text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                        >
+                          <Barcode className="w-5 h-5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between text-xs mt-1">
+                        <span className="text-gray-500 dark:text-gray-400">
+                          Leave blank to use SKU as barcode.
+                        </span>
+                        {isBarcodeFocused ? (
+                          <span className="font-medium text-purple-600 dark:text-purple-400">
                             Scanner ready
                           </span>
                         ) : null}

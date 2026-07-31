@@ -18,6 +18,7 @@ export interface Product {
   category: string;
   image?: string;
   sku: string;
+  barcode?: string;
   isActive?: boolean;
   isFeatured?: boolean;
   isOnSale?: boolean;

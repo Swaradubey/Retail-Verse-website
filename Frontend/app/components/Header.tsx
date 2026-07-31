@@ -124,6 +124,7 @@ export function Header() {
                 {user && !isCustomerAccountRole(user.role) && (
                   <Link
                     to="/pos"
+                    state={{ fromDashboard: pathname }}
                     className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
                   >
                     POS
@@ -272,6 +273,7 @@ export function Header() {
                   {user && !isCustomerAccountRole(user.role) && (
                     <Link
                       to="/pos"
+                      state={{ fromDashboard: pathname }}
                       onClick={closeMobileMenu}
                       className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
                     >

@@ -67,6 +67,10 @@ export function ProductDetailModal({ isOpen, product, onClose }: ProductDetailMo
                   <span className="text-slate-900 dark:text-slate-100 font-bold bg-white dark:bg-slate-800 px-3 py-1 rounded-xl shadow-sm border border-slate-100 dark:border-white/5">{product.sku || 'N/A'}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400 font-medium">Barcode</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold font-mono bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 px-3 py-1 rounded-xl shadow-sm border border-purple-100 dark:border-purple-500/20">{product.barcode || product.sku || 'N/A'}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-400 font-medium">Current Status</span>
                   <span className={`px-3 py-1 rounded-xl font-bold text-[10px] uppercase tracking-wider border shadow-sm ${
                     product.isActive !== false 

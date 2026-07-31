@@ -617,7 +617,7 @@ export function Dashboard() {
                             }
                             className={dashboardSidebarNavButtonClass(isActive, false)}
                           >
-                            <Link to={href || '#'}>
+                            <Link to={href || '#'} state={href === '/pos' ? { fromDashboard: location.pathname } : undefined}>
                               {item.icon && <item.icon
                                 className={`w-5 h-5 shrink-0 ${isActive
                                   ? 'text-[#b8860b] dark:text-amber-300'

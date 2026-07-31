@@ -58,7 +58,7 @@ const ResetPassword = lazy(() => import('./pages/auth/ResetPassword').then(m => 
 const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
-const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos })));
+const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos || m.default })));
 const DashboardProducts = lazy(() => import('./pages/dashboard/DashboardProducts').then(m => ({ default: m.DashboardProducts })));
 const DashboardOrders = lazy(() => import('./pages/dashboard/DashboardOrders').then(m => ({ default: m.DashboardOrders })));
 const DashboardInvoices = lazy(() => import('./pages/dashboard/DashboardInvoices').then(m => ({ default: m.DashboardInvoices })));

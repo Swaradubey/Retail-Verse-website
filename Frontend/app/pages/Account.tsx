@@ -92,7 +92,7 @@ export function Account() {
                               : 'text-muted-foreground hover:bg-gray-100 dark:hover:bg-white/5 hover:text-foreground'}
                           `}
                         >
-                          <Link to={item.href}>
+                          <Link to={item.href} state={item.href === '/pos' ? { fromDashboard: location.pathname } : undefined}>
                             <item.icon className={`w-5 h-5 ${isActive ? 'text-blue-600 dark:text-blue-400' : ''}`} />
                             <span className="group-data-[collapsible=icon]:hidden text-[16px] font-semibold tracking-wide">
                               {item.title}

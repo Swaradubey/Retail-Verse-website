@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router';
+import { useSearchParams, Link, useNavigate, useLocation } from 'react-router';
 import {
   Plus,
   Minus,
@@ -23,6 +23,8 @@ import {
   Mail,
   X,
   Receipt,
+  Barcode,
+  Zap,
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -60,7 +62,7 @@ import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
 import { getFullImageUrl, getProductImageUrl } from '../utils/imageUrl';
 import ApiService from '../api/apiService';
-import { isStaffRole } from '../utils/staffRoles';
+import { isStaffRole, isSuperAdminRole, isRestrictedInventoryDashboardRole } from '../utils/staffRoles';
 
 interface CartItem extends Product {
   cartQuantity: number;
@@ -146,6 +148,37 @@ function posProductToShopProduct(p: Product): ShopProduct & { _id?: string } {
 
 export function Pos() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
+
+  const getDashboardRoute = useCallback(() => {
+    if (user?.impersonation?.active) {
+      return '/dashboard';
+    }
+    if (isSuperAdminRole(user?.role)) {
+      return '/super-admin';
+    }
+    if (isRestrictedInventoryDashboardRole(user?.role)) {
+      return '/dashboard/products';
+    }
+    return '/dashboard';
+  }, [user]);
+
+  const handleBackToMenu = useCallback(() => {
+    const fromDashboard = (location.state as { fromDashboard?: string } | null)?.fromDashboard;
+    if (
+      typeof fromDashboard === 'string' &&
+      (fromDashboard.startsWith('/dashboard') || fromDashboard.startsWith('/super-admin') || fromDashboard.startsWith('/account')) &&
+      !fromDashboard.startsWith('/login') &&
+      !fromDashboard.startsWith('/register')
+    ) {
+      navigate(fromDashboard);
+    } else {
+      navigate(getDashboardRoute());
+    }
+  }, [location.state, navigate, getDashboardRoute]);
+
   const showSaleOnly = searchParams.get('sale') === 'true';
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -189,7 +222,6 @@ export function Pos() {
   const [posCustomerEmail, setPosCustomerEmail] = useState('');
   /** Optional — same purpose as above; collected on shipping step so staff can link without scrolling to the top field. */
   const [codEmail, setCodEmail] = useState('');
-  const { user } = useAuth();
   const [wishlistKeySet, setWishlistKeySet] = useState<Set<string>>(() => new Set());
   const [wishlistBusyKey, setWishlistBusyKey] = useState<string | null>(null);
   const [latestOrderData, setLatestOrderData] = useState<any | null>(null);
@@ -203,6 +235,90 @@ export function Pos() {
   const [emailInputError, setEmailInputError] = useState('');
   const [showAddedToast, setShowAddedToast] = useState(false);
   const addedToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const [scanStatus, setScanStatus] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const scanStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const focusBarcodeScanner = useCallback(() => {
+    if (!paymentModalOpen && !emailModalOpen && barcodeInputRef.current) {
+      barcodeInputRef.current.focus();
+    }
+  }, [paymentModalOpen, emailModalOpen]);
+
+  useEffect(() => {
+    focusBarcodeScanner();
+  }, [focusBarcodeScanner, isLoading]);
+
+  const setScanFeedback = (message: string, type: 'success' | 'error') => {
+    setScanStatus({ message, type });
+    if (scanStatusTimerRef.current) clearTimeout(scanStatusTimerRef.current);
+    scanStatusTimerRef.current = setTimeout(() => {
+      setScanStatus(null);
+    }, 3500);
+  };
+
+  const handleContainerClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const isInteractive = target.closest('input, select, textarea, button, a, [role="button"]');
+    if (!isInteractive && !paymentModalOpen && !emailModalOpen) {
+      focusBarcodeScanner();
+    }
+  };
+
+  const handleBarcodeScanSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const raw = barcodeInput.trim();
+    if (!raw) return;
+
+    const rawLower = raw.toLowerCase();
+
+    // Check exact barcode match first, then case-insensitive barcode match, then SKU / _id fallback
+    const matchedProduct =
+      products.find(p => (p.barcode || '').trim() === raw) ||
+      products.find(p => (p.barcode || '').trim().toLowerCase() === rawLower) ||
+      products.find(p => {
+        const s = (p.sku || '').trim();
+        const id = (p._id || '').trim();
+        return s === raw || id === raw || s.toLowerCase() === rawLower;
+      });
+
+    if (!matchedProduct) {
+      toast.error(`Barcode "${raw}" not found in product inventory.`);
+      setScanFeedback(`Barcode "${raw}" not found`, 'error');
+      setBarcodeInput('');
+      focusBarcodeScanner();
+      return;
+    }
+
+    if (matchedProduct.stock <= 0) {
+      toast.error(`"${matchedProduct.name}" is out of stock.`);
+      setScanFeedback(`"${matchedProduct.name}" is out of stock`, 'error');
+      setBarcodeInput('');
+      focusBarcodeScanner();
+      return;
+    }
+
+    const existingCartItem = cart.find(item => item._id === matchedProduct._id);
+    const currentCartQty = existingCartItem ? existingCartItem.cartQuantity : 0;
+
+    if (currentCartQty + 1 > matchedProduct.stock) {
+      toast.error(`Cannot add more. Available stock for "${matchedProduct.name}" is ${matchedProduct.stock}.`);
+      setScanFeedback(`Stock limit reached for "${matchedProduct.name}"`, 'error');
+      setBarcodeInput('');
+      focusBarcodeScanner();
+      return;
+    }
+
+    addToCart(matchedProduct);
+    toast.success(`Scanned: ${matchedProduct.name} added to order`);
+    setScanFeedback(`Scanned: ${matchedProduct.name}`, 'success');
+    setBarcodeInput('');
+    setTimeout(() => {
+      focusBarcodeScanner();
+    }, 50);
+  };
 
   const wishlistPool = useMemo(
     () => products.map(posProductToShopProduct),
@@ -1415,18 +1531,19 @@ export function Pos() {
   return (
     <>
       <ImpersonationBanner />
-      <div className="flex flex-col lg:flex-row lg:h-[calc(100vh-84px)] bg-[#f7f6f2] lg:overflow-hidden">
+      <div onClick={handleContainerClick} className="flex flex-col lg:flex-row lg:h-[calc(100vh-84px)] bg-[#f7f6f2] lg:overflow-hidden pos-main">
         {/* Products Section */}
         <div className="flex-1 flex flex-col lg:h-full border-b lg:border-b-0 lg:border-r border-black/10 lg:overflow-hidden">
-          <div className="p-4 sm:p-6 bg-white/50 backdrop-blur-sm border-b border-black/10">
-            <Link
-              to="/"
-              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-[#111111] transition-colors mb-3"
+          <div className="p-4 sm:px-6 sm:py-4 bg-white/50 backdrop-blur-sm border-b border-black/10 pos-toolbar shrink-0">
+            <button
+              type="button"
+              onClick={handleBackToMenu}
+              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-[#111111] transition-colors mb-2 cursor-pointer bg-transparent border-0 p-0"
             >
               <ArrowLeft className="h-4 w-4" />
               <span>Back to Menu</span>
-            </Link>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
+            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-2.5">
               <h1 className="text-2xl font-bold text-[#111111]">Point of Sale</h1>
               <div className="flex flex-col items-start sm:items-end gap-1.5">
                 <div
@@ -1459,11 +1576,52 @@ export function Pos() {
               </div>
             </div>
             {productSource === 'cache' && (
-              <p className="text-xs text-amber-800/90 bg-amber-50/90 border border-amber-200/60 rounded-lg px-3 py-2 mb-3">
+              <p className="text-xs text-amber-800/90 bg-amber-50/90 border border-amber-200/60 rounded-lg px-3 py-1.5 mb-2.5">
                 Showing last synced products
               </p>
             )}
-            <div className="relative">
+            {/* Barcode Scanner Dedicated Input */}
+            <form onSubmit={handleBarcodeScanSubmit} className="mb-2.5">
+              <div className="relative flex items-center">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-purple-600 font-medium pointer-events-none">
+                  <Barcode className="h-5 w-5 shrink-0" />
+                </div>
+                <input
+                  ref={barcodeInputRef}
+                  type="text"
+                  placeholder="Scan barcode with scanner or press Enter..."
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleBarcodeScanSubmit();
+                    }
+                  }}
+                  className="w-full pl-10 pr-24 py-2.5 rounded-xl border-2 border-purple-500/40 bg-purple-50/30 focus:bg-white focus:border-purple-600 focus:outline-none focus:ring-4 focus:ring-purple-500/10 font-mono text-sm text-[#111111] transition-all shadow-sm"
+                  aria-label="POS Barcode Scanner input"
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  <button
+                    type="submit"
+                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm flex items-center gap-1 cursor-pointer"
+                    title="Scan Barcode"
+                  >
+                    <Zap className="h-3.5 w-3.5" />
+                    <span>Scan</span>
+                  </button>
+                </div>
+              </div>
+              {scanStatus && (
+                <div className={`text-xs mt-1.5 px-3 py-1 rounded-md font-medium flex items-center gap-1.5 ${
+                  scanStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                }`}>
+                  <span className={`h-2 w-2 rounded-full ${scanStatus.type === 'success' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                  {scanStatus.message}
+                </div>
+              )}
+            </form>
+            <div className="relative mb-2.5">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
               <input
                 type="text"
@@ -1475,14 +1633,14 @@ export function Pos() {
             </div>
             {/* Category filter + Sort row */}
             {!isLoading && products.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2 items-center justify-between">
+              <div className="flex flex-wrap gap-2 items-center justify-between">
                 <div className="flex flex-wrap gap-1.5">
                   {inventoryCategories.map(cat => (
                     <button
                       key={cat}
                       type="button"
                       onClick={() => setSelectedCategory(cat)}
-                      className={`text-xs px-3 py-1.5 rounded-full font-medium border transition-all ${
+                      className={`text-xs px-3 py-1 rounded-full font-medium border transition-all ${
                         selectedCategory === cat
                           ? 'bg-[#111111] text-white border-[#111111]'
                           : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
@@ -1495,7 +1653,7 @@ export function Pos() {
                 <select
                   value={sortOrder}
                   onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
-                  className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-black/10 text-gray-600"
+                  className="text-xs border border-gray-200 rounded-lg px-2.5 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-black/10 text-gray-600"
                   aria-label="Sort products"
                 >
                   <option value="default">Sort: Default</option>
@@ -1507,10 +1665,10 @@ export function Pos() {
             )}
           </div>
 
-          <div className="flex-1 lg:overflow-y-auto p-4 sm:p-6">
+          <div className="flex-1 min-h-0 lg:overflow-y-auto p-4 sm:px-6 sm:pt-4 sm:pb-6 pos-products-scroll">
             {/* Dynamic product count */}
             {!isLoading && (
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-gray-500 mb-2">
                 {filteredProducts.length === 0
                   ? '0 products found'
                   : `${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'} found`}
@@ -1623,14 +1781,14 @@ export function Pos() {
 
         {/* Cart Section */}
         <div className="w-full lg:w-[350px] xl:w-[400px] flex flex-col bg-white lg:h-full shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
-          <div className="p-5 border-b border-black/5 bg-[#111111] text-white">
+          <div className="p-5 border-b border-black/5 bg-[#111111] text-white shrink-0">
             <h2 className="text-lg font-bold flex items-center gap-2">
               <ShoppingCart className="w-5 h-5" />
               Current Order
             </h2>
           </div>
 
-          <div className="flex-1 lg:overflow-y-auto p-5">
+          <div className="flex-1 min-h-0 lg:overflow-y-auto p-5">
             {checkoutComplete && cart.length === 0 ? (
               <div
                 className="h-full min-h-[200px] flex flex-col items-center justify-center text-center px-2"
@@ -2613,3 +2771,5 @@ export function Pos() {
     </>
   );
 }
+
+export default Pos;

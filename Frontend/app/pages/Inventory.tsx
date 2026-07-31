@@ -226,6 +226,7 @@ export function Inventory() {
         (item) =>
           (item.name?.toLowerCase() || '').includes(q) ||
           (item.sku?.toLowerCase() || '').includes(q) ||
+          (item.barcode?.toLowerCase() || '').includes(q) ||
           (item.category?.toLowerCase() || '').includes(q)
       );
     }

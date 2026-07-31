@@ -84,7 +84,7 @@ export function DashboardQuickActions({ onSync, syncing }: DashboardQuickActions
         if (isCustomerAccountRole(user?.role)) {
           navigate('/shop?sale=true');
         } else {
-          navigate('/pos?sale=true');
+          navigate('/pos?sale=true', { state: { fromDashboard: window.location.pathname } });
         }
         return;
       }

@@ -75,6 +75,7 @@ const productSchema = new mongoose.Schema(
     barcode: {
       type: String,
       default: "",
+      trim: true,
     },
     title: {
       type: String,
@@ -373,5 +374,8 @@ productSchema.post("findOneAndDelete", async function (doc) {
     console.error("[Product Hook] post-delete error:", err.message);
   }
 });
+
+productSchema.index({ barcode: 1 });
+productSchema.index({ clientId: 1, barcode: 1 });
 
 module.exports = mongoose.model("Product", productSchema);
