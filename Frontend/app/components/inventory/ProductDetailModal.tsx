@@ -4,7 +4,7 @@ import { X, Package, Tag, ShoppingBag, BarChart3, Clock, Info } from 'lucide-rea
 import { Button } from '../ui/button';
 import { Product } from '../../api/products';
 import { formatINR } from '../../utils/formatINR';
-import { getProductImageUrl, getFullImageUrl } from '../../utils/imageUrl';
+import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
 
 interface ProductDetailModalProps {
   isOpen: boolean;
@@ -46,6 +46,10 @@ export function ProductDetailModal({ isOpen, product, onClose }: ProductDetailMo
                     src={getFullImageUrl(getProductImageUrl(product))}
                     alt={product.name}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).onerror = null;
+                      (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
+                    }}
                   />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">

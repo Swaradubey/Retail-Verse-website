@@ -8,6 +8,7 @@ import { Button } from '../ui/button';
 import { Product } from '../../api/products';
 import type { ClientRow } from '../../api/clients';
 import type { InventoryEditMode } from '../../utils/inventoryPermissions';
+import { PRODUCT_PLACEHOLDER, getFullImageUrl, isValidImageUrlFormat } from '../../utils/imageUrl';
 
 function useScrollLock(lock: boolean) {
   useLayoutEffect(() => {
@@ -197,8 +198,11 @@ export function ProductModal({
     reader.readAsDataURL(file);
   };
 
+  const [imageLoadError, setImageLoadError] = useState<string | null>(null);
+
   useEffect(() => {
     if (product && mode === 'edit') {
+      const initialUrl = (product.image || (product as any).imageUrl || '').trim();
       setFormData({
         productName: product.name || '',
         sku: product.sku || '',
@@ -206,9 +210,14 @@ export function ProductModal({
         category: product.category || '',
         unitPrice: product.price || 0,
         stockLevel: product.stock || 0,
-        imageUrl: product.image || '',
+        imageUrl: initialUrl,
         description: product.description || '',
       });
+      if (initialUrl && !isValidImageUrlFormat(initialUrl)) {
+        setImageLoadError("Unable to load image from this URL");
+      } else {
+        setImageLoadError(null);
+      }
     } else {
       setFormData({
         productName: '',
@@ -217,10 +226,11 @@ export function ProductModal({
         category: '',
         unitPrice: 0,
         stockLevel: 0,
-        imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1470',
+        imageUrl: '',
         description: '',
       });
       setSelectedMarketplaces([]);
+      setImageLoadError(null);
     }
     setAssignClientId('');
     setError(null);
@@ -305,6 +315,7 @@ export function ProductModal({
       // backend fields (name, sku, category, price, stock) are always present.
       const finalSku = (formData.sku || product.sku || '').trim();
       const finalBarcode = (formData.barcode || '').trim() || finalSku || (product.barcode || product.sku || '').trim();
+      const trimmedImg = formData.imageUrl.trim();
       mappedPayload = {
         name: formData.productName || product.name || '',
         sku: finalSku,
@@ -312,12 +323,14 @@ export function ProductModal({
         category: formData.category || product.category || '',
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
-        image: formData.imageUrl || product.image || '',
+        image: trimmedImg,
+        imageUrl: trimmedImg,
         description: formData.description ?? product.description ?? '',
       };
     } else {
       const finalSku = formData.sku.trim();
       const finalBarcode = (formData.barcode || '').trim() || finalSku;
+      const trimmedImg = formData.imageUrl.trim();
       mappedPayload = {
         name: formData.productName.trim(),
         sku: finalSku,
@@ -325,7 +338,8 @@ export function ProductModal({
         category: formData.category,
         price: formData.unitPrice,
         stock: formData.stockLevel,
-        image: formData.imageUrl,
+        image: trimmedImg,
+        imageUrl: trimmedImg,
         description: formData.description,
         publishTo: selectedMarketplaces,
       };
@@ -651,40 +665,69 @@ export function ProductModal({
                         Image URL
                       </label>
                       <div className="flex gap-3">
-                        <div className="flex-1 flex gap-2">
-                          <input
-                            type="text"
-                            name="imageUrl"
-                            value={formData.imageUrl}
-                            onChange={handleChange}
-                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-400"
-                            placeholder="https://images.unsplash.com/..."
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleCameraClick}
-                            className="shrink-0 rounded-xl h-[46px] w-[46px] p-0 border-gray-200 dark:border-white/10 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/5"
-                            title="Take photo"
-                          >
-                            <Camera className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                          </Button>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            className="hidden"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                          />
+                        <div className="flex-1 flex flex-col gap-1">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              name="imageUrl"
+                              value={formData.imageUrl}
+                              onChange={(e) => {
+                                handleChange(e);
+                                const val = e.target.value.trim();
+                                if (val && !isValidImageUrlFormat(val)) {
+                                  setImageLoadError("Unable to load image from this URL");
+                                } else {
+                                  setImageLoadError(null);
+                                }
+                              }}
+                              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-400"
+                              placeholder="Direct image URL (e.g. https://.../image.jpg)"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={handleCameraClick}
+                              className="shrink-0 rounded-xl h-[46px] w-[46px] p-0 border-gray-200 dark:border-white/10 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-white/5"
+                              title="Take photo"
+                            >
+                              <Camera className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                            </Button>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              className="hidden"
+                              ref={fileInputRef}
+                              onChange={(e) => {
+                                handleFileChange(e);
+                                setImageLoadError(null);
+                              }}
+                            />
+                          </div>
+                          {imageLoadError && (
+                            <p className="text-xs font-semibold text-rose-500 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                              {imageLoadError}
+                            </p>
+                          )}
                         </div>
-                        <div className="h-[46px] w-[46px] shrink-0 rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5">
+                        <div className="h-[46px] w-[46px] shrink-0 rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 flex items-center justify-center">
                           <img
-                            src={formData.imageUrl || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&q=80&w=1470'}
+                            src={!imageLoadError && formData.imageUrl.trim() ? getFullImageUrl(formData.imageUrl.trim()) : PRODUCT_PLACEHOLDER}
                             alt="Preview"
                             className="w-full h-full object-cover"
+                            onLoad={() => {
+                              if (formData.imageUrl.trim() && !imageLoadError) {
+                                setImageLoadError(null);
+                              }
+                            }}
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=100&h=100&fit=crop';
+                              const target = e.currentTarget;
+                              target.onerror = null;
+                              target.src = PRODUCT_PLACEHOLDER;
+                              if (formData.imageUrl.trim()) {
+                                setImageLoadError("Unable to load image from this URL");
+                              }
                             }}
                           />
                         </div>

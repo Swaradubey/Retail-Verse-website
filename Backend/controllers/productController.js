@@ -358,6 +358,10 @@ const createProduct = async (req, res) => {
 
     // Prepare data
     const productData = normalizeSaleFields(req.body);
+    const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+    const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    productData.image = exactImageUrl;
+    productData.images = exactImageUrl ? [exactImageUrl] : [];
     productData.sku = finalSku;
     productData.barcode = finalBarcode;
     productData.createdBy = req.user._id;
@@ -594,6 +598,12 @@ const updateProduct = async (req, res) => {
     }
     delete payload.title;
     const normalizedPayload = normalizeSaleFields(payload);
+    if (req.body.imageUrl !== undefined || req.body.image !== undefined || req.body.image_url !== undefined) {
+      const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+      const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+      normalizedPayload.image = exactImageUrl;
+      normalizedPayload.images = exactImageUrl ? [exactImageUrl] : [];
+    }
     console.log("[Backend Debug] PUT /api/products/:id - Allowed Fields Extracted:", normalizedPayload);
     console.log("[Backend Debug] Product Before Update:", {
       _id: product._id,

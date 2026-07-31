@@ -60,7 +60,7 @@ import {
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
-import { getFullImageUrl, getProductImageUrl } from '../utils/imageUrl';
+import { getFullImageUrl, getProductImageUrl, PRODUCT_PLACEHOLDER } from '../utils/imageUrl';
 import ApiService from '../api/apiService';
 import { isStaffRole, isSuperAdminRole, isRestrictedInventoryDashboardRole } from '../utils/staffRoles';
 
@@ -1731,7 +1731,15 @@ export function Pos() {
                           <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
                         </button>
                         {getProductImageUrl(product) ? (
-                          <img src={getFullImageUrl(getProductImageUrl(product))} alt={product.name} className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]" />
+                          <img
+                            src={getFullImageUrl(getProductImageUrl(product))}
+                            alt={product.name}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover/card:scale-[1.02]"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).onerror = null;
+                              (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
+                            }}
+                          />
                         ) : (
                           <Package2 className="w-10 h-10 text-gray-300" />
                         )}
@@ -1879,8 +1887,12 @@ export function Pos() {
                           {getProductImageUrl(item) ? (
                             <img
                               src={getFullImageUrl(getProductImageUrl(item))}
-                              alt=""
+                              alt={item.name || ''}
                               className="h-full w-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).onerror = null;
+                                (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
+                              }}
                             />
                           ) : (
                             <Package2 className="w-5 h-5 text-gray-300" aria-hidden />

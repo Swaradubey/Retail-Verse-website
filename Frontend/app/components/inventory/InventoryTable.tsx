@@ -27,7 +27,7 @@ import {
  } from '../ui/table';
  import { InventoryItem, StockStatus, SortConfig } from '../../types/inventory';
  import { formatINR } from '../../utils/formatINR';
-import { getProductImageUrl, getFullImageUrl } from '../../utils/imageUrl';
+import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
 
 interface InventoryTableProps {
   items: InventoryItem[];
@@ -256,11 +256,12 @@ function MobileCard({
       <div className="flex gap-3">
         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 shadow-md ring-2 ring-white dark:bg-white/10 dark:ring-white/20">
           <img
-            src={getFullImageUrl(getProductImageUrl(item)) || 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=100&h=100&fit=crop'}
+            src={getFullImageUrl(getProductImageUrl(item)) || PRODUCT_PLACEHOLDER}
             alt={item.name}
             className="h-full w-full object-cover"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=100&h=100&fit=crop';
+              (e.target as HTMLImageElement).onerror = null;
+              (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
             }}
           />
         </div>
@@ -514,11 +515,12 @@ export function InventoryTable({
                       <div className="flex items-center gap-4">
                         <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-slate-100 shadow-md ring-2 ring-white dark:bg-white/10 dark:ring-white/15">
                           <img
-                            src={getFullImageUrl(getProductImageUrl(item)) || 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=100&h=100&fit=crop'}
+                            src={getFullImageUrl(getProductImageUrl(item)) || PRODUCT_PLACEHOLDER}
                             alt={item.name}
                             className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
                             onError={(e) => {
-                              (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=100&h=100&fit=crop';
+                              (e.target as HTMLImageElement).onerror = null;
+                              (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
                             }}
                           />
                         </div>

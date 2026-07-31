@@ -186,6 +186,10 @@ const createInventoryItem = async (req, res) => {
 
     // Prepare data
     const payload = { ...req.body };
+    const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+    const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    payload.image = exactImageUrl;
+    payload.images = exactImageUrl ? [exactImageUrl] : [];
     payload.sku = finalSku;
     payload.barcode = finalBarcode;
     payload.createdBy = req.user._id;
@@ -489,6 +493,12 @@ const updateInventoryItem = async (req, res) => {
       return res.status(resolved.status).json({ success: false, message: resolved.message });
     }
     const updatePayload = { ...resolved.update };
+    if (req.body.imageUrl !== undefined || req.body.image !== undefined || req.body.image_url !== undefined) {
+      const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+      const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+      updatePayload.image = exactImageUrl;
+      updatePayload.images = exactImageUrl ? [exactImageUrl] : [];
+    }
     if (isClientScopedRole(role)) {
       delete updatePayload.clientId;
     }

@@ -144,6 +144,7 @@ export function ProductCard({
             alt={product.name}
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
             onError={(e) => {
+              (e.target as HTMLImageElement).onerror = null;
               (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
             }}
           />
