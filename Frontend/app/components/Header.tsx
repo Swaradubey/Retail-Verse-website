@@ -1,5 +1,5 @@
 import { Link, useNavigate, useLocation } from 'react-router';
-import { ShoppingCart, Menu, X, ArrowRight, Package, ShoppingBag } from 'lucide-react';
+import { ShoppingCart, Menu, X, ArrowRight, Package, ShoppingBag, Search, Heart } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,13 @@ const HIDDEN_HEADER_ROLES = [
   'inventory_manager',
 ];
 
+const NAV_ITEMS = [
+  { name: 'Home', href: '/' },
+  { name: 'Products', href: '/products' },
+  { name: 'Contact', href: '/contact' },
+  { name: 'Pricing', href: '/pricing' },
+];
+
 export function Header() {
   const { pathname } = useLocation();
   const { cartCount } = useCart();
@@ -21,13 +28,13 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  /** Hide storefront nav links (Products, Category, etc.) for Super Admin and restricted employee roles. */
+  /** Hide storefront nav links for Super Admin and restricted employee roles. */
   const normalizedRole = normalizeRole(user?.role);
   const shouldHideHeaderNav = normalizedRole && HIDDEN_HEADER_ROLES.includes(normalizedRole);
   const hideStorefrontNavForSuperAdmin = Boolean(user && isSuperAdminRole(user.role));
 
   /** Dynamic brand name: super_admin always sees default; client user uses businessName; otherwise BrandingContext or default */
-  const { brandName: brandingBrandName, logo: brandingLogo, isLoading: brandingLoading } = useBranding();
+  const { brandName: brandingBrandName, logo: brandingLogo } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
   const logoUrl = isSuperAdmin ? '' : brandingLogo || (user as any)?.storeSettings?.logoUrl || '';
@@ -44,21 +51,6 @@ export function Header() {
         ? 'Store'
         : 'Premium Commerce';
 
-  /** Pricing link disabled globally — we now use a protected /pricing route. */
-  const hidePricing = false;
-
-  const handlePricingClick = () => {
-    if (user) {
-      navigate("/subscription");
-    } else {
-      navigate("/login?redirect=%2Fsubscription", {
-        state: {
-          from: "/subscription"
-        }
-      });
-    }
-  };
-
   const canOpenInventory = canAccessInventoryEditor(user?.role);
   const accountHomeHref = '/dashboard';
 
@@ -70,13 +62,29 @@ export function Header() {
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
+  const isNavActive = (href: string) => {
+    if (href === '/') {
+      return pathname === '/' || pathname === '/landing';
+    }
+    if (href === '/products') {
+      return pathname === '/products' || pathname.startsWith('/products') || pathname === '/shop';
+    }
+    if (href === '/contact') {
+      return pathname === '/contact';
+    }
+    if (href === '/pricing') {
+      return pathname === '/pricing' || pathname === '/subscription';
+    }
+    return pathname === href;
+  };
+
   return (
     <header className="sticky top-0 z-50">
       <div className="border-b border-black/[0.06] bg-[#FCFBF8]/88 backdrop-blur-xl">
         <div className="mx-auto max-w-[88rem] px-4 sm:px-6 lg:px-8">
           <div className="flex h-[84px] items-center justify-between">
 
-
+            {/* Left side: Logo */}
             <Link to="/" className="flex items-center gap-3 transition-opacity duration-300 hover:opacity-80">
               {logoUrl ? (
                 <img
@@ -103,19 +111,33 @@ export function Header() {
               </div>
             </Link>
 
-            {/* Desktop Nav — hidden for Super Admin and restricted employee roles */}
-            {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? (
+            {/* Centre: Desktop Nav — Home | Products | Contact | Pricing */}
+            {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
               <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
-                <Link
-                  to="/products"
-                  className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
-                >
-                  Products
-                </Link>
+                {NAV_ITEMS.map((item) => {
+                  const active = isNavActive(item.href);
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      className={`rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
+                        active
+                          ? 'bg-[#111111] text-white shadow-sm'
+                          : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                      }`}
+                    >
+                      {item.name}
+                    </Link>
+                  );
+                })}
                 {canOpenInventory && (
                   <Link
                     to="/dashboard/inventory"
-                    className="group inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
+                    className={`group inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
+                      pathname.startsWith('/dashboard/inventory')
+                        ? 'bg-[#111111] text-white shadow-sm'
+                        : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                    }`}
                   >
                     <Package className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
                     Inventory
@@ -125,43 +147,54 @@ export function Header() {
                   <Link
                     to="/pos"
                     state={{ fromDashboard: pathname }}
-                    className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
+                    className={`rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
+                      pathname === '/pos'
+                        ? 'bg-[#111111] text-white shadow-sm'
+                        : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                    }`}
                   >
                     POS
                   </Link>
-                )}
-                <Link
-                  to="/contact"
-                  className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
-                >
-                  Contact
-                </Link>
-                {!hidePricing && (
-                  <button
-                    onClick={handlePricingClick}
-                    className="rounded-full px-5 py-2.5 text-[16px] font-bold text-[#555] transition-all duration-300 hover:bg-black/5 hover:text-[#111111]"
-                  >
-                    Pricing
-                  </button>
                 )}
               </nav>
             ) : (
               <div className="hidden lg:block" aria-hidden="true" />
             )}
 
-            {/* Right Actions */}
+            {/* Right side: Search | Wishlist | Cart | Sign In */}
             <div className="flex items-center gap-1.5 min-[375px]:gap-2 sm:gap-3 lg:gap-4">
-              {/* Cart - hidden for Super Admin and restricted employee roles */}
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && (
-                <Link
-                  to="/cart"
-                  className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
-                >
-                  <ShoppingCart className="h-5 w-5" />
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[10px] font-bold text-black shadow-sm">
-                    {cartCount}
-                  </span>
-                </Link>
+                <>
+                  {/* Search Icon */}
+                  <Link
+                    to="/products"
+                    className="hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    aria-label="Search"
+                  >
+                    <Search className="h-5 w-5" />
+                  </Link>
+
+                  {/* Wishlist Icon */}
+                  <Link
+                    to="/account/wishlist"
+                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    aria-label="Wishlist"
+                  >
+                    <Heart className="h-5 w-5" />
+                  </Link>
+
+                  {/* Cart Icon */}
+                  <Link
+                    to="/cart"
+                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    aria-label="Cart"
+                  >
+                    <ShoppingCart className="h-5 w-5" />
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[10px] font-bold text-black shadow-sm">
+                      {cartCount}
+                    </span>
+                  </Link>
+                </>
               )}
 
               {/* Desktop Auth */}
@@ -179,12 +212,13 @@ export function Header() {
                         {user.name}
                       </span>
                       <span
-                        className={`max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide ${user.role === 'super_admin'
-                          ? 'text-violet-800'
-                          : user.role === 'admin'
-                            ? 'text-amber-900'
-                            : 'text-stone-500'
-                          }`}
+                        className={`max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide ${
+                          user.role === 'super_admin'
+                            ? 'text-violet-800'
+                            : user.role === 'admin'
+                              ? 'text-amber-900'
+                              : 'text-stone-500'
+                        }`}
                       >
                         {accountRoleBadgeText(user.role) || 'User'}
                       </span>
@@ -199,35 +233,44 @@ export function Header() {
                   </button>
                 </div>
               ) : (
-                <div className="hidden sm:flex items-center gap-4">
+                <div className="hidden sm:flex items-center gap-3">
                   <Link
                     to="/login"
                     className="rounded-full bg-gradient-to-r from-[#C4973F] to-[#E6C200] px-6 py-2.5 text-sm font-bold text-[#111] shadow-[0_4px_15px_rgba(196,151,63,0.25)] transition-all duration-300 hover:scale-105 hover:shadow-[0_8px_25px_rgba(196,151,63,0.35)] active:scale-[0.98]"
                   >
-                    Login
-                  </Link>
-
-                  <Link
-                    to="/register"
-                    className="group inline-flex items-center gap-2 rounded-full bg-[#111111] px-5 py-3 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(0,0,0,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-black"
-                  >
-                    Get started
-                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                    Sign In
                   </Link>
                 </div>
               )}
 
-              {/* Mobile Cart - hidden for Super Admin and restricted employee roles */}
+              {/* Mobile Action Icons */}
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && (
-                <Link
-                  to="/cart"
-                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
-                >
-                  <ShoppingCart className="h-4.5 w-4.5" />
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
-                    {cartCount}
-                  </span>
-                </Link>
+                <>
+                  <Link
+                    to="/products"
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
+                    aria-label="Search"
+                  >
+                    <Search className="h-4.5 w-4.5" />
+                  </Link>
+                  <Link
+                    to="/account/wishlist"
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
+                    aria-label="Wishlist"
+                  >
+                    <Heart className="h-4.5 w-4.5" />
+                  </Link>
+                  <Link
+                    to="/cart"
+                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
+                    aria-label="Cart"
+                  >
+                    <ShoppingCart className="h-4.5 w-4.5" />
+                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
+                      {cartCount}
+                    </span>
+                  </Link>
+                </>
               )}
 
               {/* Mobile Menu Button */}
@@ -250,21 +293,35 @@ export function Header() {
         {mobileMenuOpen && (
           <div className="absolute left-0 w-full border-t border-black/8 bg-[#f7f6f2]/95 backdrop-blur-xl lg:hidden">
             <div className="mx-auto max-w-[88rem] px-4 pb-6 pt-5 sm:px-6">
-              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? (
+              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
                 <nav className="flex flex-col gap-2">
-                  <Link
-                    to="/products"
-                    onClick={closeMobileMenu}
-                    className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                  >
-                    Products
-                  </Link>
+                  {NAV_ITEMS.map((item) => {
+                    const active = isNavActive(item.href);
+                    return (
+                      <Link
+                        key={item.name}
+                        to={item.href}
+                        onClick={closeMobileMenu}
+                        className={`rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
+                          active
+                            ? 'border-black/10 bg-[#111111] text-white shadow-sm'
+                            : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                        }`}
+                      >
+                        {item.name}
+                      </Link>
+                    );
+                  })}
 
                   {canOpenInventory && (
                     <Link
                       to="/dashboard/inventory"
                       onClick={closeMobileMenu}
-                      className="group inline-flex items-center gap-2 rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
+                      className={`group inline-flex items-center gap-2 rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
+                        pathname.startsWith('/dashboard/inventory')
+                          ? 'border-black/10 bg-[#111111] text-white shadow-sm'
+                          : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                      }`}
                     >
                       <Package className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
                       Inventory
@@ -275,31 +332,19 @@ export function Header() {
                       to="/pos"
                       state={{ fromDashboard: pathname }}
                       onClick={closeMobileMenu}
-                      className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
+                      className={`rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
+                        pathname === '/pos'
+                          ? 'border-black/10 bg-[#111111] text-white shadow-sm'
+                          : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                      }`}
                     >
                       POS
                     </Link>
                   )}
-
-                  <Link
-                    to="/contact"
-                    onClick={closeMobileMenu}
-                    className="rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                  >
-                    Contact
-                  </Link>
-                  {!hidePricing && (
-                    <button
-                      onClick={() => { handlePricingClick(); closeMobileMenu(); }}
-                      className="w-full text-left rounded-2xl border border-transparent bg-white/60 px-5 py-4 text-lg font-semibold text-[#111111] transition-all duration-300 hover:border-black/8 hover:bg-white"
-                    >
-                      Pricing
-                    </button>
-                  )}
                 </nav>
               ) : null}
 
-              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && pathname !== '/' ? <div className="my-5 h-px bg-black/8" /> : null}
+              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? <div className="my-5 h-px bg-black/8" /> : null}
 
               {user ? (
                 <div className="flex flex-col gap-3">
@@ -319,12 +364,13 @@ export function Header() {
                         {user.name}
                       </span>
                       <span
-                        className={`text-xs font-semibold ${user.role === 'super_admin'
-                          ? 'text-violet-800'
-                          : user.role === 'admin'
-                            ? 'text-amber-900'
-                            : 'text-stone-500'
-                          }`}
+                        className={`text-xs font-semibold ${
+                          user.role === 'super_admin'
+                            ? 'text-violet-800'
+                            : user.role === 'admin'
+                              ? 'text-amber-900'
+                              : 'text-stone-500'
+                        }`}
                       >
                         {accountRoleSubtitle(user.role)}
                       </span>
@@ -345,16 +391,7 @@ export function Header() {
                     onClick={closeMobileMenu}
                     className="rounded-2xl bg-gradient-to-r from-[#C4973F] to-[#E6C200] px-5 py-4 text-center text-base font-bold text-[#111] shadow-[0_4px_12px_rgba(196,151,63,0.2)] transition-all duration-300 active:scale-[0.98]"
                   >
-                    Login
-                  </Link>
-
-                  <Link
-                    to="/register"
-                    onClick={closeMobileMenu}
-                    className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-[#111111] px-5 py-4 text-base font-semibold text-white transition-all duration-300 hover:bg-black"
-                  >
-                    Get started
-                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                    Sign In
                   </Link>
                 </div>
               )}
@@ -362,6 +399,6 @@ export function Header() {
           </div>
         )}
       </div>
-    </header >
+    </header>
   );
 }

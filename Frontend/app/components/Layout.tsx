@@ -15,7 +15,7 @@ export function Layout() {
 
   const isStorefront = !hasSidebar && !pathname.startsWith('/login') && !pathname.startsWith('/register') && !pathname.startsWith('/super-admin') && !pathname.startsWith('/auth');
 
-  const ThemeHeader = isStorefront ? (getThemeHeader(themeKey) || Header) : Header;
+  const ThemeHeader = Header;
   const ThemeFooter = isStorefront ? (getThemeFooter(themeKey) || Footer) : Footer;
 
   const shouldShowComingSoon =

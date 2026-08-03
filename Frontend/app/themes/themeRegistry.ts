@@ -1,5 +1,5 @@
 import React from 'react';
-import { LuxeHeader } from './luxe-commerce/LuxeHeader';
+import { Header } from '../components/Header';
 import { LuxeFooter } from './luxe-commerce/LuxeFooter';
 import { LuxeHomeHero } from './luxe-commerce/LuxeHomeHero';
 import { LuxeHomeFeatured } from './luxe-commerce/LuxeHomeFeatured';
@@ -8,7 +8,6 @@ import { LuxeProductCard } from './luxe-commerce/LuxeProductCard';
 import { LuxeProductDetail } from './luxe-commerce/LuxeProductDetail';
 import { LuxeCollection } from './luxe-commerce/LuxeCollection';
 import { LuxeCart } from './luxe-commerce/LuxeCart';
-import { NovaHeader } from './nova-marketplace/NovaHeader';
 import { NovaFooter } from './nova-marketplace/NovaFooter';
 import { NovaHomeHero } from './nova-marketplace/NovaHomeHero';
 import { NovaHomeFeatured } from './nova-marketplace/NovaHomeFeatured';
@@ -41,7 +40,7 @@ export function getThemeComponents(key: string): ThemeComponentSet | undefined {
 }
 
 export function getThemeHeader(key: string): React.ComponentType | null {
-  return themeRegistry.get(key)?.Header || null;
+  return themeRegistry.get(key)?.Header || Header;
 }
 
 export function getThemeFooter(key: string): React.ComponentType | null {
@@ -50,7 +49,7 @@ export function getThemeFooter(key: string): React.ComponentType | null {
 
 // ── Register both themes ────────────────────────────────────────────────────────
 registerTheme('luxe-commerce', {
-  Header: LuxeHeader,
+  Header: Header,
   Footer: LuxeFooter,
   HomeHero: LuxeHomeHero,
   HomeFeatured: LuxeHomeFeatured,
@@ -62,7 +61,7 @@ registerTheme('luxe-commerce', {
 });
 
 registerTheme('nova-marketplace', {
-  Header: NovaHeader,
+  Header: Header,
   Footer: NovaFooter,
   HomeHero: NovaHomeHero,
   HomeFeatured: NovaHomeFeatured,
