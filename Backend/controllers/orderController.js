@@ -800,6 +800,8 @@ const createOrder = async (req, res) => {
         }
       }
 
+      const rate = Number(item.gstRate || 0);
+      const amt = Number(item.gstAmount) || ((Number(item.price) * Number(item.quantity) * rate) / 100);
       orderItems.push({
         productId: String(resolvedProductId),
         name: item.name,
@@ -807,6 +809,8 @@ const createOrder = async (req, res) => {
         quantity: Number(item.quantity),
         image: item.image || "",
         category: itemCategory,
+        gstRate: rate,
+        gstAmount: amt,
       });
     }
 
@@ -910,6 +914,9 @@ const createOrder = async (req, res) => {
       paymentMethod,
       paymentDetails,
       totalPrice: Number(totalPrice),
+      taxPrice: req.body.taxPrice != null ? Number(req.body.taxPrice) : orderItems.reduce((sum, i) => sum + (i.gstAmount || 0), 0),
+      cgstAmount: req.body.cgstAmount != null ? Number(req.body.cgstAmount) : (orderItems.reduce((sum, i) => sum + (i.gstAmount || 0), 0) / 2),
+      sgstAmount: req.body.sgstAmount != null ? Number(req.body.sgstAmount) : (orderItems.reduce((sum, i) => sum + (i.gstAmount || 0), 0) / 2),
       razorpayOrderId,
       razorpayPaymentId,
       razorpaySignature,
@@ -1000,6 +1007,8 @@ const createOrder = async (req, res) => {
 
       // Create Invoice dynamically
       try {
+        const invSubtotal = createdOrder.items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+        const invTax = createdOrder.taxPrice || createdOrder.items.reduce((sum, i) => sum + (i.gstAmount || 0), 0);
         const invoiceData = new Invoice({
           invoiceNumber: `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           orderId: createdOrder.orderId,
@@ -1011,10 +1020,14 @@ const createOrder = async (req, res) => {
              quantity: i.quantity,
              price: i.price,
              subtotal: (i.price * i.quantity) || 0,
+             gstRate: i.gstRate || 0,
+             gstAmount: i.gstAmount || 0,
           })),
-          subtotal: Number(totalPrice),
-          tax: 0,
-          totalAmount: Number(totalPrice),
+          subtotal: invSubtotal,
+          tax: invTax,
+          cgst: invTax / 2,
+          sgst: invTax / 2,
+          totalAmount: Number(createdOrder.totalPrice),
           paymentMethod: createdOrder.paymentMethod,
           paymentStatus: isPosOrder ? "paid" : createdOrder.paymentStatus,
           orderStatus: createdOrder.orderStatus,

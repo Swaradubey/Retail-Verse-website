@@ -77,6 +77,11 @@ const productSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    gstRate: {
+      type: Number,
+      default: 0,
+      min: [0, "GST Rate cannot be negative"],
+    },
     title: {
       type: String,
       default: "",

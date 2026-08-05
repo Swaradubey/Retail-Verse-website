@@ -193,25 +193,29 @@ export function InvoiceDetail() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = item.total || item.subtotal || (qty * price);
+        const rate = item.gstRate || 0;
+        const itemTax = item.gstAmount || ((price * qty * rate) / 100);
+        const sub = item.subtotal || item.total || (qty * price);
 
         return [
           name,
           String(qty),
           formatINRForPDF(price),
-          formatINRForPDF(amount)
+          `${rate}%`,
+          formatINRForPDF(itemTax),
+          formatINRForPDF(sub + itemTax)
         ];
       });
 
       autoTable(doc, {
         startY: tableStartY,
-        head: [["Item", "Qty", "Price", "Amount"]],
+        head: [["Item", "Qty", "Price", "GST Rate", "Tax", "Amount"]],
         body: tableBody,
         theme: "grid",
         styles: {
           font: "helvetica",
-          fontSize: 10,
-          cellPadding: 4
+          fontSize: 9,
+          cellPadding: 3
         },
         headStyles: {
           fillColor: [245, 245, 245],
@@ -224,23 +228,36 @@ export function InvoiceDetail() {
       const pageHeight = doc.internal.pageSize.getHeight();
       const bottomMargin = 20;
 
-      if (finalY + 30 > pageHeight - bottomMargin) {
+      if (finalY + 40 > pageHeight - bottomMargin) {
         doc.addPage();
         finalY = 20;
       }
 
-      doc.setFont("helvetica", "bold");
+      const calcTotalTax = tax || items.reduce((s: number, i: any) => s + (i.gstAmount || ((i.price * (i.quantity || 1) * (i.gstRate || 0)) / 100)), 0);
+      const calcCgst = invoice?.cgst || (calcTotalTax / 2);
+      const calcSgst = invoice?.sgst || (calcTotalTax / 2);
+
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text("Subtotal:", pageWidth - 60, finalY);
+      doc.text("Subtotal:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
-      finalY += 7;
-      doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
+      if (calcTotalTax > 0) {
+        finalY += 6;
+        doc.setFont("helvetica", "bold");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(calcTotalTax), pageWidth - 14, finalY, { align: "right" });
+      } else {
+        finalY += 6;
+        doc.setFont("helvetica", "normal");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(0), pageWidth - 14, finalY, { align: "right" });
+      }
 
       finalY += 10;
       doc.setFontSize(14);
-      doc.text("Total Amount:", pageWidth - 60, finalY);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total Amount:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
@@ -458,38 +475,56 @@ export function InvoiceDetail() {
                   <thead>
                     <tr className="bg-[#F4E7C5]/30 text-xs font-black uppercase tracking-widest text-[#6B7280] dark:bg-[#2a2318] dark:text-[#9CA3AF]">
                       <th className="px-6 py-5">Description</th>
-                      <th className="px-6 py-5 text-center">Quantity</th>
+                      <th className="px-4 py-5 text-center">Quantity</th>
                       <th className="px-6 py-5 text-right">Unit Price</th>
+                      <th className="px-4 py-5 text-center">GST Rate</th>
+                      <th className="px-6 py-5 text-right">Tax</th>
                       <th className="px-6 py-5 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EADFBF]/50 dark:divide-[#3d3522]">
-                    {invoice.items?.map((item: any, i: number) => (
-                      <tr key={i} className="text-zinc-900 dark:text-zinc-100">
-                        <td className="px-6 py-5 font-bold">{item.name}</td>
-                        <td className="px-6 py-5 text-center font-medium">{item.quantity}</td>
-                        <td className="px-6 py-5 text-right tabular-nums">{formatINR(item.price)}</td>
-                        <td className="px-6 py-5 text-right font-bold tabular-nums">{formatINR(item.total || item.subtotal)}</td>
-                      </tr>
-                    ))}
+                    {invoice.items?.map((item: any, i: number) => {
+                      const qty = item.quantity || item.qty || 1;
+                      const price = item.price || item.unitPrice || 0;
+                      const rate = item.gstRate || 0;
+                      const itemTax = item.gstAmount || ((price * qty * rate) / 100);
+                      const sub = item.subtotal || item.total || (qty * price);
+                      return (
+                        <tr key={i} className="text-zinc-900 dark:text-zinc-100">
+                          <td className="px-6 py-5 font-bold">{item.name}</td>
+                          <td className="px-4 py-5 text-center font-medium">{qty}</td>
+                          <td className="px-6 py-5 text-right tabular-nums">{formatINR(price)}</td>
+                          <td className="px-4 py-5 text-center font-medium">{rate}%</td>
+                          <td className="px-6 py-5 text-right tabular-nums text-emerald-600 dark:text-emerald-400 font-medium">{formatINR(itemTax)}</td>
+                          <td className="px-6 py-5 text-right font-bold tabular-nums">{formatINR(sub + itemTax)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               {/* Totals */}
               <div className="mt-12 flex justify-end">
-                <div className="w-full max-w-xs space-y-4">
+                <div className="w-full max-w-xs space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground font-medium">Subtotal</span>
                     <span className="font-bold text-zinc-900 dark:text-zinc-100">{formatINR(invoice.subtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground font-medium">Tax (0%)</span>
-                    <span className="font-bold text-zinc-900 dark:text-zinc-100">{formatINR(invoice.tax || 0)}</span>
-                  </div>
+                  {invoice.tax > 0 ? (
+                    <div className="flex justify-between text-xs text-emerald-600 dark:text-emerald-400 font-bold">
+                      <span>Total GST Tax</span>
+                      <span>{formatINR(invoice.tax)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground font-medium">Total GST Tax</span>
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100">{formatINR(0)}</span>
+                    </div>
+                  )}
                   <Separator className="bg-[#EADFBF] dark:bg-[#3d3522]" />
                   <div className="flex justify-between items-center py-2">
-                    <span className="text-lg font-black uppercase tracking-wider text-[#D4AF37]">Total</span>
+                    <span className="text-lg font-black uppercase tracking-wider text-[#D4AF37]">Grand Total</span>
                     <span className="text-2xl font-black text-zinc-900 dark:text-zinc-50">{formatINR(invoice.total || invoice.totalAmount)}</span>
                   </div>
                 </div>

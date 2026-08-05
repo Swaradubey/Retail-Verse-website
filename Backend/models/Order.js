@@ -66,6 +66,8 @@ const orderSchema = new mongoose.Schema(
         quantity: { type: Number, required: true },
         image: { type: String, required: false },
         category: { type: String, required: false },
+        gstRate: { type: Number, default: 0 },
+        gstAmount: { type: Number, default: 0 },
       },
     ],
     /** Set to "pos" for in-store sales; "ai_voice" for voice orders; website checkout omits (legacy orders have no value). */
@@ -112,6 +114,18 @@ const orderSchema = new mongoose.Schema(
     totalPrice: {
       type: Number,
       required: true,
+      default: 0.0,
+    },
+    taxPrice: {
+      type: Number,
+      default: 0.0,
+    },
+    cgstAmount: {
+      type: Number,
+      default: 0.0,
+    },
+    sgstAmount: {
+      type: Number,
       default: 0.0,
     },
     razorpayOrderId: {

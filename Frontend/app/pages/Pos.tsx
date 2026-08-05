@@ -645,6 +645,15 @@ export function Pos() {
       toast.warning(`Low Stock: Only ${product.stock} items left in stock`);
     }
 
+    const resolvedGstRate = Number(
+      product.gstRate ??
+      (product as any).gst ??
+      (product as any).taxRate ??
+      (product as any).tax_rate ??
+      (product as any).taxPercent ??
+      0
+    );
+
     setCart(prev => {
       const existing = prev.find(item => item._id === product._id);
       if (existing) {
@@ -654,7 +663,7 @@ export function Pos() {
         }
         return prev.map(item =>
           item._id === product._id
-            ? { ...item, cartQuantity: item.cartQuantity + 1 }
+            ? { ...item, gstRate: resolvedGstRate, cartQuantity: item.cartQuantity + 1 }
             : item
         );
       }
@@ -662,7 +671,7 @@ export function Pos() {
         toast.error('Product is out of stock');
         return prev;
       }
-      return [...prev, { ...product, cartQuantity: 1 }];
+      return [...prev, { ...product, gstRate: resolvedGstRate, cartQuantity: 1 }];
     });
 
     setShowAddedToast(true);
@@ -697,9 +706,36 @@ export function Pos() {
     setCart(prev => prev.filter(item => item._id !== id));
   };
 
-  const calculateTotal = () => {
+  const calculateSubtotal = useCallback(() => {
     return cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
-  };
+  }, [cart]);
+
+  const calculateTotalTax = useCallback(() => {
+    return cart.reduce((total, item) => {
+      const rate = Number(
+        item.gstRate ??
+        (item as any).gst ??
+        (item as any).taxRate ??
+        (item as any).tax_rate ??
+        (item as any).taxPercent ??
+        0
+      );
+      const itemTax = (item.price * item.cartQuantity * rate) / 100;
+      return total + itemTax;
+    }, 0);
+  }, [cart]);
+
+  const calculateCGST = useCallback(() => {
+    return calculateTotalTax() / 2;
+  }, [calculateTotalTax]);
+
+  const calculateSGST = useCallback(() => {
+    return calculateTotalTax() / 2;
+  }, [calculateTotalTax]);
+
+  const calculateTotal = useCallback(() => {
+    return calculateSubtotal() + calculateTotalTax();
+  }, [calculateSubtotal, calculateTotalTax]);
 
   const handlePaymentDialogOpenChange = (open: boolean) => {
     // If the user is closing the modal from the invoice step, complete the checkout flow
@@ -813,21 +849,34 @@ export function Pos() {
     if (isOffline) {
       // For offline orders, we don't have a backend invoice yet.
       // We'll generate a preview from the order data.
+      const derivedItems = (order.items || []).map((i: any) => {
+        const price = Number(i.price || 0);
+        const qty = Number(i.quantity || 1);
+        const rate = Number(i.gstRate || 0);
+        const itemTax = Number(i.gstAmount) || ((price * qty * rate) / 100);
+        return {
+          name: i.name,
+          quantity: qty,
+          price: price,
+          subtotal: price * qty,
+          gstRate: rate,
+          gstAmount: itemTax,
+        };
+      });
+      const derivedSubtotal = derivedItems.reduce((sum: number, i: any) => sum + i.subtotal, 0);
+      const derivedTax = order.taxPrice != null ? Number(order.taxPrice) : derivedItems.reduce((sum: number, i: any) => sum + i.gstAmount, 0);
       setLatestInvoiceData({
         invoiceNumber: `PRO-FORMA-${order.orderId}`,
         orderId: order.orderId,
         customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "POS Customer",
         customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
         customerPhone: order.customerPhone || (order.shippingAddress && order.shippingAddress.phone) || "",
-        items: order.items.map((i: any) => ({
-          name: i.name,
-          quantity: i.quantity,
-          price: i.price,
-          subtotal: i.price * i.quantity
-        })),
-        subtotal: order.totalPrice,
-        tax: 0,
-        totalAmount: order.totalPrice,
+        items: derivedItems,
+        subtotal: derivedSubtotal,
+        tax: derivedTax,
+        cgst: order.cgstAmount != null ? Number(order.cgstAmount) : (derivedTax / 2),
+        sgst: order.sgstAmount != null ? Number(order.sgstAmount) : (derivedTax / 2),
+        totalAmount: order.totalPrice || (derivedSubtotal + derivedTax),
         paymentMethod: order.paymentMethod,
         paymentStatus: "Pending (Offline)",
         createdAt: new Date().toISOString(),
@@ -858,21 +907,34 @@ export function Pos() {
           setLatestInvoiceData(foundInvoice);
         } else {
           // Fallback to deriving from order data if backend invoice not found yet
+          const derivedItems = (order.items || []).map((i: any) => {
+            const price = Number(i.price || 0);
+            const qty = Number(i.quantity || 1);
+            const rate = Number(i.gstRate || 0);
+            const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
+            return {
+              name: i.name,
+              quantity: qty,
+              price: price,
+              subtotal: price * qty,
+              gstRate: rate,
+              gstAmount: amt,
+            };
+          });
+          const derivedSubtotal = derivedItems.reduce((sum: number, i: any) => sum + i.subtotal, 0);
+          const derivedTax = order.taxPrice || derivedItems.reduce((sum: number, i: any) => sum + i.gstAmount, 0);
           setLatestInvoiceData({
             invoiceNumber: `INV-${order.orderId}`,
             orderId: order.orderId,
             customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "POS Customer",
             customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
             customerPhone: order.customerPhone || (order.shippingAddress && order.shippingAddress.phone) || "",
-            items: order.items.map((i: any) => ({
-              name: i.name,
-              quantity: i.quantity,
-              price: i.price,
-              subtotal: i.price * i.quantity
-            })),
-            subtotal: order.totalPrice,
-            tax: 0,
-            totalAmount: order.totalPrice,
+            items: derivedItems,
+            subtotal: derivedSubtotal,
+            tax: derivedTax,
+            cgst: derivedTax / 2,
+            sgst: derivedTax / 2,
+            totalAmount: order.totalPrice || (derivedSubtotal + derivedTax),
             paymentMethod: order.paymentMethod,
             paymentStatus: order.paymentStatus || "Completed",
             createdAt: order.createdAt || new Date().toISOString(),
@@ -890,16 +952,26 @@ export function Pos() {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
 
-    const orderTotal = cart.reduce((total, item) => total + item.price * item.cartQuantity, 0);
-    const subtotal = orderTotal;
-    const itemsPayload = cart.map(({ _id, name, price, cartQuantity, image, category }) => ({
-      productId: String(_id ?? ''),
-      name,
-      price,
-      quantity: cartQuantity,
-      image: image ?? '',
-      category: category ?? 'Uncategorized',
-    }));
+    const subtotal = calculateSubtotal();
+    const taxTotal = calculateTotalTax();
+    const cgstTotal = calculateCGST();
+    const sgstTotal = calculateSGST();
+    const orderTotal = calculateTotal();
+
+    const itemsPayload = cart.map(({ _id, name, price, cartQuantity, image, category, gstRate }) => {
+      const rate = Number(gstRate || 0);
+      const amt = (price * cartQuantity * rate) / 100;
+      return {
+        productId: String(_id ?? ''),
+        name,
+        price,
+        quantity: cartQuantity,
+        image: image ?? '',
+        category: category ?? 'Uncategorized',
+        gstRate: rate,
+        gstAmount: amt,
+      };
+    });
     const offline = typeof navigator === 'undefined' ? false : !navigator.onLine;
 
     if (modalStep === 'cod-shipping') {
@@ -923,7 +995,7 @@ export function Pos() {
       if (offline) {
         try {
           const offlineOrderId = newOfflineOrderId();
-          const orderPayload: OrderPayload = {
+          const orderPayload: OrderPayload & { taxPrice?: number; cgstAmount?: number; sgstAmount?: number } = {
             orderId: `ORD-POS-OFF-${offlineOrderId}`,
             isPos: true,
             orderSource: 'pos',
@@ -934,6 +1006,9 @@ export function Pos() {
             shippingAddress,
             paymentMethod: 'COD',
             totalPrice: orderTotal,
+            taxPrice: taxTotal,
+            cgstAmount: cgstTotal,
+            sgstAmount: sgstTotal,
             ...getPosCustomerFieldsForPayload(),
           };
           await savePendingOfflinePosOrder({
@@ -971,6 +1046,9 @@ export function Pos() {
           shippingAddress,
           paymentMethod: 'COD',
           totalPrice: orderTotal,
+          taxPrice: taxTotal,
+          cgstAmount: cgstTotal,
+          sgstAmount: sgstTotal,
           ...getPosCustomerFieldsForPayload(),
         };
         console.log('[POS] COD order payload:', JSON.stringify(orderPayload, null, 2));
@@ -1035,7 +1113,7 @@ export function Pos() {
       if (offline) {
         try {
           const offlineOrderId = newOfflineOrderId();
-          const orderPayload: OrderPayload = {
+          const orderPayload: OrderPayload & { taxPrice?: number; cgstAmount?: number; sgstAmount?: number } = {
             orderId: `ORD-POS-OFF-${offlineOrderId}`,
             isPos: true,
             orderSource: 'pos',
@@ -1047,6 +1125,9 @@ export function Pos() {
             paymentMethod: 'Card',
             paymentDetails,
             totalPrice: orderTotal,
+            taxPrice: taxTotal,
+            cgstAmount: cgstTotal,
+            sgstAmount: sgstTotal,
             ...getPosCustomerFieldsForPayload(),
           };
           await savePendingOfflinePosOrder({
@@ -1085,6 +1166,9 @@ export function Pos() {
           paymentMethod: 'Card',
           paymentDetails,
           totalPrice: orderTotal,
+          taxPrice: taxTotal,
+          cgstAmount: cgstTotal,
+          sgstAmount: sgstTotal,
           ...getPosCustomerFieldsForPayload(),
         };
         console.log('[POS] Card order payload:', JSON.stringify(orderPayload, null, 2));
@@ -1149,7 +1233,7 @@ export function Pos() {
           swipe: 'Cash',
         };
 
-        const orderPayload: OrderPayload = {
+        const orderPayload: OrderPayload & { taxPrice?: number; cgstAmount?: number; sgstAmount?: number } = {
           orderId: `ORD-POS-OFF-${offlineOrderId}`,
           isPos: true,
           orderSource: 'pos',
@@ -1161,6 +1245,9 @@ export function Pos() {
           paymentMethod: methodMap[selectedPaymentMethod],
           paymentDetails,
           totalPrice: orderTotal,
+          taxPrice: taxTotal,
+          cgstAmount: cgstTotal,
+          sgstAmount: sgstTotal,
           ...getPosCustomerFieldsForPayload(),
         };
         await savePendingOfflinePosOrder({
@@ -1206,6 +1293,9 @@ export function Pos() {
         paymentMethod: methodMap[selectedPaymentMethod],
         paymentDetails,
         totalPrice: orderTotal,
+        taxPrice: taxTotal,
+        cgstAmount: cgstTotal,
+        sgstAmount: sgstTotal,
         ...getPosCustomerFieldsForPayload(),
       };
       console.log('[POS] Order payload:', JSON.stringify(orderPayload, null, 2));
@@ -1423,6 +1513,13 @@ export function Pos() {
         yCursor += 5;
       }
 
+      const businessTaxNumber = business?.taxNumber || business?.gst || "";
+      if (businessTaxNumber) {
+        doc.setFontSize(9);
+        doc.text(`GSTIN: ${businessTaxNumber}`, 14, yCursor);
+        yCursor += 5;
+      }
+
       if (!businessName) {
         yCursor = 27;
       }
@@ -1467,25 +1564,29 @@ export function Pos() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = item.subtotal || item.total || (qty * price);
+        const rate = Number(item.gstRate ?? (item as any).gst ?? (item as any).taxRate ?? 0);
+        const itemTax = Number(item.gstAmount) || ((price * qty * rate) / 100);
+        const sub = item.subtotal || item.total || (qty * price);
 
         return [
           name,
           String(qty),
           formatINRForPDF(price),
-          formatINRForPDF(amount)
+          `${rate}%`,
+          formatINRForPDF(itemTax),
+          formatINRForPDF(sub + itemTax)
         ];
       });
 
       autoTable(doc, {
         startY: tableStartY,
-        head: [["Item", "Qty", "Price", "Amount"]],
+        head: [["Item", "Qty", "Price", "GST Rate", "Tax", "Amount"]],
         body: tableBody,
         theme: "grid",
         styles: {
           font: "helvetica",
-          fontSize: 10,
-          cellPadding: 4
+          fontSize: 9,
+          cellPadding: 3
         },
         headStyles: {
           fillColor: [245, 245, 245],
@@ -1498,23 +1599,36 @@ export function Pos() {
       const pageHeight = doc.internal.pageSize.getHeight();
       const bottomMargin = 20;
 
-      if (finalY + 30 > pageHeight - bottomMargin) {
+      if (finalY + 40 > pageHeight - bottomMargin) {
         doc.addPage();
         finalY = 20;
       }
 
-      doc.setFont("helvetica", "bold");
+      const calcTotalTax = Number(tax) || items.reduce((s: number, i: any) => s + (Number(i.gstAmount) || ((Number(i.price || 0) * Number(i.quantity || i.qty || 1) * Number(i.gstRate ?? (i as any).gst ?? (i as any).taxRate ?? 0)) / 100)), 0);
+      const calcCgst = invoice?.cgst || (calcTotalTax / 2);
+      const calcSgst = invoice?.sgst || (calcTotalTax / 2);
+
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text("Subtotal:", pageWidth - 60, finalY);
+      doc.text("Subtotal:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
-      finalY += 7;
-      doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
+      if (calcTotalTax > 0) {
+        finalY += 6;
+        doc.setFont("helvetica", "bold");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(calcTotalTax), pageWidth - 14, finalY, { align: "right" });
+      } else {
+        finalY += 6;
+        doc.setFont("helvetica", "normal");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(0), pageWidth - 14, finalY, { align: "right" });
+      }
 
       finalY += 10;
       doc.setFontSize(14);
-      doc.text("Total Amount:", pageWidth - 60, finalY);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total Amount:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
@@ -1900,7 +2014,21 @@ export function Pos() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-[#111111] text-sm line-clamp-1">{item.name}</div>
-                          <div className="text-sm text-gray-500">{formatINR(item.price)}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
+                            <span>{formatINR(item.price)}</span>
+                            {(() => {
+                              const rate = Number(item.gstRate ?? (item as any).gst ?? (item as any).taxRate ?? 0);
+                              return rate > 0 ? (
+                                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded border border-emerald-200/80">
+                                  GST {rate}%
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 dark:bg-gray-800/40 px-1.5 py-0.2 rounded border border-gray-200/80">
+                                  GST 0%
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </div>
 
                         <div
@@ -1939,18 +2067,25 @@ export function Pos() {
             )}
           </div>
 
-          <div className="p-5 bg-gray-50 border-t border-black/5 space-y-4">
+          <div className="p-5 bg-gray-50 border-t border-black/5 space-y-2.5">
             <div className="flex justify-between items-center text-gray-500 text-sm">
               <span>Subtotal</span>
-              <span>{formatINR(calculateTotal())}</span>
+              <span>{formatINR(calculateSubtotal())}</span>
             </div>
-            <div className="flex justify-between items-center text-gray-500 text-sm">
-              <span>Tax (0%)</span>
-              <span>{formatINR(0)}</span>
-            </div>
+            {calculateTotalTax() > 0 ? (
+              <div className="flex justify-between items-center text-emerald-700 font-semibold text-xs">
+                <span>Total GST Tax</span>
+                <span>{formatINR(calculateTotalTax())}</span>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center text-gray-500 text-sm">
+                <span>Total GST Tax</span>
+                <span>{formatINR(0)}</span>
+              </div>
+            )}
             <div className="h-px bg-black/10 w-full my-2"></div>
             <div className="flex justify-between items-center text-[#111111] text-xl font-bold">
-              <span>Total</span>
+              <span>Total Amount</span>
               <span>{formatINR(calculateTotal())}</span>
             </div>
 
@@ -1965,8 +2100,8 @@ export function Pos() {
         </div>
 
         <Dialog open={paymentModalOpen} onOpenChange={handlePaymentDialogOpenChange}>
-          <DialogContent className="max-w-md flex flex-col gap-0 overflow-hidden max-h-[90vh] sm:max-h-[95vh] rounded-2xl border-black/10 bg-white p-0 sm:max-w-md [&_[data-slot=dialog-close]]:text-gray-500 [&_[data-slot=dialog-close]]:hover:text-[#111111] [&_[data-slot=dialog-close]]:top-5 [&_[data-slot=dialog-close]]:right-5">
-            <div className="shrink-0 px-6 pt-6 pb-4 border-b border-black/5 bg-white z-10">
+          <DialogContent className="w-[90vw] max-w-[600px] max-h-[90vh] flex flex-col gap-0 overflow-hidden rounded-2xl border-black/10 bg-white p-0 sm:max-w-[600px] [&_[data-slot=dialog-close]]:text-gray-500 [&_[data-slot=dialog-close]]:hover:text-[#111111] [&_[data-slot=dialog-close]]:top-5 [&_[data-slot=dialog-close]]:right-5">
+            <div className="shrink-0 px-4 sm:px-6 pt-6 pb-4 border-b border-black/5 bg-white z-10">
               <DialogHeader className="text-left pr-6">
                 <DialogTitle className="text-xl font-bold text-[#111111]">
                   {modalStep === 'cod-shipping'
@@ -1993,7 +2128,7 @@ export function Pos() {
               </DialogHeader>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 pt-4 pb-8 space-y-4">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 pt-4 pb-6 space-y-4">
 
               {modalStep === 'invoice' ? (
                 <div className="space-y-6">
@@ -2011,59 +2146,64 @@ export function Pos() {
                     <div
                       id="pos-invoice-content"
                       ref={posInvoiceRef}
-                      className="invoice-pdf-content bg-[#fffcf5] rounded-2xl border border-[#e6d5b8] p-6 shadow-xl relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-white"
+                      className="invoice-pdf-content bg-[#fffcf5] rounded-2xl border border-[#e6d5b8] p-4 sm:p-6 shadow-xl relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-white w-full box-border"
                     >
                       {/* Premium Accent Corner */}
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#b89146]/5 -mr-16 -mt-16 rounded-full blur-2xl print:hidden"></div>
 
                       {/* Store / Business Header */}
                       <div className="mb-6 pb-6 border-b border-[#e6d5b8]/50 relative z-10">
-                        <div className="flex items-start gap-4">
-                          {(() => {
-                            const logoUrl = getFullImageUrl(latestInvoiceData.business?.logo);
-                            return logoUrl ? (
-                              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-white overflow-hidden shadow-sm border border-[#e6d5b8]/20 shrink-0">
-                                <img
-                                  src={logoUrl}
-                                  alt={latestInvoiceData.business?.name || "Store logo"}
-                                  className="h-full w-full object-cover"
-                                  crossOrigin="anonymous"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).onerror = null;
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                    const parent = (e.target as HTMLImageElement).closest('.flex');
-                                    if (parent) (parent as HTMLElement).style.display = 'none';
-                                  }}
-                                />
+                        <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                            {(() => {
+                              const logoUrl = getFullImageUrl(latestInvoiceData.business?.logo);
+                              return logoUrl ? (
+                                <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-xl bg-white overflow-hidden shadow-sm border border-[#e6d5b8]/20 shrink-0">
+                                  <img
+                                    src={logoUrl}
+                                    alt={latestInvoiceData.business?.name || "Store logo"}
+                                    className="h-full w-full object-cover"
+                                    crossOrigin="anonymous"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).onerror = null;
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                      const parent = (e.target as HTMLImageElement).closest('.flex');
+                                      if (parent) (parent as HTMLElement).style.display = 'none';
+                                    }}
+                                  />
+                                </div>
+                              ) : null;
+                            })()}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="text-lg sm:text-xl font-black text-[#111111] tracking-tight uppercase truncate">
+                                {latestInvoiceData.business?.name || "INVOICE"}
+                              </h3>
+                              {latestInvoiceData.business?.tagline ? (
+                                <p className="text-xs text-[#b89146] font-medium italic mt-0.5">{latestInvoiceData.business.tagline}</p>
+                              ) : null}
+                              <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                                {latestInvoiceData.business?.address ? (
+                                  <p className="text-[10px] text-gray-500">{latestInvoiceData.business.address}</p>
+                                ) : null}
+                                {latestInvoiceData.business?.phone ? (
+                                  <p className="text-[10px] text-gray-500">Ph: {latestInvoiceData.business.phone}</p>
+                                ) : null}
+                                {latestInvoiceData.business?.email ? (
+                                  <p className="text-[10px] text-gray-500">{latestInvoiceData.business.email}</p>
+                                ) : null}
+                                {(latestInvoiceData.business?.taxNumber || latestInvoiceData.business?.gst) ? (
+                                  <p className="text-[10px] text-[#b89146] font-bold">GSTIN: {latestInvoiceData.business?.taxNumber || latestInvoiceData.business?.gst}</p>
+                                ) : null}
                               </div>
-                            ) : null;
-                          })()}
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-xl font-black text-[#111111] tracking-tight uppercase truncate">
-                              {latestInvoiceData.business?.name || "INVOICE"}
-                            </h3>
-                            {latestInvoiceData.business?.tagline ? (
-                              <p className="text-xs text-[#b89146] font-medium italic mt-0.5">{latestInvoiceData.business.tagline}</p>
-                            ) : null}
-                            <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
-                              {latestInvoiceData.business?.address ? (
-                                <p className="text-[10px] text-gray-500">{latestInvoiceData.business.address}</p>
-                              ) : null}
-                              {latestInvoiceData.business?.phone ? (
-                                <p className="text-[10px] text-gray-500">Ph: {latestInvoiceData.business.phone}</p>
-                              ) : null}
-                              {latestInvoiceData.business?.email ? (
-                                <p className="text-[10px] text-gray-500">{latestInvoiceData.business.email}</p>
-                              ) : null}
                             </div>
                           </div>
-                          <div className="text-right shrink-0">
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-4">
+                          <div className="text-left sm:text-right shrink-0">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] font-bold uppercase tracking-wider mb-2 sm:mb-4">
                               <CheckCircle2 className="h-3 w-3" />
                               {latestInvoiceData.paymentStatus === 'Paid' || latestInvoiceData.paymentStatus === 'Completed' ? 'Payment Success' : latestInvoiceData.paymentStatus}
                             </div>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Issue Date</p>
-                            <p className="text-sm font-bold text-[#111111]">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5 sm:mb-1">Issue Date</p>
+                            <p className="text-xs sm:text-sm font-bold text-[#111111]">
                               {new Date(latestInvoiceData.createdAt || Date.now()).toLocaleDateString('en-IN', {
                                 day: '2-digit',
                                 month: 'long',
@@ -2072,73 +2212,91 @@ export function Pos() {
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 mt-3">
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
                           <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Invoice No:</p>
                           <p className="text-xs text-[#b89146] font-bold tracking-wider">{latestInvoiceData.invoiceNumber}</p>
                           <span className="text-gray-300 mx-1">|</span>
                           <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Order ID:</p>
-                          <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5">{latestInvoiceData.orderId}</p>
+                          <p className="text-[10px] text-[#111111] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-black/5 break-all">{latestInvoiceData.orderId}</p>
                         </div>
                       </div>
 
                       {/* Customer Info */}
-                      <div className="grid grid-cols-2 gap-8 mb-8 relative z-10">
-                        <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8 mb-6 sm:mb-8 relative z-10">
+                        <div className="space-y-2 sm:space-y-3">
                           <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Billed To</p>
                           <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30">
-                            <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.customerName}</p>
+                            <p className="text-xs sm:text-sm font-bold text-[#111111] break-words">{latestInvoiceData.customerName}</p>
                             {latestInvoiceData.customerEmail && (
-                              <p className="text-xs text-gray-500 mt-1.5 flex items-center gap-1.5 italic">
+                              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1.5 italic break-all">
                                 {latestInvoiceData.customerEmail}
                               </p>
                             )}
                           </div>
                         </div>
-                        <div className="text-right space-y-3">
+                        <div className="text-left sm:text-right space-y-2 sm:space-y-3">
                           <p className="text-[10px] font-black text-[#b89146] uppercase tracking-[0.2em]">Payment Method</p>
-                          <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30 inline-block min-w-[140px]">
-                            <p className="text-sm font-bold text-[#111111]">{latestInvoiceData.paymentMethod}</p>
+                          <div className="p-3 bg-white/60 rounded-xl border border-[#e6d5b8]/30 inline-block w-full sm:w-auto sm:min-w-[140px]">
+                            <p className="text-xs sm:text-sm font-bold text-[#111111]">{latestInvoiceData.paymentMethod}</p>
                             <p className="text-[10px] text-emerald-600 mt-1 font-bold uppercase tracking-tight">Verified Transaction</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Items Table */}
-                      <div className="mb-8 overflow-hidden rounded-2xl border border-[#e6d5b8]/50 bg-white/40 backdrop-blur-sm relative z-10">
-                        <table className="w-full text-sm">
+                      <div className="mb-6 sm:mb-8 overflow-x-auto rounded-2xl border border-[#e6d5b8]/50 bg-white/40 backdrop-blur-sm relative z-10 w-full">
+                        <table className="w-full text-xs sm:text-sm min-w-[460px] sm:min-w-full">
                           <thead>
                             <tr className="bg-[#b89146]/5 text-[#b89146]">
-                              <th className="px-5 py-3 text-left text-[10px] font-black uppercase tracking-widest">Item Description</th>
-                              <th className="px-5 py-3 text-center text-[10px] font-black uppercase tracking-widest">Qty</th>
-                              <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Price</th>
-                              <th className="px-5 py-3 text-right text-[10px] font-black uppercase tracking-widest">Amount</th>
+                              <th className="px-2.5 sm:px-4 py-2.5 sm:py-3 text-left text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Item Description</th>
+                              <th className="px-1.5 sm:px-3 py-2.5 sm:py-3 text-center text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Qty</th>
+                              <th className="px-2 sm:px-4 py-2.5 sm:py-3 text-right text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Price</th>
+                              <th className="px-1.5 sm:px-3 py-2.5 sm:py-3 text-center text-[9px] sm:text-[10px] font-black uppercase tracking-wider whitespace-nowrap">GST Rate</th>
+                              <th className="px-2 sm:px-4 py-2.5 sm:py-3 text-right text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Tax</th>
+                              <th className="px-2 sm:px-4 py-2.5 sm:py-3 text-right text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Amount</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#e6d5b8]/20">
-                            {latestInvoiceData.items?.map((item: any, idx: number) => (
-                              <tr key={idx} className="hover:bg-white/40 transition-colors">
-                                <td className="px-5 py-4 font-bold text-[#111111]">{item.name}</td>
-                                <td className="px-5 py-4 text-center text-gray-600 font-medium">{item.quantity}</td>
-                                <td className="px-5 py-4 text-right text-gray-600 font-medium">{formatINR(item.price)}</td>
-                                <td className="px-5 py-4 text-right font-bold text-[#111111]">{formatINR(item.subtotal)}</td>
-                              </tr>
-                            ))}
+                            {latestInvoiceData.items?.map((item: any, idx: number) => {
+                              const qty = item.quantity || item.qty || 1;
+                              const price = item.price || item.unitPrice || 0;
+                              const rate = Number(item.gstRate ?? (item as any).gst ?? (item as any).taxRate ?? 0);
+                              const itemTax = Number(item.gstAmount) || ((price * qty * rate) / 100);
+                              const sub = item.subtotal || (price * qty);
+                              return (
+                                <tr key={idx} className="hover:bg-white/40 transition-colors">
+                                  <td className="px-2.5 sm:px-4 py-2 sm:py-2.5 font-bold text-[#111111] text-xs sm:text-sm break-words max-w-[130px] sm:max-w-none">{item.name}</td>
+                                  <td className="px-1.5 sm:px-3 py-2 sm:py-2.5 text-center text-gray-600 font-medium text-xs sm:text-sm">{qty}</td>
+                                  <td className="px-2 sm:px-4 py-2 sm:py-2.5 text-right text-gray-600 font-medium text-xs sm:text-sm whitespace-nowrap">{formatINR(price)}</td>
+                                  <td className="px-1.5 sm:px-3 py-2 sm:py-2.5 text-center text-gray-600 font-medium text-xs sm:text-sm whitespace-nowrap">{rate}%</td>
+                                  <td className="px-2 sm:px-4 py-2 sm:py-3 text-right text-emerald-700 font-medium text-xs sm:text-sm whitespace-nowrap">{formatINR(itemTax)}</td>
+                                  <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-bold text-[#111111] text-xs sm:text-sm whitespace-nowrap">{formatINR(sub + itemTax)}</td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
 
                       {/* Totals Section */}
                       <div className="flex justify-end relative z-10">
-                        <div className="w-full max-w-[240px] space-y-3 p-4 bg-[#b89146]/5 rounded-2xl border border-[#e6d5b8]/30">
+                        <div className="w-full max-w-[280px] space-y-2.5 p-4 bg-[#b89146]/5 rounded-2xl border border-[#e6d5b8]/30">
                           <div className="flex justify-between text-xs">
                             <span className="font-bold text-gray-500 uppercase tracking-tighter">Subtotal</span>
                             <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.subtotal)}</span>
                           </div>
-                          <div className="flex justify-between text-xs">
-                            <span className="font-bold text-gray-500 uppercase tracking-tighter">GST / Tax (0%)</span>
-                            <span className="font-bold text-[#111111]">{formatINR(latestInvoiceData.tax || 0)}</span>
-                          </div>
-                          <div className="pt-3 border-t border-[#b89146]/20 flex justify-between items-center">
+                          {latestInvoiceData.tax > 0 ? (
+                            <div className="flex justify-between text-xs text-emerald-700 font-bold">
+                              <span className="uppercase tracking-tighter">Total GST Tax</span>
+                              <span>{formatINR(latestInvoiceData.tax)}</span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between text-xs">
+                              <span className="font-bold text-gray-500 uppercase tracking-tighter">Total GST Tax</span>
+                              <span className="font-bold text-[#111111]">{formatINR(0)}</span>
+                            </div>
+                          )}
+                          <div className="pt-2.5 border-t border-[#b89146]/20 flex justify-between items-center">
                             <span className="text-[10px] font-black text-[#b89146] uppercase tracking-widest">Grand Total</span>
                             <span className="text-xl font-black text-[#111111] drop-shadow-sm">{formatINR(latestInvoiceData.totalAmount)}</span>
                           </div>
@@ -2159,12 +2317,12 @@ export function Pos() {
 
                   {/* Action Buttons */}
                   <div className="flex flex-col gap-3 pt-2 print:hidden">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-wrap sm:flex-nowrap gap-2">
                       <Button
                         variant="outline"
                         type="button"
                         disabled={isDownloading}
-                        className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
+                        className="flex-1 min-w-[110px] h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-70"
                         onClick={handleDownloadPDF}
                       >
                         {isDownloading ? (
@@ -2177,7 +2335,7 @@ export function Pos() {
                       <Button
                         variant="outline"
                         type="button"
-                        className="h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
+                        className="flex-1 min-w-[80px] h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
                         onClick={() => window.print()}
                       >
                         <Printer className="h-4 w-4 shrink-0" />
@@ -2187,7 +2345,7 @@ export function Pos() {
                         variant="outline"
                         type="button"
                         disabled={emailSending}
-                        className="h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
+                        className="flex-1 min-w-[80px] h-12 rounded-xl border-[#b89146] bg-[#b89146]/5 text-[#b89146] hover:bg-[#b89146]/10 hover:text-[#96762e] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2 disabled:opacity-60"
                         onClick={handleSendInvoiceEmail}
                       >
                         {emailSending ? (

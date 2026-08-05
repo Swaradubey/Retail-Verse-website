@@ -19,6 +19,7 @@ export interface Product {
   image?: string;
   sku: string;
   barcode?: string;
+  gstRate?: number;
   isActive?: boolean;
   isFeatured?: boolean;
   isOnSale?: boolean;

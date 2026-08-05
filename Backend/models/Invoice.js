@@ -25,6 +25,8 @@ const invoiceSchema = new mongoose.Schema(
         quantity: { type: Number, required: true },
         price: { type: Number, required: true },
         subtotal: { type: Number, required: true },
+        gstRate: { type: Number, default: 0 },
+        gstAmount: { type: Number, default: 0 },
       },
     ],
     subtotal: {
@@ -32,6 +34,14 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
     },
     tax: {
+      type: Number,
+      default: 0,
+    },
+    cgst: {
+      type: Number,
+      default: 0,
+    },
+    sgst: {
       type: Number,
       default: 0,
     },

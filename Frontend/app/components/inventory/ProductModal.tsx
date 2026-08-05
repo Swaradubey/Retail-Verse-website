@@ -61,6 +61,7 @@ export function ProductModal({
     stockLevel: 0,
     imageUrl: '',
     description: '',
+    gstRate: 0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -212,6 +213,7 @@ export function ProductModal({
         stockLevel: product.stock || 0,
         imageUrl: initialUrl,
         description: product.description || '',
+        gstRate: product.gstRate ?? 0,
       });
       if (initialUrl && !isValidImageUrlFormat(initialUrl)) {
         setImageLoadError("Unable to load image from this URL");
@@ -219,6 +221,8 @@ export function ProductModal({
         setImageLoadError(null);
       }
     } else {
+      const savedGst = localStorage.getItem('lastGstRate');
+      const defaultGst = savedGst !== null ? Number(savedGst) : 0;
       setFormData({
         productName: '',
         sku: '',
@@ -228,6 +232,7 @@ export function ProductModal({
         stockLevel: 0,
         imageUrl: '',
         description: '',
+        gstRate: defaultGst,
       });
       setSelectedMarketplaces([]);
       setImageLoadError(null);
@@ -256,10 +261,14 @@ export function ProductModal({
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    const numVal = (name === 'unitPrice' || name === 'stockLevel' || name === 'gstRate') ? Number(value) : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'unitPrice' || name === 'stockLevel' ? Number(value) : value,
+      [name]: numVal,
     }));
+    if (name === 'gstRate' && mode === 'add') {
+      localStorage.setItem('lastGstRate', String(value));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -323,6 +332,7 @@ export function ProductModal({
         category: formData.category || product.category || '',
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
+        gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
         description: formData.description ?? product.description ?? '',
@@ -338,6 +348,7 @@ export function ProductModal({
         category: formData.category,
         price: formData.unitPrice,
         stock: formData.stockLevel,
+        gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
         description: formData.description,
@@ -632,6 +643,29 @@ export function ProductModal({
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                         placeholder="0"
                       />
+                    </div>
+
+                    {/* GST Rate (%) */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-emerald-500" />
+                        GST Rate (%)
+                      </label>
+                      <select
+                        name="gstRate"
+                        value={formData.gstRate}
+                        onChange={handleChange}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                      >
+                        <option value={0}>0% (Exempt / Nil Rated)</option>
+                        <option value={5}>5% GST</option>
+                        <option value={12}>12% GST</option>
+                        <option value={18}>18% GST</option>
+                        <option value={28}>28% GST</option>
+                      </select>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Selected rate persists for consecutive items.
+                      </p>
                     </div>
 
                     {showClientAssign && (

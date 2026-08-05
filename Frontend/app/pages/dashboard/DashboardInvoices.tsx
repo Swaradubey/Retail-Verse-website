@@ -503,25 +503,29 @@ export function DashboardInvoices() {
 
         const qty = item.quantity || item.qty || 1;
         const price = item.price || item.unitPrice || item.product?.price || 0;
-        const amount = item.subtotal || item.total || (qty * price);
+        const rate = item.gstRate || 0;
+        const itemTax = item.gstAmount || ((price * qty * rate) / 100);
+        const sub = item.subtotal || item.total || (qty * price);
 
         return [
           name,
           String(qty),
           formatINRForPDF(price),
-          formatINRForPDF(amount)
+          `${rate}%`,
+          formatINRForPDF(itemTax),
+          formatINRForPDF(sub + itemTax)
         ];
       });
 
       autoTable(doc, {
         startY: tableStartY,
-        head: [["Item", "Qty", "Price", "Amount"]],
+        head: [["Item", "Qty", "Price", "GST Rate", "Tax", "Amount"]],
         body: tableBody,
         theme: "grid",
         styles: {
           font: "helvetica",
-          fontSize: 10,
-          cellPadding: 4
+          fontSize: 9,
+          cellPadding: 3
         },
         headStyles: {
           fillColor: [245, 245, 245],
@@ -534,23 +538,36 @@ export function DashboardInvoices() {
       const pageHeight = doc.internal.pageSize.getHeight();
       const bottomMargin = 20;
 
-      if (finalY + 30 > pageHeight - bottomMargin) {
+      if (finalY + 40 > pageHeight - bottomMargin) {
         doc.addPage();
         finalY = 20;
       }
 
-      doc.setFont("helvetica", "bold");
+      const calcTotalTax = tax || items.reduce((s: number, i: any) => s + (i.gstAmount || ((i.price * (i.quantity || 1) * (i.gstRate || 0)) / 100)), 0);
+      const calcCgst = invoice?.cgst || (calcTotalTax / 2);
+      const calcSgst = invoice?.sgst || (calcTotalTax / 2);
+
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.text("Subtotal:", pageWidth - 60, finalY);
+      doc.text("Subtotal:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
-      finalY += 7;
-      doc.text("Tax:", pageWidth - 60, finalY);
-      doc.text(formatINRForPDF(tax), pageWidth - 14, finalY, { align: "right" });
+      if (calcTotalTax > 0) {
+        finalY += 6;
+        doc.setFont("helvetica", "bold");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(calcTotalTax), pageWidth - 14, finalY, { align: "right" });
+      } else {
+        finalY += 6;
+        doc.setFont("helvetica", "normal");
+        doc.text("Total GST Tax:", pageWidth - 70, finalY);
+        doc.text(formatINRForPDF(0), pageWidth - 14, finalY, { align: "right" });
+      }
 
       finalY += 10;
       doc.setFontSize(14);
-      doc.text("Total Amount:", pageWidth - 60, finalY);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total Amount:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(total), pageWidth - 14, finalY, { align: "right" });
 
       doc.save(`receipt-${invoiceNo}.pdf`);
@@ -931,8 +948,10 @@ export function DashboardInvoices() {
                         <thead className="bg-gray-50 dark:bg-white/5 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
                           <tr>
                             <th className="px-4 sm:px-6 py-4">Item</th>
-                            <th className="px-4 sm:px-6 py-4 text-center">Qty</th>
-                            <th className="px-4 sm:px-6 py-4 text-right">Price</th>
+                            <th className="px-4 py-4 text-center">Qty</th>
+                            <th className="px-4 py-4 text-right">Price</th>
+                            <th className="px-4 py-4 text-center">GST Rate</th>
+                            <th className="px-4 py-4 text-right">Tax</th>
                             <th className="px-4 sm:px-6 py-4 text-right">Amount</th>
                           </tr>
                         </thead>
@@ -940,28 +959,39 @@ export function DashboardInvoices() {
                           {viewInvoice.items?.map((item: any, i: number) => {
                             const qty = item.quantity || item.qty || 1;
                             const price = item.price || item.unitPrice || item.product?.price || 0;
-                            const amount = item.subtotal || item.total || (qty * price);
+                            const rate = item.gstRate || 0;
+                            const itemTax = item.gstAmount || ((price * qty * rate) / 100);
+                            const sub = item.subtotal || item.total || (qty * price);
                             return (
                               <tr key={i}>
                                 <td className="px-4 sm:px-6 py-4 font-semibold text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{item.name || item.productName || "Item"}</td>
-                                <td className="px-4 sm:px-6 py-4 text-center text-[#6B7280]">{qty}</td>
-                                <td className="px-4 sm:px-6 py-4 text-right text-[#6B7280]">{formatINR(price)}</td>
-                                <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(amount)}</td>
+                                <td className="px-4 py-4 text-center text-[#6B7280]">{qty}</td>
+                                <td className="px-4 py-4 text-right text-[#6B7280]">{formatINR(price)}</td>
+                                <td className="px-4 py-4 text-center text-[#6B7280]">{rate}%</td>
+                                <td className="px-4 py-4 text-right text-emerald-600 dark:text-emerald-400 font-medium">{formatINR(itemTax)}</td>
+                                <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(sub + itemTax)}</td>
                               </tr>
                             );
                           })}
                         </tbody>
                         <tfoot className="bg-gray-50/30 dark:bg-white/2 font-bold border-t border-gray-100 dark:border-white/5">
                           <tr>
-                            <td colSpan={3} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Subtotal</td>
+                            <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Subtotal</td>
                             <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(viewInvoice.subtotal || 0)}</td>
                           </tr>
-                          <tr>
-                            <td colSpan={3} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Tax</td>
-                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(viewInvoice.tax || 0)}</td>
-                          </tr>
+                          {(viewInvoice.tax || 0) > 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 sm:px-6 py-2.5 text-right text-xs text-emerald-600 dark:text-emerald-400 font-bold">Total GST Tax</td>
+                              <td className="px-4 sm:px-6 py-2.5 text-right text-xs text-emerald-600 dark:text-emerald-400 font-bold">{formatINR(viewInvoice.tax || 0)}</td>
+                            </tr>
+                          ) : (
+                            <tr>
+                              <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Total GST Tax</td>
+                              <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(0)}</td>
+                            </tr>
+                          )}
                           <tr className="text-base sm:text-lg bg-blue-50/50 dark:bg-blue-900/10">
-                            <td colSpan={3} className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">Total Amount</td>
+                            <td colSpan={5} className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">Total Amount</td>
                             <td className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">{formatINR(viewInvoice.totalAmount || viewInvoice.total || 0)}</td>
                           </tr>
                         </tfoot>

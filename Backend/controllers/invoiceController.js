@@ -127,16 +127,35 @@ const getInvoices = async (req, res) => {
         .filter(order => !existingOrderIds.has(order.orderId))
         .map(order => {
           const isPos = /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId) || order.orderSource === "pos";
+          const items = (order.items || []).map(i => {
+            const price = Number(i.price || 0);
+            const qty = Number(i.quantity || 1);
+            const rate = Number(i.gstRate || 0);
+            const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
+            return {
+              name: i.name || "Item",
+              quantity: qty,
+              price: price,
+              subtotal: price * qty,
+              gstRate: rate,
+              gstAmount: amt,
+            };
+          });
+          const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
+          const tax = order.taxPrice || items.reduce((sum, i) => sum + i.gstAmount, 0);
+          const totalAmount = order.totalPrice || (subtotal + tax);
           return {
             _id: order._id,
             invoiceNumber: `INV-${order.orderId || order._id.toString().substring(0, 8).toUpperCase()}`,
             orderId: order.orderId,
             customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "Unknown",
             customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
-            items: order.items || [],
-            subtotal: order.totalPrice || 0,
-            tax: 0,
-            totalAmount: order.totalPrice || 0,
+            items,
+            subtotal,
+            tax,
+            cgst: tax / 2,
+            sgst: tax / 2,
+            totalAmount,
             paymentMethod: order.paymentMethod || "N/A",
             paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),
             orderStatus: order.orderStatus || "placed",
