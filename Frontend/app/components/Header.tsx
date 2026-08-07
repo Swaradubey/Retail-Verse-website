@@ -14,9 +14,11 @@ const HIDDEN_HEADER_ROLES = [
   'inventory_manager',
 ];
 
-const NAV_ITEMS = [
+const PUBLIC_NAV_ITEMS = [
   { name: 'Home', href: '/' },
   { name: 'Products', href: '/products' },
+  { name: 'Blogs', href: '/blogs' },
+  { name: 'Pricing', href: '/pricing' },
   { name: 'Contact', href: '/contact' },
 ];
 
@@ -26,6 +28,11 @@ export function Header() {
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+
+  const isDashboardRoute = pathname.startsWith('/dashboard') || pathname.startsWith('/super-admin');
+  const navItems = isDashboardRoute
+    ? PUBLIC_NAV_ITEMS.filter((item) => item.name !== 'Blogs' && item.name !== 'Pricing')
+    : PUBLIC_NAV_ITEMS;
 
   /** Hide storefront nav links for Super Admin and restricted employee roles. */
   const normalizedRole = normalizeRole(user?.role);
@@ -71,8 +78,8 @@ export function Header() {
     if (href === '/contact') {
       return pathname === '/contact';
     }
-    if (href === '/blog') {
-      return pathname === '/blog' || pathname.startsWith('/blog');
+    if (href === '/blogs' || href === '/blog') {
+      return pathname === '/blogs' || pathname.startsWith('/blogs') || pathname === '/blog' || pathname.startsWith('/blog');
     }
     if (href === '/pricing') {
       return pathname === '/pricing' || pathname === '/subscription';
@@ -113,10 +120,10 @@ export function Header() {
               </div>
             </Link>
 
-            {/* Centre: Desktop Nav — Home | Products | Contact */}
+            {/* Centre: Desktop Nav */}
             {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
               <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
-                {NAV_ITEMS.map((item) => {
+                {navItems.map((item) => {
                   const active = isNavActive(item.href);
                   return (
                     <Link
@@ -281,7 +288,7 @@ export function Header() {
             <div className="mx-auto max-w-[88rem] px-4 pb-6 pt-5 sm:px-6">
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
                 <nav className="flex flex-col gap-2">
-                  {NAV_ITEMS.map((item) => {
+                  {navItems.map((item) => {
                     const active = isNavActive(item.href);
                     return (
                       <Link

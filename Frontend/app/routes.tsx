@@ -141,7 +141,9 @@ export const router = createBrowserRouter([
       { path: 'reset-password/:token', element: withSuspense(<ResetPassword />) },
       { path: 'contact', element: withSuspense(<Contact />) },
       { path: 'blog', element: withSuspense(<Blog />) },
+      { path: 'blogs', element: withSuspense(<Blog />) },
       { path: 'blog/:id', element: withSuspense(<BlogPostDetail />) },
+      { path: 'blogs/:id', element: withSuspense(<BlogPostDetail />) },
       {
         path: 'pricing',
         element: withSuspense(
