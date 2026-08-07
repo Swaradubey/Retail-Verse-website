@@ -56,6 +56,8 @@ const GoogleAuthCallback = lazy(() => import('./pages/auth/GoogleAuthCallback').
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPassword').then(m => ({ default: m.ForgotPassword })));
 const ResetPassword = lazy(() => import('./pages/auth/ResetPassword').then(m => ({ default: m.ResetPassword })));
 const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
+const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
+const BlogPostDetail = lazy(() => import('./pages/BlogPostDetail').then(m => ({ default: m.BlogPostDetail })));
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
 const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos || m.default })));
@@ -138,6 +140,8 @@ export const router = createBrowserRouter([
       { path: 'forgot-password', element: withSuspense(<ForgotPassword />) },
       { path: 'reset-password/:token', element: withSuspense(<ResetPassword />) },
       { path: 'contact', element: withSuspense(<Contact />) },
+      { path: 'blog', element: withSuspense(<Blog />) },
+      { path: 'blog/:id', element: withSuspense(<BlogPostDetail />) },
       {
         path: 'pricing',
         element: withSuspense(

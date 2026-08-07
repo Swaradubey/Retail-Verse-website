@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useBranding } from '../../context/BrandingContext';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { getFullImageUrl } from '../../utils/imageUrl';
 
 const CATEGORIES = [
   { label: 'Electronics', href: '/shop' },
@@ -17,11 +18,12 @@ const CATEGORIES = [
 export function NovaHeader() {
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { brandName: brandingBrandName } = useBranding();
+  const { brandName: brandingBrandName, logo: brandingLogo } = useBranding();
   const { user } = useAuth();
   const { cartCount } = useCart();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
+  const logoUrl = isSuperAdmin ? '' : brandingLogo || (user as any)?.storeSettings?.logoUrl || '';
   const brandName = isSuperAdmin
     ? 'Retail Verse'
     : isClientUser && user.businessName
@@ -57,9 +59,21 @@ export function NovaHeader() {
           </button>
 
           <Link to="/" className="flex items-center gap-3 shrink-0">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
-              <ShoppingBag className="h-5 w-5 text-white" />
-            </div>
+            {logoUrl ? (
+              <img
+                src={getFullImageUrl(logoUrl)}
+                alt={`${brandName} logo`}
+                className="h-10 max-w-[140px] object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).onerror = null;
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
+                <ShoppingBag className="h-5 w-5 text-white" />
+              </div>
+            )}
             <span className="text-xl lg:text-2xl font-bold text-[#0f172a] tracking-tight">
               {brandName}
             </span>

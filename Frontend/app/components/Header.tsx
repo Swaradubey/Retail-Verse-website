@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { name: 'Home', href: '/' },
   { name: 'Products', href: '/products' },
   { name: 'Contact', href: '/contact' },
-  { name: 'Pricing', href: '/pricing' },
 ];
 
 export function Header() {
@@ -72,6 +71,9 @@ export function Header() {
     if (href === '/contact') {
       return pathname === '/contact';
     }
+    if (href === '/blog') {
+      return pathname === '/blog' || pathname.startsWith('/blog');
+    }
     if (href === '/pricing') {
       return pathname === '/pricing' || pathname === '/subscription';
     }
@@ -111,7 +113,7 @@ export function Header() {
               </div>
             </Link>
 
-            {/* Centre: Desktop Nav — Home | Products | Contact | Pricing */}
+            {/* Centre: Desktop Nav — Home | Products | Contact */}
             {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
               <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
                 {NAV_ITEMS.map((item) => {
@@ -245,32 +247,16 @@ export function Header() {
 
               {/* Mobile Action Icons */}
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && (
-                <>
-                  <Link
-                    to="/products"
-                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
-                    aria-label="Search"
-                  >
-                    <Search className="h-4.5 w-4.5" />
-                  </Link>
-                  <Link
-                    to="/account/wishlist"
-                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
-                    aria-label="Wishlist"
-                  >
-                    <Heart className="h-4.5 w-4.5" />
-                  </Link>
-                  <Link
-                    to="/cart"
-                    className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
-                    aria-label="Cart"
-                  >
-                    <ShoppingCart className="h-4.5 w-4.5" />
-                    <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
-                      {cartCount}
-                    </span>
-                  </Link>
-                </>
+                <Link
+                  to="/cart"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
+                  aria-label="Cart"
+                >
+                  <ShoppingCart className="h-4.5 w-4.5" />
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
+                    {cartCount}
+                  </span>
+                </Link>
               )}
 
               {/* Mobile Menu Button */}

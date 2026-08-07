@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
+import { getFullImageUrl } from '../utils/imageUrl';
 import {
   LayoutDashboard,
   Package,
@@ -514,9 +515,13 @@ export function Dashboard() {
                       }
                     >
                       <img
-                        src={brandLogo}
+                        src={getFullImageUrl(brandLogo)}
                         alt={`${dsFinalBrandName} logo`}
                         className="w-full h-full object-contain p-0.5"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).onerror = null;
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
                       />
                     </div>
                   ) : (

@@ -512,13 +512,28 @@ export function DashboardSettings() {
       let finalLogoUrl = store.logoUrl || null;
       let logoWasChanged = false;
 
-      if (logoFile) {
-        const uploadRes = await settingsApi.uploadLogo(logoFile);
-        if (uploadRes.success && uploadRes.logoUrl) {
-          finalLogoUrl = uploadRes.logoUrl;
+      if (removeLogo) {
+        finalLogoUrl = null;
+        logoWasChanged = true;
+      } else if (logoFile) {
+        try {
+          const uploadRes = await settingsApi.uploadLogo(logoFile);
+          if (uploadRes.success && uploadRes.logoUrl) {
+            finalLogoUrl = uploadRes.logoUrl;
+            logoWasChanged = true;
+          } else {
+            throw new Error(uploadRes.message || 'Failed to upload logo');
+          }
+        } catch (uploadErr) {
+          console.warn('[Settings Page] uploadLogo API error, falling back to base64 data URL:', uploadErr);
+          const base64Url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(logoFile);
+          });
+          finalLogoUrl = base64Url;
           logoWasChanged = true;
-        } else {
-          throw new Error(uploadRes.message || 'Failed to upload logo');
         }
       } else if (baseline?.store?.logoUrl !== store.logoUrl) {
         logoWasChanged = true;
@@ -545,11 +560,23 @@ export function DashboardSettings() {
         setLogoPreview('');
         setLogoError('');
         setRemoveLogo(false);
+
+        // Global state & localStorage persistence update
+        if (finalLogoUrl) {
+          localStorage.setItem('eco_shop_store_logo', finalLogoUrl);
+        } else {
+          localStorage.removeItem('eco_shop_store_logo');
+        }
+        if (patchUser) {
+          patchUser({ storeSettings: { ...((user as any)?.storeSettings || {}), logoUrl: finalLogoUrl } });
+        }
+        window.dispatchEvent(new Event('logo-changed'));
+
         if (reloadBranding) {
           await reloadBranding();
         }
         if (logoWasChanged) {
-          toast.success('Website logo updated successfully.');
+          toast.success(finalLogoUrl ? 'Website logo updated successfully.' : 'Website logo removed successfully.');
         } else {
           toast.success('Settings saved successfully');
         }

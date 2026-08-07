@@ -16,15 +16,18 @@ export interface BrandingData {
 interface BrandingContextType {
   branding: BrandingData | null;
   isLoading: boolean;
+  localLogo: string | null;
   updateBranding: (data: BrandingData | null) => void;
   reloadBranding: () => Promise<void>;
 }
 
 const defaultBranding: BrandingData = {};
+export const STORE_LOGO_KEY = 'eco_shop_store_logo';
 
 const BrandingContext = createContext<BrandingContextType>({
   branding: defaultBranding,
   isLoading: false,
+  localLogo: null,
   updateBranding: () => { },
   reloadBranding: async () => { },
 });
@@ -33,8 +36,25 @@ const SELECTED_CLIENT_ID_KEY = 'selectedClientId';
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<BrandingData | null>(null);
+  const [localLogo, setLocalLogo] = useState<string | null>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem(STORE_LOGO_KEY) : null;
+  });
   const [isLoading, setIsLoading] = useState(true);
   const { user: authUser } = useAuth();
+
+  useEffect(() => {
+    const syncLogo = () => {
+      setLocalLogo(localStorage.getItem(STORE_LOGO_KEY));
+    };
+
+    window.addEventListener('logo-changed', syncLogo);
+    window.addEventListener('storage', syncLogo);
+
+    return () => {
+      window.removeEventListener('logo-changed', syncLogo);
+      window.removeEventListener('storage', syncLogo);
+    };
+  }, []);
 
   // Watch auth state changes: clear client-specific branding when user is
   // Super Admin or logs out, preventing stale client branding leaks.
@@ -139,7 +159,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   }, [authUser]);
 
   return (
-    <BrandingContext.Provider value={{ branding, isLoading, updateBranding, reloadBranding }}>
+    <BrandingContext.Provider value={{ branding, isLoading, localLogo, updateBranding, reloadBranding }}>
       {children}
     </BrandingContext.Provider>
   );
@@ -165,7 +185,9 @@ export function useBranding() {
     ? `© ${new Date().getFullYear()} Retail Verse. All rights reserved. | Powered by Hexerve`
     : ctx.branding?.footerText || `© 2026 ${brandName}. All rights reserved. | Powered by Hexerve`;
 
-  const logo = isSuperAdmin ? '' : ctx.branding?.logo || (user as any)?.storeSettings?.logoUrl || '';
+  const logo = isSuperAdmin
+    ? ''
+    : ctx.branding?.logo || (user as any)?.storeSettings?.logoUrl || ctx.localLogo || '';
   const primaryColor = isSuperAdmin ? '' : ctx.branding?.primaryColor || '';
 
   return {
