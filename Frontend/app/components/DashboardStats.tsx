@@ -55,8 +55,6 @@ type StatCardConfig = {
   change: string;
   isPositive: boolean;
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  iconTint: string;
-  ringAccent: string;
   description: string;
   path?: string;
 };
@@ -82,8 +80,6 @@ export function DashboardStats({
             change: '—',
             isPositive: true,
             icon: ShoppingCart,
-            iconTint: 'from-teal-600 to-emerald-700',
-            ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
             description: 'Loading…',
             path: '/dashboard/orders',
           },
@@ -93,8 +89,6 @@ export function DashboardStats({
             change: '—',
             isPositive: true,
             icon: TrendingUp,
-            iconTint: 'from-violet-600 to-indigo-700',
-            ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
             description: 'Loading…',
             path: '/dashboard/orders',
           },
@@ -104,8 +98,6 @@ export function DashboardStats({
             change: '—',
             isPositive: true,
             icon: Receipt,
-            iconTint: 'from-sky-600 to-blue-700',
-            ringAccent: 'from-sky-300/50 via-blue-100/30 to-sky-400/40',
             description: 'Loading…',
             path: '/dashboard/orders',
           },
@@ -119,8 +111,6 @@ export function DashboardStats({
             change: '—',
             isPositive: false,
             icon: ShoppingCart,
-            iconTint: 'from-teal-600 to-emerald-700',
-            ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
             description: errText,
             path: '/dashboard/orders',
           },
@@ -130,8 +120,6 @@ export function DashboardStats({
             change: '—',
             isPositive: false,
             icon: TrendingUp,
-            iconTint: 'from-violet-600 to-indigo-700',
-            ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
             description: errText,
             path: '/dashboard/orders',
           },
@@ -141,8 +129,6 @@ export function DashboardStats({
             change: '—',
             isPositive: false,
             icon: Receipt,
-            iconTint: 'from-sky-600 to-blue-700',
-            ringAccent: 'from-sky-300/50 via-blue-100/30 to-sky-400/40',
             description: errText,
             path: '/dashboard/orders',
           },
@@ -158,9 +144,7 @@ export function DashboardStats({
             change: '—',
             isPositive: true,
             icon: ShoppingCart,
-            iconTint: 'from-teal-600 to-emerald-700',
-            ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
-            description: 'In progress (not delivered or cancelled)',
+            description: 'In progress',
             path: '/dashboard/orders',
           },
           {
@@ -169,8 +153,6 @@ export function DashboardStats({
             change: formatSignedPct(convCh),
             isPositive: convCh >= 0,
             icon: TrendingUp,
-            iconTint: 'from-violet-600 to-indigo-700',
-            ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
             description: 'Website orders delivered · vs last month',
             path: '/dashboard/orders',
           },
@@ -180,8 +162,6 @@ export function DashboardStats({
             change: '—',
             isPositive: true,
             icon: Receipt,
-            iconTint: 'from-sky-600 to-blue-700',
-            ringAccent: 'from-sky-300/50 via-blue-100/30 to-sky-400/40',
             description: 'All orders on your account',
             path: '/dashboard/orders',
           },
@@ -198,8 +178,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: DollarSign,
-          iconTint: 'from-[#d4af37] to-amber-700',
-          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: 'Team dashboard',
         },
         {
@@ -208,8 +186,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: superAdminOverview ? UserCheck : ShoppingCart,
-          iconTint: 'from-teal-600 to-emerald-700',
-          ringAccent: 'from-teal-300/50 via-emerald-100/30 to-teal-400/40',
           description: superAdminOverview ? 'Super Admin overview' : 'Team dashboard',
         },
         {
@@ -218,8 +194,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: Users,
-          iconTint: 'from-amber-600 to-orange-700',
-          ringAccent: 'from-orange-300/50 via-amber-100/35 to-orange-400/45',
           description: 'Team dashboard',
         },
         {
@@ -228,16 +202,13 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: TrendingUp,
-          iconTint: 'from-violet-600 to-indigo-700',
-          ringAccent: 'from-violet-300/45 via-indigo-100/25 to-violet-400/40',
           description: 'Team dashboard',
         },
       ];
     }
 
     const s = analytics?.summary;
-    // Clean fallback: never show raw backend error text inside stat cards
-    const cardErrorDesc = error ? 'Could not load' : 'Loading\u2026';
+    const cardErrorDesc = error ? 'Could not load' : 'Loading…';
     if (!s) {
       return [
         {
@@ -246,8 +217,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: DollarSign,
-          iconTint: 'from-[#d4af37] to-[#b87500]',
-          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
           path: '/dashboard/analytics',
         },
@@ -257,8 +226,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: ShoppingCart,
-          iconTint: 'from-[#d4af37] to-[#b87500]',
-          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
           path: '/dashboard/orders',
         },
@@ -268,8 +235,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: TrendingUp,
-          iconTint: 'from-[#d4af37] to-[#b87500]',
-          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
           path: '/dashboard/analytics',
         },
@@ -279,8 +244,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: Package,
-          iconTint: 'from-[#d4af37] to-[#b87500]',
-          ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
           description: cardErrorDesc,
           path: '/dashboard/products',
         },
@@ -303,8 +266,6 @@ export function DashboardStats({
         change: formatSignedPct(revChange),
         isPositive: revChange >= 0,
         icon: DollarSign,
-        iconTint: 'from-[#d4af37] to-[#b87500]',
-        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: 'vs last month',
         path: '/dashboard/analytics',
       },
@@ -314,8 +275,6 @@ export function DashboardStats({
         change: formatSignedPct(ordChange),
         isPositive: ordChange >= 0,
         icon: ShoppingCart,
-        iconTint: 'from-[#d4af37] to-[#b87500]',
-        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: 'This month',
         path: '/dashboard/orders',
       },
@@ -325,8 +284,6 @@ export function DashboardStats({
         change: formatSignedPct(avgChange),
         isPositive: avgChange >= 0,
         icon: TrendingUp,
-        iconTint: 'from-[#d4af37] to-[#b87500]',
-        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: 'vs last month',
         path: '/dashboard/analytics',
       },
@@ -336,17 +293,11 @@ export function DashboardStats({
         change: topProduct ? formatSignedPct(topProduct.growthPercent) : '—',
         isPositive: (topProduct?.growthPercent ?? 0) >= 0,
         icon: Package,
-        iconTint: 'from-[#d4af37] to-[#b87500]',
-        ringAccent: 'from-amber-300/70 via-amber-100/40 to-amber-400/50',
         description: topProduct?.name ? topProduct.name.slice(0, 28) : 'This month',
         path: '/dashboard/products',
       },
     ];
-      }, [analytics, staffView, error, superAdminOverview, userOverview]);
-
-  if (stats.length > 0 && stats[0].value !== '—') {
-    console.log("Mapped dashboard cards:", stats);
-  }
+  }, [analytics, staffView, error, superAdminOverview, userOverview]);
 
   const superAdminMonthKpis = useMemo((): StatCardConfig[] | null => {
     if (!superAdminOverview || !staffView) return null;
@@ -363,8 +314,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: Receipt,
-          iconTint: 'from-sky-600 to-blue-700',
-          ringAccent: 'from-sky-300/50 via-blue-100/30 to-sky-400/40',
           description: loadingDesc,
           path: '/dashboard/analytics',
         },
@@ -374,8 +323,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: TrendingDown,
-          iconTint: 'from-rose-600 to-red-700',
-          ringAccent: 'from-rose-300/50 via-red-100/30 to-rose-400/40',
           description: loadingDesc,
           path: '/dashboard/analytics',
         },
@@ -385,8 +332,6 @@ export function DashboardStats({
           change: '—',
           isPositive: true,
           icon: Wallet,
-          iconTint: 'from-emerald-600 to-teal-700',
-          ringAccent: 'from-emerald-300/50 via-teal-100/30 to-emerald-400/40',
           description: loadingDesc,
           path: '/dashboard/analytics',
         },
@@ -404,8 +349,6 @@ export function DashboardStats({
         change: '—',
         isPositive: true,
         icon: Receipt,
-        iconTint: 'from-sky-600 to-blue-700',
-        ringAccent: 'from-sky-300/50 via-blue-100/30 to-sky-400/40',
         description: 'All orders this month',
         path: '/dashboard/analytics',
       },
@@ -415,8 +358,6 @@ export function DashboardStats({
         change: '—',
         isPositive: loss === 0,
         icon: TrendingDown,
-        iconTint: 'from-rose-600 to-red-700',
-        ringAccent: 'from-rose-300/50 via-red-100/30 to-rose-400/40',
         description: 'Refunds & cancellations',
         path: '/dashboard/analytics',
       },
@@ -426,8 +367,6 @@ export function DashboardStats({
         change: '—',
         isPositive: profit >= 0,
         icon: Wallet,
-        iconTint: 'from-emerald-600 to-teal-700',
-        ringAccent: 'from-emerald-300/50 via-teal-100/30 to-emerald-400/40',
         description: 'Paid revenue this month',
         path: '/dashboard/analytics',
       },
@@ -452,32 +391,32 @@ export function DashboardStats({
         }
       }}
       tabIndex={stat.path ? 0 : undefined}
-      className={`group relative rounded-[1.125rem] overflow-hidden bg-gradient-to-br from-[#fff7df] via-[#fffaf0] to-[#ffe7a3] border border-[#f6d365]/60 shadow-md shadow-amber-200/35 transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-[0_20px_48px_-12px_rgba(180,130,30,0.30)] ${
-        stat.path ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-amber-400' : ''
+      className={`group relative rounded-[1.125rem] overflow-hidden bg-[#F8FAFC] border border-[#0B1F3A]/20 shadow-md transition-all duration-300 ease-out hover:scale-[1.02] hover:border-[#2563EB] hover:shadow-lg ${
+        stat.path ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]' : ''
       }`}
     >
       <Card className="relative overflow-hidden rounded-[1.125rem] border-0 bg-transparent shadow-none">
         <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 pt-4 px-4">
-          <CardTitle className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-amber-900/75 group-hover:text-amber-900 transition-colors duration-300">
+          <CardTitle className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.18em] text-[#0B1F3A]/80 group-hover:text-[#2563EB] transition-colors duration-300">
             {stat.title}
           </CardTitle>
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#d4af37] to-[#b87500] text-white shadow-lg shadow-amber-700/20 ring-4 ring-white/70 transition-transform duration-300 ease-out group-hover:scale-105"
+            className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2563EB] text-[#F8FAFC] shadow-md group-hover:scale-105 group-hover:bg-[#FF6B00] transition-all duration-300"
           >
             <stat.icon className="h-4 w-4" strokeWidth={2.5} />
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 pt-0">
           <div className="flex flex-col gap-1">
-            <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-zinc-900 tabular-nums">
+            <span className="text-xl sm:text-2xl font-extrabold tracking-tight text-[#0B1F3A] tabular-nums">
               {stat.value}
             </span>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <div
-                className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full transition-colors duration-300 ${
+                className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full text-[#F8FAFC] transition-colors duration-300 ${
                   stat.isPositive
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-rose-100 text-rose-700'
+                    ? 'bg-[#2563EB]'
+                    : 'bg-[#FF6B00]'
                 }`}
               >
                 {stat.isPositive ? (
@@ -487,15 +426,12 @@ export function DashboardStats({
                 )}
                 {stat.change}
               </div>
-              <span className="text-[11px] text-amber-900/55 font-medium tracking-wide">
+              <span className="text-[11px] text-[#0B1F3A]/70 font-medium tracking-wide">
                 {stat.description}
               </span>
             </div>
           </div>
         </CardContent>
-        <div
-          className="pointer-events-none absolute -right-8 -bottom-10 h-36 w-36 rounded-full bg-amber-200 opacity-[0.22] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.35]"
-        />
       </Card>
     </motion.div>
   );
@@ -522,48 +458,48 @@ export function DashboardStats({
           transition={{ delay: 0.5, duration: 0.4 }}
           className="grid grid-cols-1"
         >
-          <Card className="overflow-hidden border-indigo-100 bg-white shadow-lg shadow-indigo-100/20">
-            <CardHeader className="bg-indigo-50/50 border-b border-indigo-100 py-4 px-6 flex flex-row items-center justify-between">
+          <Card className="overflow-hidden border border-[#0B1F3A]/20 bg-[#F8FAFC] shadow-md rounded-2xl">
+            <CardHeader className="bg-[#0B1F3A] text-[#F8FAFC] border-b border-[#2563EB]/30 py-4 px-6 flex flex-row items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+                <div className="w-10 h-10 rounded-xl bg-[#FF6B00] flex items-center justify-center text-[#F8FAFC] shadow-md">
                   <Clock className="w-5 h-5" />
                 </div>
                 <div>
-                  <CardTitle className="text-sm font-bold text-indigo-900">Trial Status Overview</CardTitle>
-                  <p className="text-xs text-indigo-600 font-medium">Monitoring client trial periods</p>
+                  <CardTitle className="text-sm font-bold text-[#F8FAFC]">Trial Status Overview</CardTitle>
+                  <p className="text-xs text-[#2563EB] font-medium">Monitoring client trial periods</p>
                 </div>
               </div>
-              <div className="text-xs font-bold px-3 py-1 bg-white border border-indigo-200 rounded-full text-indigo-700 shadow-sm">
+              <div className="text-xs font-bold px-3 py-1 bg-[#2563EB] border border-[#2563EB] rounded-full text-[#F8FAFC] shadow-sm">
                 Total: {analytics.trialStats.totalTrialClients}
               </div>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-6 bg-[#F8FAFC]">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Active Trials</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F3A]/70">Active Trials</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-gray-900">{analytics.trialStats.activeTrials}</span>
-                    <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Live</span>
+                    <span className="text-2xl font-bold text-[#0B1F3A]">{analytics.trialStats.activeTrials}</span>
+                    <span className="text-xs font-semibold text-[#F8FAFC] bg-[#2563EB] px-2 py-0.5 rounded">Live</span>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Expired</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F3A]/70">Expired</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-gray-900">{analytics.trialStats.expiredTrials}</span>
-                    <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">Ended</span>
+                    <span className="text-2xl font-bold text-[#0B1F3A]">{analytics.trialStats.expiredTrials}</span>
+                    <span className="text-xs font-semibold text-[#F8FAFC] bg-[#FF6B00] px-2 py-0.5 rounded">Ended</span>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Expiring Soon</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F3A]/70">Expiring Soon</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-gray-900">{analytics.trialStats.expiringSoon}</span>
-                    <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">≤ 3 days</span>
+                    <span className="text-2xl font-bold text-[#0B1F3A]">{analytics.trialStats.expiringSoon}</span>
+                    <span className="text-xs font-semibold text-[#F8FAFC] bg-[#0B1F3A] px-2 py-0.5 rounded">≤ 3 days</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-end">
                   <button 
                     onClick={() => navigate('/super-admin/clients')}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded-lg"
+                    className="text-xs font-bold text-[#F8FAFC] bg-[#FF6B00] hover:bg-[#2563EB] transition-colors px-4 py-2 rounded-lg cursor-pointer"
                   >
                     View All Clients →
                   </button>

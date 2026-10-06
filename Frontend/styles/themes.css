@@ -6,60 +6,60 @@
 
 /* ── Luxe Commerce (Editorial / Spacious) ─────────────── */
 .client-dashboard.theme-luxe-commerce {
-  --theme-primary: #1a1a2e;
-  --theme-secondary: #c9a96e;
-  --theme-accent: #e8d5b7;
-  --theme-background: #fcfbf8;
-  --theme-surface: #ffffff;
-  --theme-text: #111111;
-  --theme-muted-text: #6b7280;
-  --theme-border: rgba(0, 0, 0, 0.08);
-  --theme-sidebar-bg: #1a1a2e;
-  --theme-sidebar-foreground: #ffffff;
-  --theme-sidebar-accent: #c9a96e;
-  --theme-header-bg: #ffffff;
-  --theme-button-bg: #1a1a2e;
-  --theme-button-text: #ffffff;
+  --theme-primary: #0B1F3A;
+  --theme-secondary: #FF6B00;
+  --theme-accent: #2563EB;
+  --theme-background: #F8FAFC;
+  --theme-surface: #F8FAFC;
+  --theme-text: #0B1F3A;
+  --theme-muted-text: #0B1F3A;
+  --theme-border: #0B1F3A;
+  --theme-sidebar-bg: #0B1F3A;
+  --theme-sidebar-foreground: #F8FAFC;
+  --theme-sidebar-accent: #2563EB;
+  --theme-header-bg: #0B1F3A;
+  --theme-button-bg: #FF6B00;
+  --theme-button-text: #F8FAFC;
   --theme-radius: 0.5rem;
-  --theme-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+  --theme-shadow: none;
 
   /* Override shadcn sidebar tokens */
-  --sidebar: #1a1a2e;
-  --sidebar-foreground: #ffffff;
-  --sidebar-accent: #c9a96e;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.12);
-  --sidebar-primary: #c9a96e;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-ring: #c9a96e;
+  --sidebar: #0B1F3A;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-accent: #2563EB;
+  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-border: #0B1F3A;
+  --sidebar-primary: #FF6B00;
+  --sidebar-primary-foreground: #F8FAFC;
+  --sidebar-ring: #2563EB;
 }
 
 /* ── Nova Marketplace (Marketplace / Conversion-focused) ─ */
 .client-dashboard.theme-nova-marketplace {
-  --theme-primary: #0f172a;
-  --theme-secondary: #3b82f6;
-  --theme-accent: #f97316;
-  --theme-background: #ffffff;
-  --theme-surface: #f8fafc;
-  --theme-text: #0f172a;
-  --theme-muted-text: #64748b;
-  --theme-border: rgba(0, 0, 0, 0.08);
-  --theme-sidebar-bg: #0f172a;
-  --theme-sidebar-foreground: #ffffff;
-  --theme-sidebar-accent: #3b82f6;
-  --theme-header-bg: #ffffff;
-  --theme-button-bg: #3b82f6;
-  --theme-button-text: #ffffff;
+  --theme-primary: #0B1F3A;
+  --theme-secondary: #2563EB;
+  --theme-accent: #FF6B00;
+  --theme-background: #F8FAFC;
+  --theme-surface: #F8FAFC;
+  --theme-text: #0B1F3A;
+  --theme-muted-text: #0B1F3A;
+  --theme-border: #0B1F3A;
+  --theme-sidebar-bg: #0B1F3A;
+  --theme-sidebar-foreground: #F8FAFC;
+  --theme-sidebar-accent: #2563EB;
+  --theme-header-bg: #0B1F3A;
+  --theme-button-bg: #FF6B00;
+  --theme-button-text: #F8FAFC;
   --theme-radius: 0.375rem;
-  --theme-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --theme-shadow: none;
 
   /* Override shadcn sidebar tokens */
-  --sidebar: #0f172a;
-  --sidebar-foreground: #ffffff;
-  --sidebar-accent: #3b82f6;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.12);
-  --sidebar-primary: #3b82f6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-ring: #3b82f6;
+  --sidebar: #0B1F3A;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-accent: #2563EB;
+  --sidebar-accent-foreground: #F8FAFC;
+  --sidebar-border: #0B1F3A;
+  --sidebar-primary: #FF6B00;
+  --sidebar-primary-foreground: #F8FAFC;
+  --sidebar-ring: #2563EB;
 }

@@ -14,64 +14,64 @@ export function LuxeFooter() {
       ? user.businessName
       : brandingBrandName || 'Retail Verse';
   return (
-    <footer className="bg-[#1a1a2e] text-white/80">
+    <footer className="bg-[#0B1F3A] text-[#F8FAFC]">
       <div className="max-w-[88rem] mx-auto px-6 py-16 lg:py-20">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           <div className="lg:col-span-2">
-            <h3 className="text-2xl font-serif text-white mb-4">{brandName}</h3>
-            <p className="text-white/60 leading-relaxed max-w-md mb-8">
+            <h3 className="text-2xl font-serif text-[#F8FAFC] mb-4">{brandName}</h3>
+            <p className="text-[#F8FAFC] leading-relaxed max-w-md mb-8">
               Curating the finest products for discerning customers since 2020. 
               Every piece tells a story of exceptional craftsmanship and timeless design.
             </p>
             <div className="flex items-center gap-4">
-              <a href="#" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#c9a96e] transition-colors" aria-label="Instagram">
+              <a href="#" className="w-10 h-10 rounded-full border border-[#2563EB] bg-[#0B1F3A] flex items-center justify-center text-[#2563EB] hover:bg-[#2563EB] hover:text-[#F8FAFC] transition-colors" aria-label="Instagram">
                 <Instagram className="w-4 h-4" />
               </a>
-              <a href="#" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#c9a96e] transition-colors" aria-label="Twitter">
+              <a href="#" className="w-10 h-10 rounded-full border border-[#2563EB] bg-[#0B1F3A] flex items-center justify-center text-[#2563EB] hover:bg-[#2563EB] hover:text-[#F8FAFC] transition-colors" aria-label="Twitter">
                 <Twitter className="w-4 h-4" />
               </a>
-              <a href="#" className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-[#c9a96e] transition-colors" aria-label="Youtube">
+              <a href="#" className="w-10 h-10 rounded-full border border-[#2563EB] bg-[#0B1F3A] flex items-center justify-center text-[#2563EB] hover:bg-[#2563EB] hover:text-[#F8FAFC] transition-colors" aria-label="Youtube">
                 <Youtube className="w-4 h-4" />
               </a>
             </div>
           </div>
 
           <div>
-            <h4 className="text-white text-sm font-bold uppercase tracking-widest mb-6">Shop</h4>
+            <h4 className="text-[#F8FAFC] text-sm font-bold uppercase tracking-widest mb-6">Shop</h4>
             <ul className="space-y-3">
               {['New Arrivals', 'Collections', 'Women', 'Men', 'Accessories', 'Sale'].map((item) => (
                 <li key={item}>
-                  <Link to="/shop" className="text-white/60 hover:text-white transition-colors text-sm">{item}</Link>
+                  <Link to="/shop" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">{item}</Link>
                 </li>
               ))}
             </ul>
           </div>
 
           <div>
-            <h4 className="text-white text-sm font-bold uppercase tracking-widest mb-6">Support</h4>
+            <h4 className="text-[#F8FAFC] text-sm font-bold uppercase tracking-widest mb-6">Support</h4>
             <ul className="space-y-3">
               <li>
-                <Link to="/contact" className="text-white/60 hover:text-white transition-colors text-sm">Contact Us</Link>
+                <Link to="/contact" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">Contact Us</Link>
               </li>
               <li>
-                <Link to="/delete-account" className="text-white/60 hover:text-white transition-colors text-sm">Delete Account</Link>
+                <Link to="/delete-account" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">Delete Account</Link>
               </li>
               {['Shipping & Returns', 'Size Guide', 'FAQ', 'Care Guide'].map((item) => (
                 <li key={item}>
-                  <Link to="/contact" className="text-white/60 hover:text-white transition-colors text-sm">{item}</Link>
+                  <Link to="/contact" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">{item}</Link>
                 </li>
               ))}
             </ul>
           </div>
         </div>
 
-        <div className="border-t border-white/10 mt-12 pt-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-6 text-sm text-white/40">
-            <Link to="/privacy-policy" className="hover:text-white/60 transition-colors">Privacy Policy</Link>
-            <Link to="/terms-of-service" className="hover:text-white/60 transition-colors">Terms of Service</Link>
-            <Link to="/delete-account" className="hover:text-white/60 transition-colors">Delete Account</Link>
+        <div className="border-t border-[#2563EB]/30 mt-12 pt-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-6 text-sm text-[#F8FAFC]/80">
+            <Link to="/privacy-policy" className="hover:text-[#FF6B00] transition-colors">Privacy Policy</Link>
+            <Link to="/terms-of-service" className="hover:text-[#FF6B00] transition-colors">Terms of Service</Link>
+            <Link to="/delete-account" className="hover:text-[#FF6B00] transition-colors">Delete Account</Link>
           </div>
-          <p className="text-sm text-white/40">
+          <p className="text-sm text-[#F8FAFC]/80">
             &copy; 2026 {brandName}. All rights reserved.
           </p>
         </div>

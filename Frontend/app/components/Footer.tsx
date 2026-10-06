@@ -36,35 +36,28 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
           ? 'Store'
           : 'Smart Living Store';
   return (
-    <footer className="relative mt-auto border-t border-white/10 bg-[#0b0b0c] text-white">
-      {/* Background glow */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-[-10%] top-0 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute right-[-10%] bottom-0 h-72 w-72 rounded-full bg-cyan-400/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent)]" />
-      </div>
-
+    <footer className="relative mt-auto border-t border-[#2563EB]/40 bg-[#0B1F3A] text-[#F8FAFC]">
       <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
         {/* Top section */}
-        <div className="grid grid-cols-1 gap-10 border-b border-white/10 pb-10 md:grid-cols-2 lg:grid-cols-4 lg:gap-8 sm:pl-4 lg:pl-6">
+        <div className="grid grid-cols-1 gap-10 border-b border-[#2563EB]/30 pb-10 md:grid-cols-2 lg:grid-cols-4 lg:gap-8 sm:pl-4 lg:pl-6">
           {/* Brand */}
           <div className="pl-2 sm:pl-3 lg:pl-4 lg:pr-6">
             <Link to="/" className="flex items-center gap-3 flex-wrap">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 shadow-[0_10px_30px_rgba(59,130,246,0.25)]">
-                <span className="text-lg font-bold text-white">E</span>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FF6B00] text-[#F8FAFC]">
+                <span className="text-lg font-bold">E</span>
               </div>
 
               <div className="flex-1 min-w-[140px]">
-                <span className="block text-lg sm:text-xl font-semibold tracking-tight text-white break-words leading-tight">
+                <span className="block text-lg sm:text-xl font-semibold tracking-tight text-[#F8FAFC] break-words leading-tight">
                   {brandName}
                 </span>
-                <span className="block text-xs uppercase tracking-[0.24em] text-white/40">
+                <span className="block text-xs uppercase tracking-[0.24em] text-[#2563EB]">
                   {brandSubtitle}
                 </span>
               </div>
             </Link>
 
-            <p className="mt-5 max-w-sm text-sm leading-7 text-white/60">
+            <p className="mt-5 max-w-sm text-sm leading-7 text-[#F8FAFC]">
               Your destination for premium electronics, smart gadgets, and
               modern essentials — curated for performance, design, and everyday
               convenience.
@@ -74,28 +67,28 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               <a
                 href="#"
                 aria-label="Facebook"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition-all duration-300 hover:-translate-y-1 hover:border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
               >
                 <Facebook className="h-4 w-4" />
               </a>
               <a
                 href="#"
                 aria-label="Twitter"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition-all duration-300 hover:-translate-y-1 hover:border-blue-500/40 hover:bg-blue-500/10 hover:text-blue-400"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
               >
                 <Twitter className="h-4 w-4" />
               </a>
               <a
                 href="#"
                 aria-label="Instagram"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition-all duration-300 hover:-translate-y-1 hover:border-pink-500/40 hover:bg-pink-500/10 hover:text-pink-400"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
               >
                 <Instagram className="h-4 w-4" />
               </a>
               <a
                 href="#"
                 aria-label="Youtube"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/70 transition-all duration-300 hover:-translate-y-1 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
               >
                 <Youtube className="h-4 w-4" />
               </a>
@@ -104,14 +97,14 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
 
           {/* Shop */}
           <div className="pl-2 sm:pl-4 lg:pl-6">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-white/90">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#F8FAFC]">
               Shop
             </h3>
-            <ul className="space-y-3 text-sm text-white/60">
+            <ul className="space-y-3 text-sm text-[#F8FAFC]">
               <li>
                 <Link
                   to="/shop?category=Audio"
-                  className="transition-colors hover:text-blue-400"
+                  className="transition-colors hover:text-[#FF6B00]"
                 >
                   Audio
                 </Link>
@@ -119,7 +112,7 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               <li>
                 <Link
                   to="/shop?category=Gaming"
-                  className="transition-colors hover:text-blue-400"
+                  className="transition-colors hover:text-[#FF6B00]"
                 >
                   Gaming
                 </Link>
@@ -127,7 +120,7 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               <li>
                 <Link
                   to="/shop?category=Computers"
-                  className="transition-colors hover:text-blue-400"
+                  className="transition-colors hover:text-[#FF6B00]"
                 >
                   Computers
                 </Link>
@@ -135,7 +128,7 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               <li>
                 <Link
                   to="/shop?category=Mobile"
-                  className="transition-colors hover:text-blue-400"
+                  className="transition-colors hover:text-[#FF6B00]"
                 >
                   Mobile
                 </Link>
@@ -143,7 +136,7 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               <li>
                 <Link
                   to="/shop?category=Wearables"
-                  className="transition-colors hover:text-blue-400"
+                  className="transition-colors hover:text-[#FF6B00]"
                 >
                   Wearables
                 </Link>
@@ -153,37 +146,37 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
 
           {/* Customer service */}
           <div>
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-white/90">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#F8FAFC]">
               Customer Service
             </h3>
-            <ul className="space-y-3 text-sm text-white/60">
+            <ul className="space-y-3 text-sm text-[#F8FAFC]">
               <li>
-                <Link to="/contact" className="transition-colors hover:text-blue-400">
+                <Link to="/contact" className="transition-colors hover:text-[#FF6B00]">
                   Contact Us
                 </Link>
               </li>
               <li>
-                <a href="#" className="transition-colors hover:text-blue-400">
+                <a href="#" className="transition-colors hover:text-[#FF6B00]">
                   Shipping Info
                 </a>
               </li>
               <li>
-                <a href="#" className="transition-colors hover:text-blue-400">
+                <a href="#" className="transition-colors hover:text-[#FF6B00]">
                   Returns
                 </a>
               </li>
               <li>
-                <Link to="/track-order" className="transition-colors hover:text-blue-400">
+                <Link to="/track-order" className="transition-colors hover:text-[#FF6B00]">
                   Track Order
                 </Link>
               </li>
               <li>
-                <Link to="/delete-account" className="transition-colors hover:text-blue-400">
+                <Link to="/delete-account" className="transition-colors hover:text-[#FF6B00]">
                   Delete Account
                 </Link>
               </li>
               <li>
-                <a href="#" className="transition-colors hover:text-blue-400">
+                <a href="#" className="transition-colors hover:text-[#FF6B00]">
                   FAQ
                 </a>
               </li>
@@ -192,24 +185,24 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
 
           {/* Newsletter */}
           <div className="min-w-0">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-white/90">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-[#F8FAFC]">
               Stay Updated
             </h3>
-            <p className="mb-5 max-w-sm text-sm leading-7 text-white/60">
+            <p className="mb-5 max-w-sm text-sm leading-7 text-[#F8FAFC]">
               Get product launches, exclusive deals, and curated tech updates in
               your inbox.
             </p>
 
-            <form className="rounded-3xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm min-w-0 overflow-hidden">
+            <form className="rounded-3xl border border-[#2563EB] bg-[#0B1F3A] p-2 min-w-0 overflow-hidden">
               <div className="flex flex-col gap-3">
                 <input
                   type="email"
                   placeholder="Enter your email"
-                  className="h-12 w-full rounded-2xl border border-transparent bg-transparent px-4 text-sm text-white placeholder:text-white/35 outline-none"
+                  className="h-12 w-full rounded-2xl border border-transparent bg-[#F8FAFC] px-4 text-sm text-[#0B1F3A] placeholder:text-[#0B1F3A]/60 outline-none"
                 />
                 <button
                   type="submit"
-                  className="group inline-flex w-full h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 text-sm font-medium text-white transition-all duration-300 hover:bg-blue-500"
+                  className="group inline-flex w-full h-12 items-center justify-center gap-2 rounded-2xl bg-[#FF6B00] border border-[#FF6B00] px-5 text-sm font-medium text-[#F8FAFC] transition-all duration-300 hover:bg-[#FF6B00]/90"
                 >
                   Subscribe
                   <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
@@ -217,27 +210,27 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
               </div>
             </form>
 
-            <p className="mt-3 text-xs leading-6 text-white/35">
+            <p className="mt-3 text-xs leading-6 text-[#F8FAFC]/70">
               No spam. Only useful updates and offers.
             </p>
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div className="flex flex-col items-center justify-between gap-4 pt-6 text-sm text-white/40 md:flex-row">
+        <div className="flex flex-col items-center justify-between gap-4 pt-6 text-sm text-[#F8FAFC]/80 md:flex-row">
           <p>{footerText}</p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 md:justify-end">
-            <Link to="/privacy-policy" className="transition-colors hover:text-white/70">
+            <Link to="/privacy-policy" className="transition-colors hover:text-[#FF6B00]">
               Privacy Policy
             </Link>
-            <Link to="/terms-of-service" className="transition-colors hover:text-white/70">
+            <Link to="/terms-of-service" className="transition-colors hover:text-[#FF6B00]">
               Terms of Service
             </Link>
-            <Link to="/delete-account" className="transition-colors hover:text-white/70">
+            <Link to="/delete-account" className="transition-colors hover:text-[#FF6B00]">
               Delete Account
             </Link>
-            <a href="#" className="transition-colors hover:text-white/70">
+            <a href="#" className="transition-colors hover:text-[#FF6B00]">
               Cookies
             </a>
           </div>

@@ -89,12 +89,12 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50">
-      <div className="border-b border-black/[0.06] bg-[#FCFBF8]/88 backdrop-blur-xl">
+      <div className="border-b border-[#2563EB]/40 bg-[#0B1F3A] backdrop-blur-xl">
         <div className="mx-auto max-w-[88rem] px-4 sm:px-6 lg:px-8">
           <div className="flex h-[84px] items-center justify-between">
 
             {/* Left side: Logo */}
-            <Link to="/" className="flex items-center gap-3 transition-opacity duration-300 hover:opacity-80">
+            <Link to="/" className="flex items-center gap-3 transition-opacity duration-300 hover:opacity-90">
               {logoUrl ? (
                 <img
                   src={getFullImageUrl(logoUrl)}
@@ -106,15 +106,15 @@ export function Header() {
                   }}
                 />
               ) : (
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#1e3a8a] to-[#3b82f6]">
-                  <ShoppingBag className="h-6 w-6 text-white" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FF6B00] text-[#F8FAFC]">
+                  <ShoppingBag className="h-6 w-6" />
                 </div>
               )}
               <div className="flex flex-col leading-none">
-                <span className="text-lg font-bold tracking-tight text-[#111111] sm:text-xl">
+                <span className="text-lg font-bold tracking-tight text-[#F8FAFC] sm:text-xl">
                   {brandName}
                 </span>
-                <span className="mt-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-black sm:text-[10px]">
+                <span className="mt-1 text-[14px] font-semibold uppercase tracking-[0.2em] text-[#2563EB] sm:text-[10px]">
                   {brandSubtitle}
                 </span>
               </div>
@@ -122,7 +122,7 @@ export function Header() {
 
             {/* Centre: Desktop Nav */}
             {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
-              <nav className="hidden lg:flex items-center rounded-full border border-black/6 bg-white/70 px-3 py-2 shadow-[0_4px_18px_rgba(0,0,0,0.03)] backdrop-blur-sm">
+              <nav className="hidden lg:flex items-center rounded-full border border-[#2563EB] bg-[#0B1F3A] px-3 py-2">
                 {navItems.map((item) => {
                   const active = isNavActive(item.href);
                   return (
@@ -131,8 +131,8 @@ export function Header() {
                       to={item.href}
                       className={`rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
                         active
-                          ? 'bg-[#111111] text-white shadow-sm'
-                          : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                          ? 'bg-[#2563EB] text-[#F8FAFC]'
+                          : 'text-[#F8FAFC] hover:text-[#FF6B00]'
                       }`}
                     >
                       {item.name}
@@ -144,8 +144,8 @@ export function Header() {
                     to="/dashboard/inventory"
                     className={`group inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
                       pathname.startsWith('/dashboard/inventory')
-                        ? 'bg-[#111111] text-white shadow-sm'
-                        : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                        ? 'bg-[#2563EB] text-[#F8FAFC]'
+                        : 'text-[#F8FAFC] hover:text-[#FF6B00]'
                     }`}
                   >
                     <Package className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
@@ -158,8 +158,8 @@ export function Header() {
                     state={{ fromDashboard: pathname }}
                     className={`rounded-full px-5 py-2.5 text-[16px] font-bold transition-all duration-300 ${
                       pathname === '/pos'
-                        ? 'bg-[#111111] text-white shadow-sm'
-                        : 'text-[#555] hover:bg-black/5 hover:text-[#111111]'
+                        ? 'bg-[#2563EB] text-[#F8FAFC]'
+                        : 'text-[#F8FAFC] hover:text-[#FF6B00]'
                     }`}
                   >
                     POS
@@ -177,7 +177,7 @@ export function Header() {
                   {/* Search Icon */}
                   <Link
                     to="/products"
-                    className="hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    className="hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
                     aria-label="Search"
                   >
                     <Search className="h-5 w-5" />
@@ -186,7 +186,7 @@ export function Header() {
                   {/* Wishlist Icon */}
                   <Link
                     to="/account/wishlist"
-                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
                     aria-label="Wishlist"
                   >
                     <Heart className="h-5 w-5" />
@@ -195,11 +195,11 @@ export function Header() {
                   {/* Cart Icon */}
                   <Link
                     to="/cart"
-                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white"
+                    className="relative hidden sm:flex h-11 w-11 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC]"
                     aria-label="Cart"
                   >
                     <ShoppingCart className="h-5 w-5" />
-                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[10px] font-bold text-black shadow-sm">
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#FF6B00] px-1 text-[10px] font-bold text-[#F8FAFC]">
                       {cartCount}
                     </span>
                   </Link>
@@ -211,24 +211,16 @@ export function Header() {
                 <div className="hidden sm:flex items-center gap-3">
                   <Link
                     to={accountHomeHref}
-                    className="flex items-center gap-3 rounded-full border border-black/8 bg-white/70 px-3 py-2 shadow-[0_4px_14px_rgba(0,0,0,0.03)] backdrop-blur-sm transition-all duration-300 hover:bg-white"
+                    className="flex items-center gap-3 rounded-full border border-[#2563EB] bg-[#0B1F3A] px-3 py-2 transition-all duration-300 hover:border-[#FF6B00]"
                   >
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#111111] text-sm font-bold text-white">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2563EB] text-sm font-bold text-[#F8FAFC]">
                       {user.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex min-w-0 flex-col items-start">
-                      <span className="max-w-[110px] truncate text-sm font-semibold text-[#111111]">
+                      <span className="max-w-[110px] truncate text-sm font-semibold text-[#F8FAFC]">
                         {user.name}
                       </span>
-                      <span
-                        className={`max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide ${
-                          user.role === 'super_admin'
-                            ? 'text-violet-800'
-                            : user.role === 'admin'
-                              ? 'text-amber-900'
-                              : 'text-stone-500'
-                        }`}
-                      >
+                      <span className="max-w-[140px] truncate text-[10px] font-bold uppercase tracking-wide text-[#FF6B00]">
                         {accountRoleBadgeText(user.role) || 'User'}
                       </span>
                     </div>
@@ -236,7 +228,7 @@ export function Header() {
 
                   <button
                     onClick={handleLogout}
-                    className="text-sm font-semibold text-[#666] transition-colors hover:text-[#111111]"
+                    className="text-sm font-semibold text-[#F8FAFC] transition-colors hover:text-[#FF6B00]"
                   >
                     Log out
                   </button>
@@ -245,7 +237,7 @@ export function Header() {
                 <div className="hidden sm:flex items-center gap-3">
                   <Link
                     to="/login"
-                    className="rounded-full bg-gradient-to-r from-[#C4973F] to-[#E6C200] px-6 py-2.5 text-sm font-bold text-[#111] shadow-[0_4px_15px_rgba(196,151,63,0.25)] transition-all duration-300 hover:scale-105 hover:shadow-[0_8px_25px_rgba(196,151,63,0.35)] active:scale-[0.98]"
+                    className="rounded-full bg-[#FF6B00] border border-[#FF6B00] px-6 py-2.5 text-sm font-bold text-[#F8FAFC] transition-all duration-300 hover:bg-[#FF6B00]/90 active:scale-[0.98]"
                   >
                     Sign In
                   </Link>
@@ -256,11 +248,11 @@ export function Header() {
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && (
                 <Link
                   to="/cart"
-                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white sm:hidden"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#2563EB] transition-all duration-300 hover:bg-[#2563EB] hover:text-[#F8FAFC] sm:hidden"
                   aria-label="Cart"
                 >
                   <ShoppingCart className="h-4.5 w-4.5" />
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#C4973F] px-1 text-[9px] font-bold text-black">
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#FF6B00] px-1 text-[9px] font-bold text-[#F8FAFC]">
                     {cartCount}
                   </span>
                 </Link>
@@ -269,7 +261,7 @@ export function Header() {
               {/* Mobile Menu Button */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-black/8 bg-white/70 text-[#111111] backdrop-blur-sm transition-all duration-300 hover:bg-white lg:hidden"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2563EB] bg-[#0B1F3A] text-[#F8FAFC] transition-all duration-300 hover:bg-[#2563EB] lg:hidden"
                 aria-label="Toggle menu"
               >
                 {mobileMenuOpen ? (
@@ -284,7 +276,7 @@ export function Header() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="absolute left-0 w-full border-t border-black/8 bg-[#f7f6f2]/95 backdrop-blur-xl lg:hidden">
+          <div className="absolute left-0 w-full border-t border-[#2563EB] bg-[#0B1F3A] lg:hidden z-50">
             <div className="mx-auto max-w-[88rem] px-4 pb-6 pt-5 sm:px-6">
               {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? (
                 <nav className="flex flex-col gap-2">
@@ -297,8 +289,8 @@ export function Header() {
                         onClick={closeMobileMenu}
                         className={`rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
                           active
-                            ? 'border-black/10 bg-[#111111] text-white shadow-sm'
-                            : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                            ? 'border-[#2563EB] bg-[#2563EB] text-[#F8FAFC]'
+                            : 'border-transparent bg-[#0B1F3A] text-[#F8FAFC] hover:border-[#2563EB]'
                         }`}
                       >
                         {item.name}
@@ -312,8 +304,8 @@ export function Header() {
                       onClick={closeMobileMenu}
                       className={`group inline-flex items-center gap-2 rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
                         pathname.startsWith('/dashboard/inventory')
-                          ? 'border-black/10 bg-[#111111] text-white shadow-sm'
-                          : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                          ? 'border-[#2563EB] bg-[#2563EB] text-[#F8FAFC]'
+                          : 'border-transparent bg-[#0B1F3A] text-[#F8FAFC] hover:border-[#2563EB]'
                       }`}
                     >
                       <Package className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
@@ -327,8 +319,8 @@ export function Header() {
                       onClick={closeMobileMenu}
                       className={`rounded-2xl border px-5 py-4 text-lg font-semibold transition-all duration-300 ${
                         pathname === '/pos'
-                          ? 'border-black/10 bg-[#111111] text-white shadow-sm'
-                          : 'border-transparent bg-white/60 text-[#111111] hover:border-black/8 hover:bg-white'
+                          ? 'border-[#2563EB] bg-[#2563EB] text-[#F8FAFC]'
+                          : 'border-transparent bg-[#0B1F3A] text-[#F8FAFC] hover:border-[#2563EB]'
                       }`}
                     >
                       POS
@@ -337,34 +329,26 @@ export function Header() {
                 </nav>
               ) : null}
 
-              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? <div className="my-5 h-px bg-black/8" /> : null}
+              {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav ? <div className="my-5 h-px bg-[#2563EB]/40" /> : null}
 
               {user ? (
                 <div className="flex flex-col gap-3">
                   <Link
                     to={accountHomeHref}
                     onClick={closeMobileMenu}
-                    className="flex items-center gap-3 rounded-2xl border border-black/8 bg-white px-4 py-4"
+                    className="flex items-center gap-3 rounded-2xl border border-[#2563EB] bg-[#0B1F3A] px-4 py-4"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#111111] text-sm font-bold text-white">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2563EB] text-sm font-bold text-[#F8FAFC]">
                       {user.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-sm font-medium text-black/45">
+                      <span className="text-sm font-medium text-[#2563EB]">
                         {isStaffRole(user.role) ? 'Dashboard' : 'Account'}
                       </span>
-                      <span className="text-base font-semibold text-[#111111]">
+                      <span className="text-base font-semibold text-[#F8FAFC]">
                         {user.name}
                       </span>
-                      <span
-                        className={`text-xs font-semibold ${
-                          user.role === 'super_admin'
-                            ? 'text-violet-800'
-                            : user.role === 'admin'
-                              ? 'text-amber-900'
-                              : 'text-stone-500'
-                        }`}
-                      >
+                      <span className="text-xs font-semibold text-[#FF6B00]">
                         {accountRoleSubtitle(user.role)}
                       </span>
                     </div>
@@ -372,7 +356,7 @@ export function Header() {
 
                   <button
                     onClick={handleLogout}
-                    className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-left text-base font-semibold text-red-600 transition-all duration-300 hover:bg-red-100"
+                    className="rounded-2xl border border-[#FF6B00] bg-[#FF6B00] px-4 py-4 text-left text-base font-semibold text-[#F8FAFC] transition-all duration-300 hover:bg-[#FF6B00]/90"
                   >
                     Log out
                   </button>
@@ -382,7 +366,7 @@ export function Header() {
                   <Link
                     to="/login"
                     onClick={closeMobileMenu}
-                    className="rounded-2xl bg-gradient-to-r from-[#C4973F] to-[#E6C200] px-5 py-4 text-center text-base font-bold text-[#111] shadow-[0_4px_12px_rgba(196,151,63,0.2)] transition-all duration-300 active:scale-[0.98]"
+                    className="rounded-2xl bg-[#FF6B00] border border-[#FF6B00] px-5 py-4 text-center text-base font-bold text-[#F8FAFC] transition-all duration-300 active:scale-[0.98]"
                   >
                     Sign In
                   </Link>

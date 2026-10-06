@@ -81,15 +81,6 @@ export function DashboardInvoices() {
   const [isDeleting, setIsDeleting] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
 
-  // DEV NOTE: Test mode credentials for Razorpay:
-  // Card: 4111 1111 1111 1111 | Any future expiry | Any CVV | OTP: any 6 digits
-  // UPI: success@razorpay
-  // Netbanking: Select any test bank listed in the popup
-
-  /**
-   * Strips non-digit characters and returns last 10 digits.
-   * Razorpay requires a 10-digit contact number without country code or spaces.
-   */
   const cleanPhoneNumber = (phone: string): string => {
     if (!phone) return '';
     return String(phone).replace(/\D/g, '').slice(-10);
@@ -112,9 +103,6 @@ export function DashboardInvoices() {
   const handlePayment = async () => {
     if (!viewQuote) return;
 
-    console.log('[QUOTE PAY NOW CLICKED]', { quotation: viewQuote, invoice: viewInvoice });
-
-    // ── 1. Snapshot quote/invoice data into refs BEFORE closing the dialog ──
     paymentQuoteRef.current = { ...viewQuote };
     paymentInvoiceRef.current = viewInvoice ? { ...viewInvoice } : null;
 
@@ -124,8 +112,6 @@ export function DashboardInvoices() {
     setIsRazorpayLoading(true);
 
     try {
-      // Amount source: use the final negotiated/accepted price, falling back through each field.
-      // DEV NOTE: Do NOT multiply by 100 here — the backend does that.
       const amount =
         quote.finalAcceptedPrice ||
         quote.finalPrice ||
@@ -146,38 +132,29 @@ export function DashboardInvoices() {
         return;
       }
 
-      // DEV NOTE (test mode): Card: 4111 1111 1111 1111 | Expiry: 12/30 | CVV: 123 | OTP: 123456
-      // UPI: success@razorpay
-
       const rzpOrder = await createRazorpayOrder(amount, {
         quotationId: quote._id,
         invoiceId: invoice?._id,
       });
 
-      console.log('[QUOTE RAZORPAY ORDER]', rzpOrder);
-
       if (!rzpOrder.success) {
-        console.error('[QUOTE RAZORPAY] Order creation failed:', rzpOrder.message);
         toast.error(rzpOrder.message || 'Failed to create Razorpay order');
         setIsRazorpayLoading(false);
         return;
       }
 
-      // ── 2. Clean contact exactly like working Orders flow ──
       const cleanContact = String(quote.customerPhone || quote.phone || '')
         .replace(/\D/g, '')
         .slice(-10);
 
-      // ── 3. Build options — mirror working Checkout.tsx pattern exactly ──
       const options: Record<string, any> = {
         key: rzpOrder.key_id,
         amount: rzpOrder.amount,
         currency: rzpOrder.currency || 'INR',
-        name: 'E-commerce Store',
+        name: 'Retail Verse',
         description: `Payment for quotation ${quote.quoteNumber || quote.reference || quote._id}`,
         order_id: rzpOrder.order_id,
         handler: async (response: any) => {
-          console.log('[QUOTE RAZORPAY SUCCESS]', response);
           try {
             setIsRazorpayLoading(true);
             const verifyPayload = {
@@ -191,11 +168,9 @@ export function DashboardInvoices() {
             };
 
             const verifyRes = await verifyRazorpayPayment(verifyPayload);
-            console.log('[QUOTE VERIFY RESPONSE]', verifyRes);
 
             if (verifyRes.success) {
               toast.success('Payment successful!');
-              // Clear refs
               paymentQuoteRef.current = null;
               paymentInvoiceRef.current = null;
               void fetchData();
@@ -203,7 +178,6 @@ export function DashboardInvoices() {
               toast.error(verifyRes.message || 'Payment verification failed');
             }
           } catch (err: any) {
-            console.error('[QUOTE RAZORPAY VERIFY ERROR]', err);
             toast.error(err.message || 'Payment verification failed');
           } finally {
             setIsRazorpayLoading(false);
@@ -216,48 +190,31 @@ export function DashboardInvoices() {
           ...(cleanContact.length === 10 ? { contact: cleanContact } : {}),
         },
         theme: {
-          color: '#2563eb',
+          color: '#2563EB',
         },
         modal: {
           ondismiss: function () {
-            console.log('[QUOTE RAZORPAY CLOSED]');
             setIsRazorpayLoading(false);
             setIsRazorpayOpen(false);
           },
         },
       };
 
-      console.log('[QUOTE RAZORPAY OPTIONS]', {
-        key: options.key,
-        amount: options.amount,
-        currency: options.currency,
-        order_id: options.order_id,
-        prefill: options.prefill,
-      });
-
-      // ── 4. CRITICAL FIX: Close the dialog BEFORE opening Razorpay ──
-      // The Radix UI Dialog renders a `fixed inset-0 z-50` overlay that
-      // intercepts all pointer events and blocks the Razorpay iframe.
-      // We must close the dialog so the overlay is removed from the DOM.
       setViewQuote(null);
       setIsRazorpayOpen(true);
 
-      // Small delay to let React unmount the dialog overlay before Razorpay opens
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       const rzp = new (window as any).Razorpay(options);
 
       rzp.on('payment.failed', function (response: any) {
-        console.error('[QUOTE RAZORPAY FAILED]', response.error);
         toast.error(response.error?.description || response.error?.reason || 'Payment failed');
         setIsRazorpayLoading(false);
         setIsRazorpayOpen(false);
       });
 
-      console.log('[QUOTE RAZORPAY OPEN]');
       rzp.open();
     } catch (err: any) {
-      console.error('[QUOTE RAZORPAY] Error in handlePayment:', err);
       toast.error(err.message || 'Payment failed to initialize');
       setIsRazorpayLoading(false);
       setIsRazorpayOpen(false);
@@ -276,18 +233,15 @@ export function DashboardInvoices() {
       if (invoiceRes.status === 'fulfilled' && invoiceRes.value.success) {
         setInvoices(invoiceRes.value.data || []);
       } else {
-        console.error('Invoice fetch failed');
         setInvoices([]);
       }
 
       if (quoteRes.status === 'fulfilled' && quoteRes.value.success) {
         setQuotes(quoteRes.value.data || []);
       } else {
-        console.error('Quote fetch failed');
         setQuotes([]);
       }
     } catch (err: any) {
-      console.error('Failed to fetch dashboard data', err);
       setError(err.message || 'Could not load data.');
       toast.error('Failed to load quotes and invoices.');
     } finally {
@@ -362,7 +316,6 @@ export function DashboardInvoices() {
         toast.error(res.message || "Failed to delete invoice");
       }
     } catch (error: any) {
-      console.error("Delete invoice failed:", error);
       toast.error(error.message || "Failed to delete invoice");
     } finally {
       setIsDeleting(false);
@@ -425,7 +378,7 @@ export function DashboardInvoices() {
           const logoFormat = logoExt === 'png' ? 'PNG' : 'JPEG';
           doc.addImage(businessLogoUrl, logoFormat, 14, yCursor - 5, 30, 10);
         } catch {
-          // logo as text fallback
+          // logo fallback
         }
       }
 
@@ -528,8 +481,8 @@ export function DashboardInvoices() {
           cellPadding: 3
         },
         headStyles: {
-          fillColor: [245, 245, 245],
-          textColor: [0, 0, 0]
+          fillColor: [11, 31, 58],
+          textColor: [248, 250, 252]
         }
       });
 
@@ -544,8 +497,6 @@ export function DashboardInvoices() {
       }
 
       const calcTotalTax = tax || items.reduce((s: number, i: any) => s + (i.gstAmount || ((i.price * (i.quantity || 1) * (i.gstRate || 0)) / 100)), 0);
-      const calcCgst = invoice?.cgst || (calcTotalTax / 2);
-      const calcSgst = invoice?.sgst || (calcTotalTax / 2);
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
@@ -574,7 +525,6 @@ export function DashboardInvoices() {
 
       toast.success("PDF downloaded successfully.");
     } catch (error: any) {
-      console.error("PDF generation failed:", error);
       toast.error(error?.message || "Failed to generate PDF. Please try again.");
     } finally {
       setIsDownloading(false);
@@ -604,17 +554,14 @@ export function DashboardInvoices() {
       const pending = total - completed;
       const revenue = invoices.reduce((acc, o) => acc + (Number(o.totalAmount || o.subtotal) || 0), 0);
       return [
-        { title: 'Total Invoices', value: total, icon: Receipt, color: 'blue' },
-        { title: 'Paid / Completed', value: completed, icon: CheckCircle2, color: 'emerald' },
-        { title: 'Pending Payment', value: pending, icon: Clock, color: 'amber' },
-        { title: 'Total Revenue', value: `₹${revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: 'indigo' },
+        { title: 'Total Invoices', value: total, icon: Receipt, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
+        { title: 'Paid / Completed', value: completed, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
+        { title: 'Pending Payment', value: pending, icon: Clock, iconBg: 'bg-[#FF6B00] text-[#F8FAFC]' },
+        { title: 'Total Revenue', value: `₹${revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
       ];
     } else {
       const total = quotes.length;
       const accepted = quotes.filter((o) => String(o.status).toLowerCase() === 'accepted').length;
-      // Pending: quotes whose table-displayed status would be "pending".
-      // Table display uses: paymentStatus || status || 'Pending'.
-      // Include status="pending" and status="countered" (countered but not yet accepted/rejected).
       const pending = quotes.filter((o) => {
         const ps = String(o.paymentStatus || '').toLowerCase();
         const s = String(o.status || '').toLowerCase();
@@ -622,37 +569,35 @@ export function DashboardInvoices() {
       }).length;
       const paid = quotes.filter((o) => String(o.paymentStatus || '').toLowerCase() === 'paid').length;
       const totalAmount = quotes.reduce((acc, o) => acc + (Number(o.finalPrice || o.requestedPrice) || 0), 0);
-      console.debug('[Quotes KPI]', { total, accepted, pending, paid, totalAmount, quoteStatuses: quotes.map(o => ({ id: o._id, status: o.status, paymentStatus: o.paymentStatus })) });
       return [
-        { title: 'Total Quotes', value: total, icon: FileText, color: 'blue' },
-        { title: 'Accepted', value: accepted, icon: CheckCircle2, color: 'emerald' },
-        { title: 'Pending', value: pending, icon: Clock, color: 'amber' },
-        { title: 'Paid', value: paid, icon: CheckCircle2, color: 'emerald' },
-        { title: 'Total Value', value: `₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, color: 'indigo' },
+        { title: 'Total Quotes', value: total, icon: FileText, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
+        { title: 'Accepted', value: accepted, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
+        { title: 'Pending', value: pending, icon: Clock, iconBg: 'bg-[#FF6B00] text-[#F8FAFC]' },
+        { title: 'Paid', value: paid, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
+        { title: 'Total Value', value: `₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
       ];
     }
   }, [activeTab, invoices, quotes]);
 
   const getStatusColor = (status: string) => {
     const s = String(status).toLowerCase();
-    if (['paid', 'completed', 'accepted'].includes(s)) return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800';
-    if (['pending', 'countered'].includes(s)) return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800';
-    if (['rejected', 'expired', 'failed'].includes(s)) return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800';
-    return 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-900/30 dark:text-gray-400 dark:border-gray-800';
+    if (['paid', 'completed', 'accepted'].includes(s)) return 'bg-[#2563EB] text-[#F8FAFC] border-[#2563EB]';
+    if (['pending', 'countered'].includes(s)) return 'bg-[#FF6B00] text-[#F8FAFC] border-[#FF6B00]';
+    if (['rejected', 'expired', 'failed'].includes(s)) return 'bg-[#0B1F3A] text-[#F8FAFC] border-[#0B1F3A]';
+    return 'bg-[#0B1F3A] text-[#F8FAFC] border-[#0B1F3A]';
   };
 
   const isAdmin = user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'client';
 
   return (
-    <div className="relative min-h-screen bg-[linear-gradient(180deg,#fffdf8_0%,#fff8e8_45%,#fffdf7_100%)] dark:from-[#1a1510] dark:via-[#14120d] dark:to-[#1a1610]">
-      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(ellipse_at_top,rgba(212,175,55,0.08),transparent_60%)] pointer-events-none" />
+    <div className="relative min-h-screen bg-[#F8FAFC] text-[#0B1F3A]">
       <div className="relative space-y-8 p-6 md:p-8">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-[#1F1F1F] dark:text-[#F9FAFB]">Quotes & Invoices</h1>
-            <p className="text-muted-foreground mt-1">Manage and track all customer quotations and financial invoices.</p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-[#0B1F3A]">Quotes & Invoices</h1>
+            <p className="text-[#0B1F3A]/70 mt-1">Manage and track all customer quotations and financial invoices.</p>
           </div>
           <div className="flex items-center gap-2">
             <Button 
@@ -660,7 +605,7 @@ export function DashboardInvoices() {
               size="sm" 
               onClick={fetchData} 
               disabled={isLoading}
-              className="rounded-xl border-[#EADFBF] bg-white/50 dark:bg-[#1a1610]/50"
+              className="rounded-xl border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC] hover:border-[#2563EB] transition-colors"
             >
               <RefreshCcw className={`mr-2 h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
@@ -687,7 +632,7 @@ export function DashboardInvoices() {
                         setIsQuoteRequestOpen(true);
                       }
                     }}
-                    className="rounded-xl bg-[#1F1F1F] text-white hover:bg-[#333] dark:bg-[#D4AF37] dark:text-[#1a1610] dark:hover:bg-[#EADFBF] shadow-sm font-semibold whitespace-nowrap"
+                    className="rounded-xl bg-[#FF6B00] text-[#F8FAFC] hover:bg-[#2563EB] shadow-sm font-semibold whitespace-nowrap transition-colors"
                   >
                     + Quote
                   </Button>
@@ -698,23 +643,23 @@ export function DashboardInvoices() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex p-1 bg-[#F4E7C5]/30 dark:bg-[#2a2318] rounded-2xl w-fit border border-[#EADFBF]/50 dark:border-[#3d3522]">
+        <div className="flex p-1 bg-[#0B1F3A]/5 rounded-2xl w-fit border border-[#0B1F3A]/20">
           <button
             onClick={() => setActiveTab('invoices')}
-            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'invoices' 
-                ? 'bg-white text-[#D4AF37] shadow-md dark:bg-[#1a1610]' 
-                : 'text-[#6B7280] hover:text-[#1F1F1F] dark:text-[#9CA3AF] dark:hover:text-[#F9FAFB]'
+                ? 'bg-[#2563EB] text-[#F8FAFC] shadow-md' 
+                : 'text-[#0B1F3A]/70 hover:text-[#0B1F3A]'
             }`}
           >
             Invoices
           </button>
           <button
             onClick={() => setActiveTab('quotes')}
-            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'quotes' 
-                ? 'bg-white text-[#D4AF37] shadow-md dark:bg-[#1a1610]' 
-                : 'text-[#6B7280] hover:text-[#1F1F1F] dark:text-[#9CA3AF] dark:hover:text-[#F9FAFB]'
+                ? 'bg-[#2563EB] text-[#F8FAFC] shadow-md' 
+                : 'text-[#0B1F3A]/70 hover:text-[#0B1F3A]'
             }`}
           >
             Quotes
@@ -730,27 +675,18 @@ export function DashboardInvoices() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1 }}
             >
-              <Card className="relative overflow-hidden rounded-3xl border border-[#F0E4C8] bg-[#FFFDF8]/95 shadow-[0_10px_30px_rgba(212,175,55,0.08)] dark:border-[#3d3522] dark:bg-[#1a1610]/95">
-                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#D4AF37] to-transparent opacity-60" />
+              <Card className="relative overflow-hidden rounded-3xl border border-[#0B1F3A]/20 bg-[#F8FAFC] shadow-md hover:border-[#2563EB] transition-all">
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-[#2563EB]" />
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3 pt-5">
-                  <CardTitle className="text-[11px] font-extrabold uppercase tracking-[0.15em] text-[#6B7280] dark:text-[#9CA3AF]">
+                  <CardTitle className="text-[11px] font-extrabold uppercase tracking-[0.15em] text-[#0B1F3A]/70">
                     {stat.title}
                   </CardTitle>
-                  <div
-                    className={`rounded-xl p-2.5 ${stat.color === 'blue'
-                      ? 'bg-[#EFF6FF] text-[#3B82F6] dark:bg-[#1e3a5f] dark:text-[#60A5FA]'
-                      : stat.color === 'amber'
-                        ? 'bg-[#FFFBEB] text-[#D97706] dark:bg-[#451a03] dark:text-[#FBBF24]'
-                        : stat.color === 'emerald'
-                          ? 'bg-[#ECFDF5] text-[#059669] dark:bg-[#042f2e] dark:text-[#34D399]'
-                          : 'bg-[#EEF2FF] text-[#4F46E5] dark:bg-[#1e1b4b] dark:text-[#818CF8]'
-                      }`}
-                  >
+                  <div className={`rounded-xl p-2.5 shadow-sm ${stat.iconBg}`}>
                     <stat.icon className="h-4 w-4" />
                   </div>
                 </CardHeader>
                 <CardContent className="pb-5">
-                  <div className="text-3xl font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">{stat.value}</div>
+                  <div className="text-3xl font-bold text-[#0B1F3A]">{stat.value}</div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -762,23 +698,23 @@ export function DashboardInvoices() {
           <motion.div 
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }}
-            className="flex items-center gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400"
+            className="flex items-center gap-3 p-4 rounded-2xl bg-[#FF6B00]/10 border border-[#FF6B00] text-[#0B1F3A]"
           >
-            <AlertCircle className="h-5 w-5 shrink-0" />
+            <AlertCircle className="h-5 w-5 shrink-0 text-[#FF6B00]" />
             <p className="text-sm font-medium">{error}</p>
-            <Button variant="ghost" size="sm" onClick={fetchData} className="ml-auto hover:bg-rose-100">Try Again</Button>
+            <Button variant="ghost" size="sm" onClick={fetchData} className="ml-auto text-[#FF6B00] hover:bg-[#FF6B00] hover:text-[#F8FAFC]">Try Again</Button>
           </motion.div>
         )}
 
         {/* Data Table */}
-        <Card className="overflow-hidden rounded-3xl border border-[#EADFBF] bg-[#FFFDF8] shadow-[0_20px_40px_rgba(212,175,55,0.1)] dark:border-[#3d3522] dark:bg-[#1a1610]">
-          <CardHeader className="border-b border-[#EADFBF]/50 pb-6 pt-6 md:pt-8 dark:border-[#3d3522]">
+        <Card className="overflow-hidden rounded-3xl border border-[#0B1F3A]/20 bg-[#F8FAFC] shadow-md">
+          <CardHeader className="border-b border-[#0B1F3A]/10 pb-6 pt-6 md:pt-8">
             <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
               <div>
-                <CardTitle className="text-2xl font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">
+                <CardTitle className="text-2xl font-bold text-[#0B1F3A]">
                   {activeTab === 'invoices' ? 'Invoice List' : 'Quotation List'}
                 </CardTitle>
-                <p className="mt-2 text-sm text-[#6B7280] dark:text-[#9CA3AF]">
+                <p className="mt-2 text-sm text-[#0B1F3A]/70">
                   {activeTab === 'invoices' 
                     ? 'Track financial records and payment statuses for completed orders.' 
                     : 'Manage price quotations sent to potential customers.'}
@@ -786,11 +722,11 @@ export function DashboardInvoices() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative">
-                  <Search className="absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#9CA3AF]" />
+                  <Search className="absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#2563EB]" />
                   <input
                     type="text"
                     placeholder={`Search ${activeTab}...`}
-                    className="w-full rounded-xl border border-[#EADFBF] bg-[#FFFCF4] py-2.5 pr-4 pl-10 text-sm text-[#1F1F1F] placeholder:text-[#9CA3AF] transition-all focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 focus:outline-none dark:border-[#3d3522] dark:bg-[#252117] dark:text-[#F9FAFB] dark:placeholder:text-[#6B7280] md:w-64"
+                    className="w-full rounded-xl border border-[#2563EB] bg-[#F8FAFC] py-2.5 pr-4 pl-10 text-sm text-[#0B1F3A] placeholder:text-[#0B1F3A]/50 transition-all focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 focus:outline-none md:w-64"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
@@ -801,7 +737,7 @@ export function DashboardInvoices() {
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead className="bg-[#F4E7C5]/30 text-[11px] font-semibold tracking-[0.1em] text-[#6B7280] uppercase dark:bg-[#2a2318] dark:text-[#9CA3AF]">
+                <thead className="bg-[#0B1F3A] text-[11px] font-semibold tracking-[0.1em] text-[#F8FAFC] uppercase">
                   <tr>
                     <th className="px-6 py-4">{activeTab === 'invoices' ? 'Invoice No' : 'Quote No'}</th>
                     {activeTab === 'invoices' && <th className="px-6 py-4">Order ID</th>}
@@ -811,19 +747,19 @@ export function DashboardInvoices() {
                     <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#EADFBF]/50 dark:divide-[#3d3522]">
+                <tbody className="divide-y divide-[#0B1F3A]/10">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[#6B7280]">
+                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[#0B1F3A]/70">
                         <div className="flex items-center justify-center gap-2">
-                          <RefreshCcw className="h-4 w-4 animate-spin text-[#D4AF37]" />
+                          <RefreshCcw className="h-4 w-4 animate-spin text-[#2563EB]" />
                           <span>Loading data…</span>
                         </div>
                       </td>
                     </tr>
                   ) : filteredData.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[#6B7280]">
+                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[#0B1F3A]/70">
                         No {activeTab} match your search.
                       </td>
                     </tr>
@@ -834,26 +770,26 @@ export function DashboardInvoices() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         transition={{ delay: idx * 0.03 }}
-                        className="group transition-all duration-200 hover:bg-[#F4E7C5]/20 dark:hover:bg-[#2a2318]"
+                        className="group transition-all duration-200 hover:bg-[#2563EB]/5"
                       >
                         <td className="px-6 py-4">
-                          <span className="font-mono text-sm font-semibold text-[#D4AF37] dark:text-[#D4AF37]">
+                          <span className="font-mono text-sm font-bold text-[#2563EB]">
                             {item.invoiceNumber || item.quoteNumber}
                           </span>
                         </td>
                         {activeTab === 'invoices' && (
                           <td className="px-6 py-4">
-                            <span className="font-mono text-xs text-[#6B7280]">
+                            <span className="font-mono text-xs text-[#0B1F3A]/70">
                               {item.orderId}
                             </span>
                           </td>
                         )}
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-[#1F1F1F] dark:text-[#F9FAFB]">
+                            <span className="text-sm font-semibold text-[#0B1F3A]">
                               {item.customerName || 'Unknown'}
                             </span>
-                            <span className="text-[10px] text-[#9CA3AF]">
+                            <span className="text-[10px] text-[#0B1F3A]/60">
                               {item.createdAt
                                 ? new Date(item.createdAt).toISOString().split('T')[0]
                                 : '—'}
@@ -861,7 +797,7 @@ export function DashboardInvoices() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-sm font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">
+                          <span className="text-sm font-bold text-[#0B1F3A]">
                             ₹{(item.totalAmount || item.finalPrice || item.requestedPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </span>
                         </td>
@@ -878,7 +814,7 @@ export function DashboardInvoices() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="rounded-full border-[#EADFBF] bg-transparent text-[#1F1F1F] hover:border-[#D4AF37] hover:bg-[#FFFDF8] hover:shadow-md hover:shadow-[#D4AF37]/10 dark:border-[#3d3522] dark:text-[#F9FAFB] dark:hover:border-[#D4AF37] dark:hover:bg-[#252117]"
+                              className="rounded-full border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:border-[#2563EB] hover:bg-[#2563EB] hover:text-[#F8FAFC] transition-colors cursor-pointer"
                               onClick={() => {
                                 if (activeTab === 'invoices') setViewInvoice(item);
                                 else setViewQuote(item);
@@ -900,12 +836,12 @@ export function DashboardInvoices() {
 
         {/* Invoice Detail Dialog */}
         <Dialog open={!!viewInvoice} onOpenChange={(open) => !open && setViewInvoice(null)}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-stone-200 w-[95vw] sm:max-w-2xl bg-white dark:bg-zinc-950 p-0 pb-4">
+          <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-[#0B1F3A] w-[95vw] sm:max-w-2xl bg-[#F8FAFC] text-[#0B1F3A] p-0 pb-4">
             <div className="p-4 sm:p-8">
               <DialogHeader className="mb-6 flex flex-row items-center justify-between pr-10">
-                <DialogTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-3 text-2xl sm:text-3xl font-black text-[#1F1F1F] dark:text-[#F9FAFB]">
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-2xl">
-                    <Receipt className="h-6 w-6 sm:h-7 sm:w-7 text-blue-600 dark:text-blue-400" />
+                <DialogTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-3 text-2xl sm:text-3xl font-black text-[#0B1F3A]">
+                  <div className="p-3 bg-[#2563EB]/10 rounded-2xl text-[#2563EB]">
+                    <Receipt className="h-6 w-6 sm:h-7 sm:w-7" />
                   </div>
                   Invoice Details
                 </DialogTitle>
@@ -915,7 +851,7 @@ export function DashboardInvoices() {
                     title="Delete Invoice"
                     onClick={handleDeleteInvoice}
                     disabled={isDeleting}
-                    className="p-2 rounded-full text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+                    className="p-2 rounded-full text-[#FF6B00] hover:bg-[#FF6B00]/10 disabled:opacity-50 transition-colors cursor-pointer"
                   >
                     {isDeleting ? (
                       <RefreshCcw className="h-5 w-5 animate-spin" />
@@ -928,24 +864,24 @@ export function DashboardInvoices() {
 
               {viewInvoice && (
                 <div ref={invoiceRef} className="invoice-pdf-content space-y-8 text-sm">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 p-4 sm:p-6 bg-gray-50/50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 p-4 sm:p-6 bg-[#F8FAFC] rounded-3xl border border-[#0B1F3A]/20">
                     <div className="space-y-2">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Billed To</p>
-                      <p className="font-bold text-base sm:text-lg text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{viewInvoice.customerName}</p>
-                      <p className="text-muted-foreground break-words">{viewInvoice.customerEmail}</p>
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70">Billed To</p>
+                      <p className="font-bold text-base sm:text-lg text-[#0B1F3A] break-words">{viewInvoice.customerName}</p>
+                      <p className="text-[#0B1F3A]/70 break-words">{viewInvoice.customerEmail}</p>
                     </div>
                     <div className="space-y-2 sm:text-right">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Reference</p>
-                      <p className="font-bold text-base sm:text-lg text-blue-600 dark:text-blue-400 break-words">{viewInvoice.invoiceNumber}</p>
-                      <p className="text-muted-foreground break-words">Order: {viewInvoice.orderId}</p>
-                      <p className="text-muted-foreground">{new Date(viewInvoice.createdAt).toLocaleString()}</p>
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70">Reference</p>
+                      <p className="font-bold text-base sm:text-lg text-[#2563EB] break-words">{viewInvoice.invoiceNumber}</p>
+                      <p className="text-[#0B1F3A]/70 break-words">Order: {viewInvoice.orderId}</p>
+                      <p className="text-[#0B1F3A]/70">{new Date(viewInvoice.createdAt).toLocaleString()}</p>
                     </div>
                   </div>
 
-                  <div className="border border-gray-100 dark:border-white/5 rounded-3xl overflow-hidden shadow-sm">
+                  <div className="border border-[#0B1F3A]/20 rounded-3xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left min-w-[500px]">
-                        <thead className="bg-gray-50 dark:bg-white/5 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                        <thead className="bg-[#0B1F3A] text-[10px] font-extrabold uppercase tracking-widest text-[#F8FAFC]">
                           <tr>
                             <th className="px-4 sm:px-6 py-4">Item</th>
                             <th className="px-4 py-4 text-center">Qty</th>
@@ -955,7 +891,7 @@ export function DashboardInvoices() {
                             <th className="px-4 sm:px-6 py-4 text-right">Amount</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50 dark:divide-white/5">
+                        <tbody className="divide-y divide-[#0B1F3A]/10">
                           {viewInvoice.items?.map((item: any, i: number) => {
                             const qty = item.quantity || item.qty || 1;
                             const price = item.price || item.unitPrice || item.product?.price || 0;
@@ -964,35 +900,35 @@ export function DashboardInvoices() {
                             const sub = item.subtotal || item.total || (qty * price);
                             return (
                               <tr key={i}>
-                                <td className="px-4 sm:px-6 py-4 font-semibold text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{item.name || item.productName || "Item"}</td>
-                                <td className="px-4 py-4 text-center text-[#6B7280]">{qty}</td>
-                                <td className="px-4 py-4 text-right text-[#6B7280]">{formatINR(price)}</td>
-                                <td className="px-4 py-4 text-center text-[#6B7280]">{rate}%</td>
-                                <td className="px-4 py-4 text-right text-emerald-600 dark:text-emerald-400 font-medium">{formatINR(itemTax)}</td>
-                                <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(sub + itemTax)}</td>
+                                <td className="px-4 sm:px-6 py-4 font-semibold text-[#0B1F3A] break-words">{item.name || item.productName || "Item"}</td>
+                                <td className="px-4 py-4 text-center text-[#0B1F3A]/70">{qty}</td>
+                                <td className="px-4 py-4 text-right text-[#0B1F3A]/70">{formatINR(price)}</td>
+                                <td className="px-4 py-4 text-center text-[#0B1F3A]/70">{rate}%</td>
+                                <td className="px-4 py-4 text-right text-[#2563EB] font-medium">{formatINR(itemTax)}</td>
+                                <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#0B1F3A]">{formatINR(sub + itemTax)}</td>
                               </tr>
                             );
                           })}
                         </tbody>
-                        <tfoot className="bg-gray-50/30 dark:bg-white/2 font-bold border-t border-gray-100 dark:border-white/5">
+                        <tfoot className="bg-[#F8FAFC] font-bold border-t border-[#0B1F3A]/20">
                           <tr>
-                            <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Subtotal</td>
-                            <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(viewInvoice.subtotal || 0)}</td>
+                            <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-[#0B1F3A]/70">Subtotal</td>
+                            <td className="px-4 sm:px-6 py-3 text-right text-[#0B1F3A]">{formatINR(viewInvoice.subtotal || 0)}</td>
                           </tr>
                           {(viewInvoice.tax || 0) > 0 ? (
                             <tr>
-                              <td colSpan={5} className="px-4 sm:px-6 py-2.5 text-right text-xs text-emerald-600 dark:text-emerald-400 font-bold">Total GST Tax</td>
-                              <td className="px-4 sm:px-6 py-2.5 text-right text-xs text-emerald-600 dark:text-emerald-400 font-bold">{formatINR(viewInvoice.tax || 0)}</td>
+                              <td colSpan={5} className="px-4 sm:px-6 py-2.5 text-right text-xs text-[#2563EB] font-bold">Total GST Tax</td>
+                              <td className="px-4 sm:px-6 py-2.5 text-right text-xs text-[#2563EB] font-bold">{formatINR(viewInvoice.tax || 0)}</td>
                             </tr>
                           ) : (
                             <tr>
-                              <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-muted-foreground">Total GST Tax</td>
-                              <td className="px-4 sm:px-6 py-3 text-right text-[#1F1F1F] dark:text-[#F9FAFB]">{formatINR(0)}</td>
+                              <td colSpan={5} className="px-4 sm:px-6 py-3 text-right text-[#0B1F3A]/70">Total GST Tax</td>
+                              <td className="px-4 sm:px-6 py-3 text-right text-[#0B1F3A]">{formatINR(0)}</td>
                             </tr>
                           )}
-                          <tr className="text-base sm:text-lg bg-blue-50/50 dark:bg-blue-900/10">
-                            <td colSpan={5} className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">Total Amount</td>
-                            <td className="px-4 sm:px-6 py-5 text-right font-black text-blue-700 dark:text-blue-400">{formatINR(viewInvoice.totalAmount || viewInvoice.total || 0)}</td>
+                          <tr className="text-base sm:text-lg bg-[#2563EB] text-[#F8FAFC]">
+                            <td colSpan={5} className="px-4 sm:px-6 py-5 text-right font-black">Total Amount</td>
+                            <td className="px-4 sm:px-6 py-5 text-right font-black">{formatINR(viewInvoice.totalAmount || viewInvoice.total || 0)}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1000,12 +936,12 @@ export function DashboardInvoices() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-4 sm:p-5 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground mb-1">Payment Method</p>
-                      <p className="font-bold text-[#1F1F1F] dark:text-[#F9FAFB] capitalize">{viewInvoice.paymentMethod || 'N/A'}</p>
+                    <div className="p-4 sm:p-5 bg-[#F8FAFC] rounded-2xl border border-[#0B1F3A]/20">
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70 mb-1">Payment Method</p>
+                      <p className="font-bold text-[#0B1F3A] capitalize">{viewInvoice.paymentMethod || 'N/A'}</p>
                     </div>
-                    <div className="p-4 sm:p-5 bg-gray-50 dark:bg-white/5 rounded-2xl border border-gray-100 dark:border-white/5">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground mb-1">Payment Status</p>
+                    <div className="p-4 sm:p-5 bg-[#F8FAFC] rounded-2xl border border-[#0B1F3A]/20">
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70 mb-1">Payment Status</p>
                       <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-black capitalize ${getStatusColor(viewInvoice.paymentStatus)}`}>
                         {viewInvoice.paymentStatus || 'Pending'}
                       </span>
@@ -1014,14 +950,14 @@ export function DashboardInvoices() {
                 </div>
               )}
 
-              <DialogFooter className="mt-10 flex flex-col sm:flex-row gap-3 border-t border-gray-100 dark:border-white/5 pt-6">
-                <Button type="button" variant="ghost" onClick={() => setViewInvoice(null)} className="rounded-xl px-6 w-full sm:w-auto">
+              <DialogFooter className="mt-10 flex flex-col sm:flex-row gap-3 border-t border-[#0B1F3A]/10 pt-6">
+                <Button type="button" variant="ghost" onClick={() => setViewInvoice(null)} className="rounded-xl px-6 w-full sm:w-auto border border-[#0B1F3A]/20 text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC]">
                   Close
                 </Button>
                 <Button 
                   type="button" 
                   disabled={isDownloading}
-                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-6 w-full sm:w-auto disabled:opacity-70" 
+                  className="gap-2 bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] rounded-xl px-6 w-full sm:w-auto disabled:opacity-70 transition-colors" 
                   onClick={handleDownloadPDF}
                 >
                   {isDownloading ? (
@@ -1036,7 +972,7 @@ export function DashboardInvoices() {
                     </>
                   )}
                 </Button>
-                <Button type="button" className="gap-2 bg-[#1F1F1F] hover:bg-[#333] text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded-xl px-6 w-full sm:w-auto" onClick={() => window.print()}>
+                <Button type="button" className="gap-2 bg-[#0B1F3A] hover:bg-[#2563EB] text-[#F8FAFC] rounded-xl px-6 w-full sm:w-auto transition-colors" onClick={() => window.print()}>
                   <Printer className="w-4 h-4" /> Print Receipt
                 </Button>
               </DialogFooter>
@@ -1053,13 +989,13 @@ export function DashboardInvoices() {
             setAdminMessage('');
           }
         }}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border-stone-200 w-[95vw] sm:max-w-3xl bg-white dark:bg-zinc-950 p-0 pb-4">
+          <DialogContent className="max-h-[90vh] overflow-y-auto rounded-3xl border border-[#0B1F3A] w-[95vw] sm:max-w-3xl bg-[#F8FAFC] text-[#0B1F3A] p-0 pb-4">
             <div className="p-4 sm:p-8">
               <DialogHeader className="mb-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <DialogTitle className="flex items-center gap-3 text-2xl sm:text-3xl font-black text-[#1F1F1F] dark:text-[#F9FAFB]">
-                    <div className="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-2xl">
-                      <FileText className="h-6 w-6 sm:h-7 sm:w-7 text-amber-600 dark:text-amber-400" />
+                  <DialogTitle className="flex items-center gap-3 text-2xl sm:text-3xl font-black text-[#0B1F3A]">
+                    <div className="p-3 bg-[#2563EB]/10 rounded-2xl text-[#2563EB]">
+                      <FileText className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
                     Quotation Details
                   </DialogTitle>
@@ -1079,17 +1015,17 @@ export function DashboardInvoices() {
               {viewQuote && (
                 <div className="space-y-6 text-sm">
                   {/* Info Grid */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 sm:p-6 bg-gray-50/50 dark:bg-white/5 rounded-3xl border border-gray-100 dark:border-white/5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 p-4 sm:p-6 bg-[#F8FAFC] rounded-3xl border border-[#0B1F3A]/20">
                     <div className="space-y-2">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Prepared For</p>
-                      <p className="font-bold text-base sm:text-lg text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{viewQuote.customerName}</p>
-                      <p className="text-muted-foreground break-words">{viewQuote.customerEmail}</p>
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70">Prepared For</p>
+                      <p className="font-bold text-base sm:text-lg text-[#0B1F3A] break-words">{viewQuote.customerName}</p>
+                      <p className="text-[#0B1F3A]/70 break-words">{viewQuote.customerEmail}</p>
                     </div>
                     <div className="space-y-2 sm:text-right">
-                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">Reference</p>
-                      <p className="font-bold text-base sm:text-lg text-amber-600 dark:text-amber-400 break-words">{viewQuote.quoteNumber}</p>
-                      <p className="text-muted-foreground break-words">Valid Until: {viewQuote.validUntil ? new Date(viewQuote.validUntil).toLocaleDateString() : 'N/A'}</p>
-                      <p className="text-muted-foreground">{new Date(viewQuote.createdAt).toLocaleString()}</p>
+                      <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#0B1F3A]/70">Reference</p>
+                      <p className="font-bold text-base sm:text-lg text-[#2563EB] break-words">{viewQuote.quoteNumber}</p>
+                      <p className="text-[#0B1F3A]/70 break-words">Valid Until: {viewQuote.validUntil ? new Date(viewQuote.validUntil).toLocaleDateString() : 'N/A'}</p>
+                      <p className="text-[#0B1F3A]/70">{new Date(viewQuote.createdAt).toLocaleString()}</p>
                     </div>
                   </div>
 
@@ -1097,21 +1033,21 @@ export function DashboardInvoices() {
                   {(viewQuote.message || viewQuote.adminMessage) && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {viewQuote.message && (
-                        <div className="p-4 bg-blue-50/30 dark:bg-blue-900/10 rounded-2xl border border-blue-100/50 dark:border-blue-900/20">
+                        <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#2563EB]">
                           <div className="flex items-center gap-2 mb-2">
-                            <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Customer Message</span>
+                            <MessageSquare className="w-3.5 h-3.5 text-[#2563EB]" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">Customer Message</span>
                           </div>
-                          <p className="italic text-[#4B5563] dark:text-gray-300">"{viewQuote.message}"</p>
+                          <p className="italic text-[#0B1F3A]">"{viewQuote.message}"</p>
                         </div>
                       )}
                       {viewQuote.adminMessage && (
-                        <div className="p-4 bg-amber-50/30 dark:bg-amber-900/10 rounded-2xl border border-amber-100/50 dark:border-amber-900/20">
+                        <div className="p-4 bg-[#F8FAFC] rounded-2xl border border-[#FF6B00]">
                           <div className="flex items-center gap-2 mb-2">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600">Admin Response</span>
+                            <Clock className="w-3.5 h-3.5 text-[#FF6B00]" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#FF6B00]">Admin Response</span>
                           </div>
-                          <p className="italic text-[#4B5563] dark:text-gray-300">"{viewQuote.adminMessage}"</p>
+                          <p className="italic text-[#0B1F3A]">"{viewQuote.adminMessage}"</p>
                         </div>
                       )}
                     </div>
@@ -1119,20 +1055,20 @@ export function DashboardInvoices() {
 
                   {/* Payment Status Info */}
                   {viewQuote.paymentStatus === 'paid' && (
-                    <div className="p-5 bg-emerald-50/30 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100/50 dark:border-emerald-900/20 flex items-center justify-between">
+                    <div className="p-5 bg-[#2563EB]/10 rounded-2xl border border-[#2563EB] flex items-center justify-between">
                       <div>
-                        <p className="text-[10px] font-extrabold uppercase tracking-widest text-emerald-700 dark:text-emerald-400 mb-1">Payment Status</p>
-                        <p className="font-bold text-emerald-800 dark:text-emerald-300">Successfully Paid via Razorpay</p>
+                        <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#2563EB] mb-1">Payment Status</p>
+                        <p className="font-bold text-[#0B1F3A]">Successfully Paid via Razorpay</p>
                       </div>
-                      <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                      <CheckCircle2 className="h-6 w-6 text-[#2563EB]" />
                     </div>
                   )}
 
                   {/* Products Table */}
-                  <div className="border border-gray-100 dark:border-white/5 rounded-3xl overflow-hidden shadow-sm">
+                  <div className="border border-[#0B1F3A]/20 rounded-3xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left min-w-[550px]">
-                        <thead className="bg-gray-50 dark:bg-white/5 text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                        <thead className="bg-[#0B1F3A] text-[10px] font-extrabold uppercase tracking-widest text-[#F8FAFC]">
                           <tr>
                             <th className="px-4 sm:px-6 py-4">Product</th>
                             <th className="px-4 sm:px-6 py-4 text-center">Qty</th>
@@ -1140,31 +1076,31 @@ export function DashboardInvoices() {
                             <th className="px-4 sm:px-6 py-4 text-right">Subtotal</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-50 dark:divide-white/5">
+                        <tbody className="divide-y divide-[#0B1F3A]/10">
                           {viewQuote.products?.map((item: any, i: number) => (
                             <tr key={i}>
-                              <td className="px-4 sm:px-6 py-4 font-semibold text-[#1F1F1F] dark:text-[#F9FAFB] break-words">{item.name}</td>
-                              <td className="px-4 sm:px-6 py-4 text-center text-[#6B7280]">{item.quantity}</td>
-                              <td className="px-4 sm:px-6 py-4 text-right text-[#6B7280]">₹{Number(item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#1F1F1F] dark:text-[#F9FAFB]">₹{Number(item.price * item.quantity).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="px-4 sm:px-6 py-4 font-semibold text-[#0B1F3A] break-words">{item.name}</td>
+                              <td className="px-4 sm:px-6 py-4 text-center text-[#0B1F3A]/70">{item.quantity}</td>
+                              <td className="px-4 sm:px-6 py-4 text-right text-[#0B1F3A]/70">₹{Number(item.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="px-4 sm:px-6 py-4 text-right font-bold text-[#0B1F3A]">₹{Number(item.price * item.quantity).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot className="bg-gray-50/30 dark:bg-white/2 font-bold border-t border-gray-100 dark:border-white/5">
-                          <tr className="bg-gray-50/50 dark:bg-white/5">
-                            <td colSpan={3} className="px-4 sm:px-6 py-4 text-right text-muted-foreground uppercase tracking-wider text-[10px]">Requested Price</td>
-                            <td className="px-4 sm:px-6 py-4 text-right text-blue-600 dark:text-blue-400 font-black text-base sm:text-lg">₹{Number(viewQuote.requestedPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        <tfoot className="bg-[#F8FAFC] font-bold border-t border-[#0B1F3A]/20">
+                          <tr className="bg-[#F8FAFC]">
+                            <td colSpan={3} className="px-4 sm:px-6 py-4 text-right text-[#0B1F3A]/70 uppercase tracking-wider text-[10px]">Requested Price</td>
+                            <td className="px-4 sm:px-6 py-4 text-right text-[#2563EB] font-black text-base sm:text-lg">₹{Number(viewQuote.requestedPrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                           </tr>
                           {viewQuote.counterPrice && (
-                            <tr className="bg-amber-50/50 dark:bg-amber-900/10">
-                              <td colSpan={3} className="px-4 sm:px-6 py-4 text-right text-amber-700 dark:text-amber-400 uppercase tracking-wider text-[10px]">Counter Offer</td>
-                              <td className="px-4 sm:px-6 py-4 text-right text-amber-700 dark:text-amber-400 font-black text-base sm:text-lg">₹{Number(viewQuote.counterPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <tr className="bg-[#FF6B00]/10">
+                              <td colSpan={3} className="px-4 sm:px-6 py-4 text-right text-[#FF6B00] uppercase tracking-wider text-[10px]">Counter Offer</td>
+                              <td className="px-4 sm:px-6 py-4 text-right text-[#FF6B00] font-black text-base sm:text-lg">₹{Number(viewQuote.counterPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             </tr>
                           )}
                           {viewQuote.finalPrice && (
-                            <tr className="bg-emerald-50/50 dark:bg-emerald-900/10">
-                              <td colSpan={3} className="px-4 sm:px-6 py-5 text-right text-emerald-700 dark:text-emerald-400 uppercase tracking-wider text-[10px]">Final Accepted Price</td>
-                              <td className="px-4 sm:px-6 py-5 text-right text-emerald-700 dark:text-emerald-400 font-black text-xl sm:text-2xl">₹{Number(viewQuote.finalPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <tr className="bg-[#2563EB]/10">
+                              <td colSpan={3} className="px-4 sm:px-6 py-5 text-right text-[#2563EB] uppercase tracking-wider text-[10px]">Final Accepted Price</td>
+                              <td className="px-4 sm:px-6 py-5 text-right text-[#2563EB] font-black text-xl sm:text-2xl">₹{Number(viewQuote.finalPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                             </tr>
                           )}
                         </tfoot>
@@ -1179,34 +1115,34 @@ export function DashboardInvoices() {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="space-y-4 p-6 bg-amber-50/50 dark:bg-amber-900/10 rounded-3xl border border-amber-200 dark:border-amber-900/30"
+                        className="space-y-4 p-6 bg-[#F8FAFC] rounded-3xl border border-[#0B1F3A]/20"
                       >
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">Counter Price (₹)</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F3A]">Counter Price (₹)</label>
                             <input
                               type="number"
                               value={counterPrice}
                               onChange={(e) => setCounterPrice(e.target.value)}
                               placeholder="Enter your offer..."
-                              className="w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-white dark:bg-zinc-900 dark:border-amber-900/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all"
+                              className="w-full px-4 py-2.5 rounded-xl border border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] focus:outline-none focus:ring-2 focus:ring-[#2563EB] transition-all"
                             />
                           </div>
                           <div className="space-y-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">Admin Message</label>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-[#0B1F3A]">Admin Message</label>
                             <input
                               type="text"
                               value={adminMessage}
                               onChange={(e) => setAdminMessage(e.target.value)}
                               placeholder="Reason for counter..."
-                              className="w-full px-4 py-2.5 rounded-xl border border-amber-200 bg-white dark:bg-zinc-900 dark:border-amber-900/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all"
+                              className="w-full px-4 py-2.5 rounded-xl border border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] focus:outline-none focus:ring-2 focus:ring-[#2563EB] transition-all"
                             />
                           </div>
                         </div>
                         <div className="flex justify-end gap-2">
-                          <Button variant="ghost" onClick={() => setShowCounterInput(false)} className="rounded-xl">Cancel</Button>
+                          <Button variant="ghost" onClick={() => setShowCounterInput(false)} className="rounded-xl border border-[#0B1F3A]/20 text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC]">Cancel</Button>
                           <Button 
-                            className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl px-6"
+                            className="bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] rounded-xl px-6 transition-colors"
                             onClick={() => handleBargainAction('counter')}
                             disabled={isSubmitting}
                           >
@@ -1220,12 +1156,12 @@ export function DashboardInvoices() {
                 </div>
               )}
 
-              <DialogFooter className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 border-t border-gray-100 dark:border-white/5 pt-6">
+              <DialogFooter className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-4 border-t border-[#0B1F3A]/10 pt-6">
                 <div className="flex gap-2 justify-between sm:justify-start w-full sm:w-auto">
-                  <Button type="button" variant="ghost" onClick={() => setViewQuote(null)} className="rounded-xl px-4 flex-1 sm:flex-none">
+                  <Button type="button" variant="ghost" onClick={() => setViewQuote(null)} className="rounded-xl px-4 flex-1 sm:flex-none border border-[#0B1F3A]/20 text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC]">
                     Close
                   </Button>
-                  <Button type="button" variant="outline" className="gap-2 rounded-xl border-stone-200 dark:border-white/10 flex-1 sm:flex-none" onClick={() => window.print()}>
+                  <Button type="button" variant="outline" className="gap-2 rounded-xl border border-[#0B1F3A]/20 text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC] flex-1 sm:flex-none" onClick={() => window.print()}>
                     <FileText className="w-4 h-4" /> Print
                   </Button>
                 </div>
@@ -1236,7 +1172,7 @@ export function DashboardInvoices() {
                     {!isAdmin && viewQuote.status === 'countered' && (
                       <>
                         <Button 
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-6 gap-2 w-full sm:w-auto"
+                          className="bg-[#2563EB] hover:bg-[#0B1F3A] text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                           onClick={() => handleBargainAction('accept')}
                           disabled={isSubmitting}
                         >
@@ -1244,7 +1180,7 @@ export function DashboardInvoices() {
                         </Button>
                         <Button 
                           variant="outline"
-                          className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl px-6 gap-2 w-full sm:w-auto"
+                          className="border border-[#FF6B00] text-[#FF6B00] hover:bg-[#FF6B00] hover:text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                           onClick={() => handleBargainAction('reject')}
                           disabled={isSubmitting}
                         >
@@ -1256,7 +1192,7 @@ export function DashboardInvoices() {
                     {/* Pay Now Button */}
                     {viewQuote.status === 'accepted' && viewQuote.paymentStatus !== 'paid' && (
                       <Button 
-                        className="bg-[#D4AF37] hover:bg-[#B8962E] text-white rounded-xl px-6 gap-2 shadow-lg shadow-[#D4AF37]/20 w-full sm:w-auto"
+                        className="bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] rounded-xl px-6 gap-2 shadow-lg shadow-[#FF6B00]/20 w-full sm:w-auto transition-colors"
                         onClick={handlePayment}
                         disabled={isRazorpayLoading || isSubmitting}
                       >
@@ -1275,14 +1211,14 @@ export function DashboardInvoices() {
                         {viewQuote.status === 'pending' && (
                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                             <Button 
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl px-6 gap-2 w-full sm:w-auto"
+                              className="bg-[#2563EB] hover:bg-[#0B1F3A] text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                               onClick={() => handleBargainAction('accept')}
                               disabled={isSubmitting}
                             >
                               <Check className="w-4 h-4" /> Accept
                             </Button>
                             <Button 
-                              className="bg-amber-600 hover:bg-amber-700 text-white rounded-xl px-6 gap-2 w-full sm:w-auto"
+                              className="bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                               onClick={() => setShowCounterInput(true)}
                               disabled={isSubmitting}
                             >
@@ -1290,7 +1226,7 @@ export function DashboardInvoices() {
                             </Button>
                             <Button 
                               variant="outline"
-                              className="border-rose-200 text-rose-600 hover:bg-rose-50 rounded-xl px-6 gap-2 w-full sm:w-auto"
+                              className="border border-[#FF6B00] text-[#FF6B00] hover:bg-[#FF6B00] hover:text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                               onClick={() => handleBargainAction('reject')}
                               disabled={isSubmitting}
                             >
@@ -1300,7 +1236,7 @@ export function DashboardInvoices() {
                         )}
                         {viewQuote.status === 'accepted' && (
                           <Button 
-                            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-6 gap-2 w-full sm:w-auto"
+                            className="bg-[#2563EB] hover:bg-[#0B1F3A] text-[#F8FAFC] rounded-xl px-6 gap-2 w-full sm:w-auto transition-colors"
                             onClick={() => handleBargainAction('convert')}
                             disabled={isSubmitting}
                           >
@@ -1329,7 +1265,7 @@ export function DashboardInvoices() {
           clientId: item.clientId
         }))}
         onSuccess={() => {
-          void fetchData(); // Refresh quotes list
+          void fetchData();
         }}
       />
 
@@ -1338,10 +1274,9 @@ export function DashboardInvoices() {
         isOpen={isCreateQuoteOpen}
         onClose={() => setIsCreateQuoteOpen(false)}
         onSuccess={() => {
-          void fetchData(); // Refresh quotes list
+          void fetchData();
         }}
       />
     </div>
   );
 }
-

@@ -43,21 +43,20 @@ export function ImpersonationBanner() {
   return (
     <div
       role="status"
-      className="sticky top-0 z-[60] w-full shrink-0 flex flex-col gap-2 border-b border-amber-300/60 bg-amber-50 px-4 py-2.5 text-sm text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/80 dark:text-amber-50 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+      className="sticky top-0 z-[60] w-full shrink-0 flex flex-col gap-2 border-b border-[#2563EB] bg-[#0B1F3A] px-4 py-2.5 text-sm text-[#F8FAFC] sm:flex-row sm:items-center sm:justify-between sm:gap-4"
     >
       <p className="min-w-0 font-medium whitespace-normal break-words">
-        Viewing as <span className="font-semibold">{roleLabel}</span>:{' '}
-        <span className="font-semibold">{user?.name}</span>
-        <span className="text-amber-800/90 dark:text-amber-200/90"> — opened by Super Admin</span>
+        Viewing as <span className="font-semibold text-[#FF6B00]">{roleLabel}</span>:{' '}
+        <span className="font-semibold text-[#F8FAFC]">{user?.name}</span>
+        <span className="text-[#F8FAFC]/80"> — opened by Super Admin</span>
         {user.impersonation.superAdminName ? (
-          <span className="text-amber-900/80 dark:text-amber-100/80"> ({user.impersonation.superAdminName})</span>
+          <span className="text-[#F8FAFC]/70"> ({user.impersonation.superAdminName})</span>
         ) : null}
       </p>
       <Button
         type="button"
         size="sm"
-        variant="outline"
-        className="shrink-0 border-amber-400/80 bg-white/90 text-amber-950 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/40 dark:text-amber-50 dark:hover:bg-amber-900/70"
+        className="shrink-0 bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] border border-[#FF6B00] hover:border-[#2563EB] cursor-pointer"
         disabled={returningToSuperAdmin}
         onClick={() => void handleReturnToSuperAdmin()}
       >

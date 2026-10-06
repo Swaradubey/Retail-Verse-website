@@ -34,7 +34,6 @@ function timeAgo(dateStr: string): string {
 }
 
 type DashboardNavbarProps = {
-  /** Premium styling when viewing Dashboard Overview only */
   premiumOverview?: boolean;
 };
 
@@ -58,21 +57,6 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
   const unreadCount = notifications.filter((notification) => {
     return !lastSeenNotificationTime || new Date(notification.createdAt) > new Date(lastSeenNotificationTime);
   }).length;
-
-  useEffect(() => {
-    if (!premiumOverview) return;
-    const id = 'dashboard-overview-font-inter';
-    if (document.getElementById(id)) return;
-    const link = document.createElement('link');
-    link.id = id;
-    link.rel = 'stylesheet';
-    link.href =
-      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
-    document.head.appendChild(link);
-    return () => {
-      /* keep font cached for session; do not remove to avoid layout shift on quick nav */
-    };
-  }, [premiumOverview]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -107,10 +91,6 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  /**
-   * Centralized route map for global search results.
-   * Only uses routes that are registered in routes.tsx — never generates 404s.
-   */
   const handleResultClick = (result: any) => {
     setShowDropdown(false);
     setSearchQuery("");
@@ -118,43 +98,28 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
     const safeId = result.id ? encodeURIComponent(String(result.id)) : "";
 
     switch (result.type) {
-      // CLIENT → detail page exists at /super-admin/clients/:clientId
       case "Client":
         navigate(`/super-admin/clients/${safeId}`);
         break;
-
-      // USER / staff → /dashboard/users list page (no detail route exists)
       case "User":
         navigate(safeId ? `/dashboard/users?userId=${safeId}` : "/dashboard/users");
         break;
-
-      // INVOICE → /dashboard/invoices list page
       case "Invoice":
         navigate(safeId ? `/dashboard/invoices?invoiceId=${safeId}` : "/dashboard/invoices");
         break;
-
-      // QUOTATION → quotes live on the same invoices page
       case "Quotation":
         navigate(safeId ? `/dashboard/invoices?quoteId=${safeId}` : "/dashboard/invoices");
         break;
-
-      // PRODUCT → /dashboard/products list page
       case "Product":
         navigate(safeId ? `/dashboard/products?productId=${safeId}` : "/dashboard/products");
         break;
-
-      // ORDER → /dashboard/orders list page
       case "Order":
         navigate(safeId ? `/dashboard/orders?orderId=${safeId}` : "/dashboard/orders");
         break;
-
-      // LEAD / Contact form → /dashboard/customers/contact-form
       case "Lead":
         navigate(safeId ? `/dashboard/customers/contact-form?contactId=${safeId}` : "/dashboard/customers/contact-form");
         break;
-
       default:
-        // Fallback: go to dashboard overview — never 404
         navigate("/dashboard");
         break;
     }
@@ -214,24 +179,12 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
   };
 
   return (
-    <header
-      className={
-        premiumOverview
-          ? 'sticky top-0 z-40 w-full border-b border-amber-200/30 dark:border-amber-900/20 bg-white/65 dark:bg-zinc-950/70 backdrop-blur-xl shadow-[0_1px_0_rgba(212,175,55,0.08),0_8px_24px_-8px_rgba(0,0,0,0.08)]'
-          : 'sticky top-0 z-40 w-full border-b bg-white/50 dark:bg-black/50 backdrop-blur-xl'
-      }
-    >
+    <header className="sticky top-0 z-40 w-full border-b border-[#2563EB]/30 bg-[#0B1F3A] text-[#F8FAFC]">
       <div className="flex h-16 items-center justify-between px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <SidebarTrigger />
+          <SidebarTrigger className="text-[#F8FAFC] hover:text-[#FF6B00]" />
           <div className="hidden md:flex relative w-64 max-w-[min(16rem,100%)]" ref={searchRef}>
-            <Search
-              className={
-                premiumOverview
-                  ? 'absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-700/50 dark:text-amber-400/50'
-                  : 'absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground'
-              }
-            />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2563EB]" />
             <Input
               placeholder="Search all..."
               value={searchQuery}
@@ -242,11 +195,7 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
               onFocus={() => {
                 if (searchQuery.trim()) setShowDropdown(true);
               }}
-              className={
-                premiumOverview
-                  ? 'pl-10 h-10 rounded-full border border-amber-200/40 bg-white/80 dark:bg-zinc-900/60 dark:border-amber-900/30 shadow-sm transition-all duration-300 focus-visible:ring-2 focus-visible:ring-amber-400/40 focus-visible:border-amber-300/60'
-                  : 'pl-10 bg-gray-100/50 dark:bg-white/5 border-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded-xl'
-              }
+              className="pl-10 h-10 rounded-full border border-[#2563EB] bg-[#F8FAFC] text-[#0B1F3A] placeholder-[#0B1F3A]/50 focus-visible:ring-2 focus-visible:ring-[#2563EB] focus-visible:border-[#2563EB]"
             />
             
             <AnimatePresence>
@@ -256,16 +205,12 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
                   transition={{ duration: 0.15 }}
-                  className={
-                    premiumOverview 
-                      ? "absolute top-full left-0 w-full mt-2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-amber-200/40 dark:border-amber-900/30 rounded-2xl shadow-xl overflow-hidden z-50 max-h-96 flex flex-col"
-                      : "absolute top-full left-0 w-full mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl shadow-xl overflow-hidden z-50 max-h-96 flex flex-col"
-                  }
+                  className="absolute top-full left-0 w-full mt-2 bg-[#F8FAFC] text-[#0B1F3A] border border-[#0B1F3A] rounded-2xl shadow-xl overflow-hidden z-50 max-h-96 flex flex-col"
                 >
                   <div className="overflow-y-auto custom-scrollbar flex-1">
                     {isSearching ? (
                       <div className="p-6 flex justify-center items-center">
-                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                        <Loader2 className="w-6 h-6 animate-spin text-[#2563EB]" />
                       </div>
                     ) : searchResults.length > 0 ? (
                       <ul className="flex flex-col py-2">
@@ -273,26 +218,22 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
                           <li 
                             key={idx} 
                             onClick={() => handleResultClick(res)}
-                            className={
-                              premiumOverview
-                                ? "px-4 py-3 hover:bg-amber-50 dark:hover:bg-amber-900/20 cursor-pointer flex flex-col gap-1 transition-colors"
-                                : "px-4 py-3 hover:bg-gray-100 dark:hover:bg-zinc-800 cursor-pointer flex flex-col gap-1 transition-colors"
-                            }
+                            className="group/res px-4 py-3 hover:bg-[#2563EB] hover:text-[#F8FAFC] cursor-pointer flex flex-col gap-1 transition-colors"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">{res.name}</span>
-                              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 bg-gray-100 dark:bg-zinc-800 rounded-md text-gray-500 dark:text-gray-400 shrink-0">
+                              <span className="font-medium text-sm text-[#0B1F3A] group-hover/res:text-[#F8FAFC] truncate">{res.name}</span>
+                              <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 bg-[#2563EB] text-[#F8FAFC] group-hover/res:bg-[#FF6B00] rounded-md shrink-0">
                                 {res.type}
                               </span>
                             </div>
                             {res.secondary && (
-                              <span className="text-xs text-muted-foreground truncate">{res.secondary}</span>
+                              <span className="text-xs text-[#0B1F3A]/70 group-hover/res:text-[#F8FAFC]/80 truncate">{res.secondary}</span>
                             )}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <div className="p-6 text-center text-sm text-muted-foreground">
+                      <div className="p-6 text-center text-sm text-[#0B1F3A]/70">
                         No results found for "{searchQuery}"
                       </div>
                     )}
@@ -308,65 +249,59 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
             variant="ghost"
             size="icon"
             onClick={handleNotifClick}
-            className={
-              premiumOverview
-                ? 'rounded-full transition-all duration-300 hover:bg-amber-500/10 dark:hover:bg-amber-400/10 relative'
-                : 'rounded-full hover:bg-gray-100 dark:hover:bg-white/10 relative'
-            }
+            className="rounded-full relative text-[#F8FAFC] hover:bg-[#2563EB]/20 hover:text-[#FF6B00] cursor-pointer"
           >
             <Bell className="w-5 h-5" />
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-sm ring-2 ring-white dark:ring-zinc-950 leading-none">
+              <span className="absolute -top-1 -right-1 bg-[#FF6B00] text-[#F8FAFC] text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-sm ring-2 ring-[#0B1F3A] leading-none">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </Button>
-
-
         </div>
       </div>
 
       <Dialog open={notifOpen} onOpenChange={(open) => { setNotifOpen(open); if (!open) setSelectedNotification(null); }}>
-        <DialogContent className={premiumOverview ? 'sm:max-w-md border-amber-200/40 dark:border-amber-900/30' : 'sm:max-w-md'}>
+        <DialogContent className="sm:max-w-md bg-[#F8FAFC] text-[#0B1F3A] border border-[#0B1F3A]">
           {selectedNotification ? (
             <>
               <div className="flex items-center gap-2 mb-4">
                 <button
                   type="button"
                   onClick={handleBackToList}
-                  className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  className="text-xs font-semibold text-[#0B1F3A]/70 hover:text-[#2563EB] transition-colors cursor-pointer"
                   aria-label="Back to notifications"
                 >
                   ← Back
                 </button>
               </div>
-              <div className="flex items-start gap-4 p-4 rounded-xl bg-gray-50 dark:bg-white/5">
+              <div className="flex items-start gap-4 p-4 rounded-xl bg-[#F8FAFC] border border-[#0B1F3A]/20">
                 <div className="shrink-0 mt-0.5">
                   {selectedNotification.type === 'sale' ? (
-                    <ShoppingCart className="w-6 h-6 text-green-600 dark:text-green-400" />
+                    <ShoppingCart className="w-6 h-6 text-[#FF6B00]" />
                   ) : selectedNotification.type === 'low_stock' ? (
-                    <AlertTriangle className="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                    <AlertTriangle className="w-6 h-6 text-[#FF6B00]" />
                   ) : (
-                    <Package className="w-6 h-6 text-red-600 dark:text-red-400" />
+                    <Package className="w-6 h-6 text-[#2563EB]" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0 space-y-2">
-                  <h3 className="text-base font-bold">{selectedNotification.title}</h3>
-                  <p className="text-sm text-muted-foreground">{selectedNotification.message}</p>
+                  <h3 className="text-base font-bold text-[#0B1F3A]">{selectedNotification.title}</h3>
+                  <p className="text-sm text-[#0B1F3A]/80">{selectedNotification.message}</p>
                   {selectedNotification.orderId && (
-                    <p className="text-xs text-muted-foreground/60">Order ID: {selectedNotification.orderId}</p>
+                    <p className="text-xs text-[#0B1F3A]/60">Order ID: {selectedNotification.orderId}</p>
                   )}
                   {selectedNotification.productId && (
-                    <p className="text-xs text-muted-foreground/60">Product ID: {selectedNotification.productId}</p>
+                    <p className="text-xs text-[#0B1F3A]/60">Product ID: {selectedNotification.productId}</p>
                   )}
-                  <p className="text-[10px] text-muted-foreground/60">{timeAgo(selectedNotification.createdAt)}</p>
+                  <p className="text-[10px] text-[#0B1F3A]/60">{timeAgo(selectedNotification.createdAt)}</p>
                 </div>
               </div>
               <div className="mt-4 flex justify-end">
                 <Button
                   type="button"
                   onClick={() => handleViewDetailsNavigate(selectedNotification)}
-                  className="h-9 rounded-xl px-4 text-xs font-semibold"
+                  className="h-9 rounded-xl px-4 text-xs font-semibold bg-[#FF6B00] text-[#F8FAFC] hover:bg-[#2563EB]"
                 >
                   {selectedNotification.type === 'sale' ? 'View Order' : 'View Product'}
                 </Button>
@@ -375,12 +310,12 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <DialogTitle className="flex items-center gap-2">
-                  <Bell className="w-5 h-5" />
+                <DialogTitle className="flex items-center gap-2 text-[#0B1F3A]">
+                  <Bell className="w-5 h-5 text-[#2563EB]" />
                   Notifications
                 </DialogTitle>
                 {unreadCount > 0 && (
-                  <span className="mr-8 text-xs font-normal px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                  <span className="mr-8 text-xs font-semibold px-2 py-0.5 rounded-full bg-[#FF6B00] text-[#F8FAFC]">
                     {unreadCount} new
                   </span>
                 )}
@@ -388,11 +323,11 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
               <div className="max-h-80 overflow-y-auto -mx-6 px-6">
                 {notifLoading ? (
                   <div className="flex justify-center items-center py-10">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    <Loader2 className="w-6 h-6 animate-spin text-[#2563EB]" />
                   </div>
                 ) : notifications.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                    <Bell className="w-10 h-10 mb-3 opacity-30" />
+                  <div className="flex flex-col items-center justify-center py-10 text-[#0B1F3A]/60">
+                    <Bell className="w-10 h-10 mb-3 opacity-30 text-[#0B1F3A]" />
                     <p className="text-sm">No new notifications</p>
                   </div>
                 ) : (
@@ -402,23 +337,23 @@ export function DashboardNavbar({ premiumOverview = false }: DashboardNavbarProp
                         type="button"
                         key={i}
                         onClick={() => handleNotificationClick(n)}
-                        className="flex items-start gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer w-full text-left group"
+                        className="flex items-start gap-3 p-3 rounded-xl hover:bg-[#2563EB]/10 transition-colors cursor-pointer w-full text-left group"
                       >
                         <div className="shrink-0 mt-0.5">
                           {n.type === 'sale' ? (
-                            <ShoppingCart className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            <ShoppingCart className="w-4 h-4 text-[#FF6B00]" />
                           ) : n.type === 'low_stock' ? (
-                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                            <AlertTriangle className="w-4 h-4 text-[#FF6B00]" />
                           ) : (
-                            <Package className="w-4 h-4 text-red-600 dark:text-red-400" />
+                            <Package className="w-4 h-4 text-[#2563EB]" />
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium">{n.title}</p>
-                          <p className="text-xs text-muted-foreground truncate">{n.message}</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(n.createdAt)}</p>
+                          <p className="text-sm font-medium text-[#0B1F3A]">{n.title}</p>
+                          <p className="text-xs text-[#0B1F3A]/70 truncate">{n.message}</p>
+                          <p className="text-[10px] text-[#0B1F3A]/50 mt-1">{timeAgo(n.createdAt)}</p>
                         </div>
-                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 shrink-0 self-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-xs font-semibold text-[#2563EB] shrink-0 self-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           Details →
                         </span>
                       </button>

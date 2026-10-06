@@ -26,11 +26,7 @@ export function TrustMarquee() {
   const marqueeItems = [...trustItems, ...trustItems];
 
   return (
-    <section className="relative w-full overflow-hidden border-y border-[#C4973F]/30 bg-gradient-to-r from-[#fdf8ec] via-[#f7e7c1] to-[#fdf8ec] py-4 sm:py-5">
-
-      {/* Premium golden glow */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(196,151,63,0.15),transparent_70%)]" />
-
+    <section className="relative w-full overflow-hidden border-y border-[#2563EB]/40 bg-[#0B1F3A] py-4 sm:py-5">
       <style>{`
         @keyframes trust-marquee {
           0% {
@@ -60,21 +56,21 @@ export function TrustMarquee() {
               <div key={`${item.text}-${index}`} className="flex items-center">
 
                 {/* Card */}
-                <div className="mx-3 sm:mx-4 md:mx-5 flex items-center gap-2.5 sm:gap-3 rounded-full border border-[#C4973F]/40 bg-gradient-to-br from-[#fff7e3] to-[#f3d9a4] px-4 py-2 shadow-[0_4px_20px_rgba(196,151,63,0.25)] backdrop-blur-sm transition-all duration-300 hover:scale-[1.03] hover:shadow-[0_6px_25px_rgba(196,151,63,0.35)]">
+                <div className="mx-3 sm:mx-4 md:mx-5 flex items-center gap-2.5 sm:gap-3 rounded-full border border-[#2563EB] bg-[#0B1F3A] px-4 py-2 transition-all duration-300 hover:scale-[1.03]">
 
                   {/* Icon */}
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#C4973F]/15">
-                    <Icon className="h-3.5 w-3.5 text-[#8B6A2F]" strokeWidth={2} />
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#2563EB] text-[#F8FAFC]">
+                    <Icon className="h-3.5 w-3.5" strokeWidth={2} />
                   </span>
 
                   {/* Text */}
-                  <span className="text-[11px] sm:text-[12px] md:text-[13px] font-semibold uppercase tracking-[0.18em] text-[#6f5223] whitespace-nowrap">
+                  <span className="text-[11px] sm:text-[12px] md:text-[13px] font-semibold uppercase tracking-[0.18em] text-[#F8FAFC] whitespace-nowrap">
                     {item.text}
                   </span>
                 </div>
 
                 {/* Diamond divider */}
-                <Diamond className="h-3 w-3 flex-shrink-0 text-[#C4973F] fill-[#C4973F]/70" />
+                <Diamond className="h-3 w-3 flex-shrink-0 text-[#FF6B00] fill-[#FF6B00]" />
               </div>
             );
           })}

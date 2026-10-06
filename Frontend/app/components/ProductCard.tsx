@@ -134,10 +134,10 @@ export function ProductCard({
   return (
     <Link
       to={`/product/${product.slug}`}
-      className="group relative block overflow-hidden rounded-3xl border border-black/8 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_rgba(0,0,0,0.08)]"
+      className="group relative block overflow-hidden rounded-3xl border border-[#0B1F3A]/20 bg-[#F8FAFC] transition-all duration-300 hover:-translate-y-1 hover:border-[#2563EB] hover:shadow-lg"
     >
       {/* Image */}
-      <div className="relative aspect-[4/4.2] overflow-hidden bg-[#f7f7f7] flex items-center justify-center">
+      <div className="relative aspect-[4/4.2] overflow-hidden bg-[#F8FAFC] flex items-center justify-center border-b border-[#0B1F3A]/10">
         {getProductImageUrl(product) ? (
           <img
             src={getFullImageUrl(getProductImageUrl(product))}
@@ -149,23 +149,23 @@ export function ProductCard({
             }}
           />
         ) : (
-          <Package2 className="w-12 h-12 text-gray-300" />
+          <Package2 className="w-12 h-12 text-[#0B1F3A]/40" />
         )}
 
         {/* Top badges */}
         <div className="absolute left-4 top-4 flex flex-col gap-2">
           {isOnSale && salePercentage > 0 && (
-            <span className="rounded-full bg-red-500 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm">
+            <span className="rounded-full bg-[#FF6B00] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#F8FAFC] shadow-sm">
               {salePercentage}% OFF
             </span>
           )}
           {product.stock === 0 && (
-            <span className="rounded-full bg-red-600 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-sm">
+            <span className="rounded-full bg-[#0B1F3A] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#F8FAFC] shadow-sm">
               Out of Stock
             </span>
           )}
           {product.stock > 0 && product.stock < 10 && (
-            <span className="rounded-full bg-[#111111] px-3 py-1 text-[11px] font-medium text-white/90 shadow-sm">
+            <span className="rounded-full bg-[#2563EB] px-3 py-1 text-[11px] font-medium text-[#F8FAFC] shadow-sm">
               Only {product.stock} left
             </span>
           )}
@@ -179,67 +179,64 @@ export function ProductCard({
             disabled={wishlistBusy}
             aria-pressed={inWishlist}
             title={user ? (inWishlist ? 'Remove from wishlist' : 'Add to wishlist') : 'Sign in to use wishlist'}
-            className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-transform duration-300 hover:scale-105 disabled:opacity-60 ${
+            className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition-transform duration-300 hover:scale-105 disabled:opacity-60 ${
               inWishlist
-                ? 'border-red-200 bg-red-50 text-red-600'
-                : 'border-white/70 bg-white/90 text-[#111111]'
+                ? 'border-[#FF6B00] bg-[#FF6B00] text-[#F8FAFC]'
+                : 'border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:text-[#FF6B00] hover:border-[#FF6B00]'
             }`}
           >
             <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
           </button>
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/70 bg-white/90 text-[#111111] shadow-sm backdrop-blur-sm transition-transform duration-300 group-hover:scale-105">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:text-[#2563EB] group-hover:border-[#2563EB]">
             <ArrowUpRight className="h-4 w-4" />
           </div>
         </div>
-
-        {/* Bottom overlay gradient */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
       </div>
 
       {/* Content */}
       <div className="p-5">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
-            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b7280]">
+            <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0B1F3A]/70">
               {product.category}
             </p>
             {(product.client?.storeName || product.client?.shopName || product.client?.companyName) && (
-              <p className="truncate text-[10px] font-medium text-blue-600/80">
+              <p className="truncate text-[10px] font-medium text-[#2563EB]">
                 Sold by: {product.client?.storeName || product.client?.shopName || product.client?.companyName}
               </p>
             )}
           </div>
 
-          <div className="flex items-center gap-1 rounded-full bg-[#f8f8f8] px-2.5 py-1">
-            <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-            <span className="text-xs font-semibold text-[#111111]">
+          <div className="flex items-center gap-1 rounded-full bg-[#0B1F3A]/5 border border-[#0B1F3A]/10 px-2.5 py-1">
+            <Star className="h-3.5 w-3.5 fill-[#FF6B00] text-[#FF6B00]" />
+            <span className="text-xs font-semibold text-[#0B1F3A]">
               {product.rating}
             </span>
-            <span className="text-xs text-[#6b7280]">
+            <span className="text-xs text-[#0B1F3A]/70">
               ({product.reviews})
             </span>
           </div>
         </div>
 
-        <h3 className="min-h-[3.5rem] text-[1.05rem] font-semibold leading-7 text-[#111111] transition-colors duration-300 group-hover:text-blue-600">
+        <h3 className="min-h-[3.5rem] text-[1.05rem] font-semibold leading-7 text-[#0B1F3A] transition-colors duration-300 group-hover:text-[#2563EB]">
           {product.name}
         </h3>
 
         <div className="mt-5 flex items-end justify-between gap-4">
            <div className="flex flex-col">
              <div className="flex items-center gap-2">
-               <span className="text-xl font-bold tracking-tight text-[#111111]">
+               <span className="text-xl font-bold tracking-tight text-[#0B1F3A]">
                  {formatINR(displayPrice)}
                </span>
                {displayOriginalPrice !== undefined && (
-                 <span className="text-sm font-medium text-[#9ca3af] line-through">
+                 <span className="text-sm font-medium text-[#0B1F3A]/50 line-through">
                    {formatINR(displayOriginalPrice)}
                  </span>
                )}
              </div>
 
              {isOnSale && savingsAmount > 0 && (
-               <span className="mt-1 text-xs font-medium text-green-600">
+               <span className="mt-1 text-xs font-medium text-[#FF6B00]">
                  Save {formatINR(savingsAmount)}
                </span>
              )}
@@ -250,8 +247,8 @@ export function ProductCard({
             disabled={product.stock === 0}
             className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition-all duration-300 active:scale-95 ${
               product.stock === 0
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-[#111111] text-white hover:scale-105 hover:bg-blue-600'
+                ? 'bg-[#0B1F3A]/20 text-[#0B1F3A]/50 cursor-not-allowed'
+                : 'bg-[#FF6B00] text-[#F8FAFC] hover:scale-105 hover:bg-[#2563EB]'
             }`}
             aria-label={`Add ${product.name} to cart`}
           >

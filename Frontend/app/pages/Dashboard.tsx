@@ -20,14 +20,11 @@ import {
   UserCog,
   UserPlus,
   Building2,
-  CreditCard,
   Receipt,
   Globe,
   AlertCircle,
   RefreshCw,
-  Clock,
   ChevronRight,
-  Search,
   Crown,
   Settings,
   Mic,
@@ -125,19 +122,16 @@ const sidebarItems = [
   { title: "AI Voice Orders", icon: Mic, href: "/dashboard/ai-voice-orders", hideForSuperAdmin: true },
 ];
 
-/** Shared pill layout for every dashboard sidebar link (matches Overview row: radius, padding, min-height, icon gap). */
-function dashboardSidebarNavButtonClass(isActive: boolean, pageIsOverview: boolean): string {
+/** Shared pill layout for every dashboard sidebar link strictly in 4-color palette */
+function dashboardSidebarNavButtonClass(isActive: boolean): string {
   const base =
-    'relative group flex w-full h-auto min-h-[44px] items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-300 ease-out outline-hidden ring-sidebar-ring focus-visible:ring-2 overflow-hidden [&>svg]:!size-5 [&>svg]:shrink-0 [&>svg]:transition-transform [&>svg]:duration-300 [&>svg]:ease-out group-hover:[&>svg]:scale-105 group-data-[collapsible=icon]:!size-12 group-data-[collapsible=icon]:!min-h-12 group-data-[collapsible=icon]:!p-3 group-data-[collapsible=icon]:gap-0';
+    'relative group flex w-full h-auto min-h-[44px] items-center gap-3 rounded-xl px-4 py-2.5 text-left transition-all duration-200 ease-out outline-hidden focus-visible:ring-2 focus-visible:ring-[#2563EB] overflow-hidden [&>svg]:!size-5 [&>svg]:shrink-0 group-data-[collapsible=icon]:!size-12 group-data-[collapsible=icon]:!min-h-12 group-data-[collapsible=icon]:!p-3 group-data-[collapsible=icon]:gap-0';
 
   if (isActive) {
-    return `${base} border border-amber-200/70 bg-gradient-to-r from-amber-100/90 via-amber-50/80 to-transparent text-amber-900 shadow-sm shadow-amber-900/10 dark:border-amber-700/45 dark:from-amber-900/35 dark:via-amber-950/30 dark:to-transparent dark:text-amber-100 font-bold hover:shadow-md`;
+    return `${base} bg-[#2563EB] text-[#F8FAFC] border border-[#2563EB] font-bold shadow-md`;
   }
 
-  if (pageIsOverview) {
-    return `${base} border border-amber-200/55 bg-amber-50/40 text-muted-foreground shadow-sm shadow-amber-900/5 dark:border-amber-800/40 dark:bg-amber-950/30 hover:border-amber-300/70 hover:bg-amber-500/12 hover:text-foreground hover:shadow-md dark:hover:bg-amber-400/12`;
-  }
-  return `${base} border border-gray-200/90 bg-white/85 text-muted-foreground shadow-sm dark:border-white/12 dark:bg-zinc-900/50 hover:border-gray-300 hover:bg-gray-50 hover:text-foreground hover:shadow-md dark:hover:bg-white/10 dark:hover:border-white/18`;
+  return `${base} bg-[#0B1F3A] text-[#F8FAFC]/80 border border-transparent hover:bg-[#2563EB]/20 hover:text-[#F8FAFC] hover:border-[#2563EB]/40`;
 }
 
 export function Dashboard() {
@@ -256,7 +250,6 @@ export function Dashboard() {
   }, [user?.role, location.pathname]);
 
   useEffect(() => {
-    // Clients can now access the main dashboard overview
     if (isClientRole(user?.role) && location.pathname === '/dashboard') {
       // No redirect
     }
@@ -303,7 +296,7 @@ export function Dashboard() {
       return (
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
-        item.title === 'POS' && item.counterManagerOnly
+        (item.title === 'POS' && item.counterManagerOnly)
       );
     }
     if ('counterManagerOnly' in item && item.counterManagerOnly) {
@@ -314,7 +307,6 @@ export function Dashboard() {
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
         (isStoreManagerRole(user?.role) && item.href === '/pos')
-        // seo_manager: NO /dashboard/seo in sidebar — only Products and Inventory
       );
     }
     if (isClientRole(user?.role)) {
@@ -378,7 +370,6 @@ export function Dashboard() {
   };
 
   const isOverview = location.pathname === '/dashboard';
-  const isInventoryOrAnalytics = location.pathname === '/dashboard/inventory' || location.pathname === '/dashboard/analytics';
   const isCustomerOverview = isOverview && isCustomerAccountRole(user?.role);
   const userOverviewPending =
     isCustomerOverview && userOverviewData === null && userOverviewError === null;
@@ -394,12 +385,10 @@ export function Dashboard() {
     location.pathname === '/dashboard/inventory' ||
     location.pathname.startsWith('/dashboard/inventory/') ||
     ((isStoreManagerRole(user?.role) || isCounterManagerRole(user?.role)) && (location.pathname === '/pos' || location.pathname.startsWith('/pos/')));
-    // seo_manager: /dashboard/seo is NOT a valid route for them
 
   const shouldRedirectRestrictedRole =
     (restrictedInventoryDashboardRole || isCounterManagerRole(user?.role)) && !canAccessCurrentDashboardRoute;
 
-  // SEO Manager: block /dashboard/seo and redirect to /dashboard/products
   if (normalizeRole(user?.role) === 'seo_manager' && (location.pathname === '/dashboard/seo' || location.pathname.startsWith('/dashboard/seo/'))) {
     return <Navigate to="/dashboard/products" replace />;
   }
@@ -417,7 +406,6 @@ export function Dashboard() {
     return <Navigate to="/dashboard/products" replace />;
   }
 
-  // Admin SEO Access Guard - prevent admins from accessing SEO page
   if (isAdminRole && (location.pathname === '/dashboard/seo' || location.pathname.startsWith('/dashboard/seo/'))) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -425,45 +413,45 @@ export function Dashboard() {
   // Trial Expiration Guard
   if (user?.isTrialExpired && !isSuperAdminRole(user?.role)) {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/90 backdrop-blur-md p-6">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0B1F3A]/80 backdrop-blur-md p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-3xl shadow-2xl overflow-hidden border border-rose-100 dark:border-rose-900/30"
+          className="max-w-md w-full bg-[#F8FAFC] rounded-3xl shadow-2xl overflow-hidden border border-[#0B1F3A]"
         >
-          <div className="bg-rose-50 dark:bg-rose-900/20 p-8 flex flex-col items-center text-center">
-            <div className="w-20 h-20 rounded-2xl bg-rose-600 flex items-center justify-center text-white shadow-xl shadow-rose-200 dark:shadow-none mb-6 animate-pulse">
+          <div className="bg-[#0B1F3A] p-8 flex flex-col items-center text-center text-[#F8FAFC]">
+            <div className="w-20 h-20 rounded-2xl bg-[#FF6B00] flex items-center justify-center text-[#F8FAFC] shadow-xl mb-6">
               <AlertCircle className="w-10 h-10" />
             </div>
-            <h2 className="text-2xl font-black text-rose-900 dark:text-rose-100 tracking-tight mb-2">Trial Expired</h2>
-            <p className="text-rose-700 dark:text-rose-300 font-medium leading-relaxed">
+            <h2 className="text-2xl font-black text-[#F8FAFC] tracking-tight mb-2">Trial Expired</h2>
+            <p className="text-[#F8FAFC]/90 font-medium leading-relaxed">
               Your 14-day trial has expired. Access to your dashboard and POS has been restricted.
             </p>
           </div>
-          <div className="p-8 space-y-6">
-            <div className="bg-gray-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-gray-100 dark:border-zinc-700">
-              <p className="text-sm text-gray-600 dark:text-gray-400 text-center font-medium">
-                To continue using <span className="text-indigo-600 font-bold">{dsFinalBrandName}</span>, please contact the Super Admin to extend your trial or upgrade your plan.
+          <div className="p-8 space-y-6 bg-[#F8FAFC]">
+            <div className="bg-[#F8FAFC] rounded-2xl p-4 border border-[#0B1F3A]">
+              <p className="text-sm text-[#0B1F3A] text-center font-medium">
+                To continue using <span className="text-[#2563EB] font-bold">{dsFinalBrandName}</span>, please contact the Super Admin to extend your trial or upgrade your plan.
               </p>
             </div>
             <div className="flex flex-col gap-3">
               <Button
                 onClick={() => window.location.reload()}
-                className="w-full h-12 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-white rounded-xl font-bold flex items-center justify-center gap-2"
+                className="w-full h-12 bg-[#FF6B00] text-[#F8FAFC] hover:bg-[#2563EB] rounded-xl font-bold flex items-center justify-center gap-2 transition-colors"
               >
                 <RefreshCw className="w-4 h-4" /> Check Status Again
               </Button>
               <Button
                 variant="outline"
                 onClick={handleLogout}
-                className="w-full h-12 border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-zinc-800 rounded-xl font-bold"
+                className="w-full h-12 border-[#0B1F3A] text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC] rounded-xl font-bold transition-colors"
               >
                 Sign Out
               </Button>
             </div>
           </div>
-          <div className="bg-gray-50 dark:bg-zinc-800/80 px-8 py-4 text-center border-t border-gray-100 dark:border-zinc-700">
-            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Powered by Daizy Homes Platform</p>
+          <div className="bg-[#0B1F3A] px-8 py-4 text-center border-t border-[#0B1F3A]">
+            <p className="text-[10px] text-[#F8FAFC]/70 uppercase tracking-widest font-bold">Powered by Retail Verse Platform</p>
           </div>
         </motion.div>
       </div>
@@ -471,34 +459,25 @@ export function Dashboard() {
   }
 
   const { themeKey } = useTheme();
-  const clientId = user?.clientId || '';
 
   return (
     <SidebarProvider>
       <div
-        className={`client-dashboard theme-${themeKey} ${
-          isOverview || isInventoryOrAnalytics
-            ? 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[linear-gradient(145deg,#fdf6e3_0%,#ffffff_45%,#fff8dc_100%)] dark:bg-[linear-gradient(145deg,#1a1510_0%,#0c0a08_50%,#14110c_100%)]'
-            : 'flex flex-col min-h-screen w-full overflow-x-hidden bg-[#fafafa] dark:bg-[#09090b]'
-        }`}
+        className={`client-dashboard theme-${themeKey} flex flex-col min-h-screen w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
       >
         <ImpersonationBanner />
         <div className="flex min-h-0 flex-1 w-full">
           {/* Sidebar */}
           <Sidebar
             collapsible="icon"
-            className={
-              isOverview || isInventoryOrAnalytics
-                ? 'border-r border-amber-200/35 dark:border-amber-900/25 bg-white/55 dark:bg-zinc-950/55 backdrop-blur-xl shadow-[4px_0_24px_-12px_rgba(212,175,55,0.15)]'
-                : 'border-r border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-xl'
-            }
+            className="border-r border-[#2563EB]/30 bg-[#0B1F3A] text-[#F8FAFC]"
             style={
               user?.impersonation?.active
                 ? { top: '48px', height: 'calc(100svh - 48px)' }
                 : undefined
             }
           >
-            <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6">
+            <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6 border-b border-[#2563EB]/30 bg-[#0B1F3A] text-[#F8FAFC]">
               {/* Expanded header */}
               <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
                 <Link
@@ -507,13 +486,7 @@ export function Dashboard() {
                   className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 group/logo"
                 >
                   {brandLogo ? (
-                    <div
-                      className={
-                        isOverview
-                          ? 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg shadow-amber-900/20 border border-amber-200/30 dark:border-amber-800/20 shrink-0'
-                          : 'w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-white dark:bg-zinc-900 shadow-lg border border-gray-200/50 dark:border-white/10 shrink-0'
-                      }
-                    >
+                    <div className="w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-[#0B1F3A] border border-[#2563EB] shrink-0">
                       <img
                         src={getFullImageUrl(brandLogo)}
                         alt={`${dsFinalBrandName} logo`}
@@ -525,37 +498,26 @@ export function Dashboard() {
                       />
                     </div>
                   ) : (
-                    <div
-                      className={
-                        isOverview
-                          ? 'w-8 h-8 rounded-xl bg-gradient-to-br from-[#d4af37] via-amber-500 to-amber-700 flex items-center justify-center text-white shadow-lg shadow-amber-900/20 shrink-0'
-                          : 'w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shrink-0'
-                      }
-                    >
-                      <span className="font-bold text-lg">E</span>
+                    <div className="w-8 h-8 rounded-xl bg-[#2563EB] flex items-center justify-center text-[#F8FAFC] shrink-0 font-bold text-lg">
+                      <span>R</span>
                     </div>
                   )}
                   <div className="flex flex-col min-w-0 flex-1 leading-tight">
-                    <span className="font-bold text-xl tracking-tight truncate">{dsFinalBrandName}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">STORE</span>
+                    <span className="font-bold text-xl tracking-tight text-[#F8FAFC] truncate">{dsFinalBrandName}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-[#2563EB]">PORTAL</span>
                   </div>
                 </Link>
-                <SidebarTrigger className="size-7 shrink-0" />
+                <SidebarTrigger className="size-7 shrink-0 text-[#F8FAFC] hover:text-[#FF6B00]" />
               </div>
               {/* Collapsed header - centered toggle */}
               <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full h-full">
-                <SidebarTrigger className="size-7" />
+                <SidebarTrigger className="size-7 text-[#F8FAFC] hover:text-[#FF6B00]" />
               </div>
             </SidebarHeader>
-            <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8">
+
+            <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8 bg-[#0B1F3A] text-[#F8FAFC]">
               <SidebarGroup>
-                <SidebarGroupLabel
-                  className={
-                    mainSidebarItems.some(item => item.href && location.pathname.startsWith(item.href))
-                      ? 'px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-900/55 dark:text-amber-200/50 group-data-[collapsible=icon]:hidden'
-                      : 'px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground group-data-[collapsible=icon]:hidden'
-                  }
-                >
+                <SidebarGroupLabel className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#F8FAFC]/60 group-data-[collapsible=icon]:hidden">
                   Main Menu
                 </SidebarGroupLabel>
                 <SidebarGroupContent>
@@ -572,16 +534,16 @@ export function Dashboard() {
                               <CollapsibleTrigger asChild>
                                 <SidebarMenuButton
                                   tooltip={item.title}
-                                  onClick={(e) => {
+                                  onClick={() => {
                                     navigate(href || '#');
                                   }}
-                                  className={dashboardSidebarNavButtonClass(isActive || isSubActive, false)}
+                                  className={dashboardSidebarNavButtonClass(isActive || isSubActive)}
                                 >
-                                  {item.icon && <item.icon className={`w-5 h-5 shrink-0 ${isActive || isSubActive ? 'text-[#b8860b] dark:text-amber-300' : ''}`} />}
+                                  {item.icon && <item.icon className="w-5 h-5 shrink-0 text-[#F8FAFC]" />}
                                   <span className="group-data-[collapsible=icon]:hidden flex-1 min-w-0 text-left text-[16px] font-semibold tracking-wide leading-snug">
                                     {item.title}
                                   </span>
-                                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden w-5 h-5 shrink-0" />
+                                  <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden w-5 h-5 shrink-0 text-[#F8FAFC]" />
                                 </SidebarMenuButton>
                               </CollapsibleTrigger>
                               <CollapsibleContent>
@@ -592,9 +554,9 @@ export function Dashboard() {
                                       : location.pathname.startsWith(subItem.href);
                                     return (
                                       <SidebarMenuSubItem key={subItem.title}>
-                                        <SidebarMenuSubButton asChild isActive={subIsActive} className="h-10 text-[15px] font-medium">
+                                        <SidebarMenuSubButton asChild isActive={subIsActive} className={`h-10 text-[15px] font-medium ${subIsActive ? 'bg-[#2563EB] text-[#F8FAFC]' : 'text-[#F8FAFC]/80 hover:bg-[#2563EB]/20 hover:text-[#F8FAFC]'}`}>
                                           <Link to={subItem.href}>
-                                            {subItem.icon && <subItem.icon className={`w-4 h-4 mr-2 ${subIsActive ? 'text-[#b8860b] dark:text-amber-300' : ''}`} />}
+                                            {subItem.icon && <subItem.icon className="w-4 h-4 mr-2" />}
                                             <span>{subItem.title}</span>
                                           </Link>
                                         </SidebarMenuSubButton>
@@ -620,32 +582,24 @@ export function Dashboard() {
                                   ? 'Quotes and Invoice'
                                   : item.title
                             }
-                            className={dashboardSidebarNavButtonClass(isActive, false)}
+                            className={dashboardSidebarNavButtonClass(isActive)}
                           >
                             <Link to={href || '#'} state={href === '/pos' ? { fromDashboard: location.pathname } : undefined}>
-                              {item.icon && <item.icon
-                                className={`w-5 h-5 shrink-0 ${isActive
-                                  ? 'text-[#b8860b] dark:text-amber-300'
-                                  : ''
-                                  }`}
-                              />}
+                              {item.icon && <item.icon className="w-5 h-5 shrink-0" />}
                               <span className="group-data-[collapsible=icon]:hidden flex-1 min-w-0 text-left text-[16px] font-semibold tracking-wide leading-snug">
                                 {item.title === 'Orders' && (isSuperAdminRole(user?.role) || isClientRole(user?.role))
                                   ? 'Sale'
                                   : item.title === 'Invoice'
                                     ? 'Quotes and Invoice'
-                                    : item.title}</span>
+                                    : item.title}
+                              </span>
 
                               {'badge' in item &&
                                 item.badge != null &&
                                 item.badge !== '' &&
                                 (typeof item.badge === 'string' || typeof item.badge === 'number') && (
                                   <span
-                                    className={
-                                      isActive
-                                        ? 'ml-auto shrink-0 w-5 h-5 rounded-full bg-gradient-to-br from-[#d4af37] to-amber-700 text-[10px] text-white flex items-center justify-center font-bold group-data-[collapsible=icon]:hidden shadow-sm'
-                                        : 'ml-auto shrink-0 w-5 h-5 rounded-full bg-muted-foreground text-[10px] text-white flex items-center justify-center font-bold group-data-[collapsible=icon]:hidden'
-                                    }
+                                    className="ml-auto shrink-0 w-5 h-5 rounded-full bg-[#FF6B00] text-[10px] text-[#F8FAFC] flex items-center justify-center font-bold group-data-[collapsible=icon]:hidden shadow-sm"
                                   >
                                     {item.badge}
                                   </span>
@@ -658,18 +612,12 @@ export function Dashboard() {
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
-
             </SidebarContent>
-            <SidebarFooter
-              className={
-                isOverview
-                  ? 'p-4 border-t border-amber-200/25 dark:border-amber-900/20'
-                  : 'p-4 border-t border-gray-100 dark:border-white/5'
-              }
-            >
+
+            <SidebarFooter className="p-4 border-t border-[#2563EB]/30 bg-[#0B1F3A]">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all duration-300 ease-out font-medium"
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-[#FF6B00] hover:bg-[#FF6B00]/10 transition-all duration-200 font-medium cursor-pointer"
               >
                 <LogOut className="w-5 h-5" />
                 <span className="group-data-[collapsible=icon]:hidden">Sign Out</span>
@@ -679,24 +627,18 @@ export function Dashboard() {
           </Sidebar>
 
           {/* Main Content Area */}
-          <SidebarInset
-            className={
-              isOverview || isInventoryOrAnalytics
-                ? 'flex flex-col flex-1 overflow-hidden bg-transparent'
-                : 'flex flex-col flex-1 overflow-hidden bg-white dark:bg-[#09090b]'
-            }
-          >
+          <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-[#F8FAFC] text-[#0B1F3A]">
             <DashboardNavbar premiumOverview={isOverview} />
 
             <main
               className={
-                isOverview || isInventoryOrAnalytics
-                  ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade'
+                isOverview
+                  ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade bg-[#F8FAFC] text-[#0B1F3A]'
                   : location.pathname.startsWith('/dashboard/products')
-                    ? 'flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar'
-                    : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 custom-scrollbar'
+                    ? 'flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
+                    : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
               }
-              style={isOverview ? { fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" } : undefined}
+              style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}
             >
               <div className="w-full max-w-[1600px] mx-auto space-y-8 sm:space-y-10 min-w-0">
                 {/* Welcome Section */}
@@ -708,40 +650,22 @@ export function Dashboard() {
                     className="flex flex-col md:flex-row md:items-center justify-between gap-5"
                   >
                     <div>
-                      <div
-                        className={
-                          isOverview
-                            ? 'flex items-center gap-2 text-[#9a7b28] dark:text-amber-300/90 mb-3'
-                            : 'flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-2'
-                        }
-                      >
-                        <TrendingUp className="w-4 h-4 shrink-0" />
-                        <span className="text-xs sm:text-sm font-bold uppercase tracking-[0.2em]">
+                      <div className="flex items-center gap-2 text-[#2563EB] mb-3">
+                        <TrendingUp className="w-4 h-4 shrink-0 text-[#2563EB]" />
+                        <span className="text-xs sm:text-sm font-bold uppercase tracking-[0.2em] text-[#2563EB]">
                           {location.pathname === '/dashboard' ? 'Performance Live' :
                             location.pathname === '/dashboard/subscription' ? 'Subscription' :
                             location.pathname.split('/').pop()?.replace('-', ' ')}
                         </span>
                       </div>
-                      <h1
-                        className={
-                          isOverview
-                            ? 'text-3xl sm:text-4xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-50 capitalize leading-tight'
-                            : 'text-3xl font-extrabold tracking-tight capitalize'
-                        }
-                      >
+                      <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#0B1F3A] capitalize leading-tight">
                         {location.pathname === '/dashboard' ? 'Dashboard Overview' :
                           location.pathname === '/dashboard/subscription' ? 'Subscription & Upgrade Plan' :
                           location.pathname.split('/').pop()?.replace('-', ' ')}
                       </h1>
-                      <p
-                        className={
-                          isOverview
-                            ? 'text-muted-foreground mt-2 text-base max-w-xl leading-relaxed'
-                            : 'text-muted-foreground mt-1'
-                        }
-                      >
+                      <p className="text-[#0B1F3A]/80 mt-2 text-base max-w-xl leading-relaxed">
                         {location.pathname === '/dashboard'
-                          ? <>Welcome back, <span className="text-foreground font-semibold">{user?.name || 'Admin'}</span>. Here&apos;s what&apos;s happening today.</>
+                          ? <>Welcome back, <span className="text-[#0B1F3A] font-semibold">{user?.name || 'Admin'}</span>. Here&apos;s what&apos;s happening today.</>
                           : location.pathname === '/dashboard/subscription'
                             ? 'Manage your subscription plan and upgrade to unlock premium features.'
                             : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
@@ -753,32 +677,16 @@ export function Dashboard() {
                         {[1, 2, 3, 4].map(i => (
                           <div
                             key={i}
-                            className={
-                              isOverview
-                                ? 'w-9 h-9 rounded-full border-2 border-white dark:border-zinc-900 bg-gray-200 overflow-hidden shadow-md ring-1 ring-amber-200/40 dark:ring-amber-900/30'
-                                : 'w-8 h-8 rounded-full border-2 border-white dark:border-gray-900 bg-gray-200 overflow-hidden shadow-sm'
-                            }
+                            className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#F8FAFC] overflow-hidden shadow-md"
                           >
                             <img src={`https://i.pravatar.cc/150?u=${i + 10}`} alt="user" className="w-full h-full object-cover" />
                           </div>
                         ))}
-                        <div
-                          className={
-                            isOverview
-                              ? 'w-9 h-9 rounded-full border-2 border-white dark:border-zinc-900 bg-gradient-to-br from-amber-100 to-amber-200 text-[#8b6914] flex items-center justify-center text-[10px] font-bold shadow-md ring-1 ring-amber-300/50'
-                              : 'w-8 h-8 rounded-full border-2 border-white dark:border-gray-900 bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold shadow-sm'
-                          }
-                        >
+                        <div className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#2563EB] text-[#F8FAFC] flex items-center justify-center text-[10px] font-bold shadow-md">
                           +12
                         </div>
                       </div>
-                      <span
-                        className={
-                          isOverview
-                            ? 'text-xs text-muted-foreground font-semibold underline-offset-4 hover:underline hover:text-[#b8860b] cursor-pointer transition-colors duration-300'
-                            : 'text-xs text-muted-foreground font-medium underline cursor-pointer'
-                        }
-                      >
+                      <span className="text-xs text-[#2563EB] font-semibold underline-offset-4 hover:underline hover:text-[#FF6B00] cursor-pointer transition-colors duration-200">
                         Live Customers
                       </span>
                     </div>
@@ -875,17 +783,14 @@ export function Dashboard() {
           width: 6px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
+          background: #0B1F3A;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #e2e8f0;
+          background: #2563EB;
           border-radius: 10px;
         }
-        .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #1f2937;
-        }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #cbd5e1;
+          background: #FF6B00;
         }
         @keyframes dashboard-overview-fade-in {
           from { opacity: 0; }
