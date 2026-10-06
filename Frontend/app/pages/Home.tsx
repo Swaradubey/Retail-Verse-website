@@ -10,8 +10,11 @@ export function Home() {
   return (
     <div className="flex flex-col gap-0 overflow-hidden bg-[#F8FAFC]">
 
+      {/* Smart Digital Business Platform Section */}
+      <SmartDigitalBusinessSection />
+
       {/* Hero Section */}
-      <section className="relative min-h-[90vh] flex items-center pt-20 lg:pt-10 pb-16 overflow-hidden bg-[#F8FAFC]">
+      <section className="relative min-h-[90vh] flex items-center py-20 lg:py-24 overflow-hidden bg-[#F8FAFC] border-t border-[#0B1F3A]/10">
         <div className="relative mx-auto max-w-[88rem] px-4 sm:px-6 lg:px-8 w-full">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <motion.div
@@ -95,9 +98,6 @@ export function Home() {
           </div>
         </div>
       </section>
-
-      {/* Smart Digital Business Platform Section */}
-      <SmartDigitalBusinessSection />
 
       {/* Trust & Features Marquee */}
       <TrustMarquee />

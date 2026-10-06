@@ -155,7 +155,7 @@ export function ProductCard({
         {/* Top badges */}
         <div className="absolute left-4 top-4 flex flex-col gap-2">
           {isOnSale && salePercentage > 0 && (
-            <span className="rounded-full bg-[#FF6B00] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#F8FAFC] shadow-sm">
+            <span className="rounded-full bg-[#2563EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#F8FAFC] shadow-sm">
               {salePercentage}% OFF
             </span>
           )}
@@ -181,8 +181,8 @@ export function ProductCard({
             title={user ? (inWishlist ? 'Remove from wishlist' : 'Add to wishlist') : 'Sign in to use wishlist'}
             className={`flex h-10 w-10 items-center justify-center rounded-full border shadow-sm transition-transform duration-300 hover:scale-105 disabled:opacity-60 ${
               inWishlist
-                ? 'border-[#FF6B00] bg-[#FF6B00] text-[#F8FAFC]'
-                : 'border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:text-[#FF6B00] hover:border-[#FF6B00]'
+                ? 'border-[#2563EB] bg-[#2563EB] text-[#F8FAFC]'
+                : 'border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:text-[#2563EB] hover:border-[#2563EB]'
             }`}
           >
             <Heart className={`h-4 w-4 ${inWishlist ? 'fill-current' : ''}`} />
@@ -208,7 +208,7 @@ export function ProductCard({
           </div>
 
           <div className="flex items-center gap-1 rounded-full bg-[#0B1F3A]/5 border border-[#0B1F3A]/10 px-2.5 py-1">
-            <Star className="h-3.5 w-3.5 fill-[#FF6B00] text-[#FF6B00]" />
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
             <span className="text-xs font-semibold text-[#0B1F3A]">
               {product.rating}
             </span>
@@ -236,7 +236,7 @@ export function ProductCard({
              </div>
 
              {isOnSale && savingsAmount > 0 && (
-               <span className="mt-1 text-xs font-medium text-[#FF6B00]">
+               <span className="mt-1 text-xs font-medium text-[#2563EB]">
                  Save {formatINR(savingsAmount)}
                </span>
              )}
@@ -245,10 +245,10 @@ export function ProductCard({
           <button
             onClick={handleAddToCart}
             disabled={product.stock === 0}
-            className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition-all duration-300 active:scale-95 ${
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition-all duration-300 active:scale-95 shadow-md ${
               product.stock === 0
-                ? 'bg-[#0B1F3A]/20 text-[#0B1F3A]/50 cursor-not-allowed'
-                : 'bg-[#FF6B00] text-[#F8FAFC] hover:scale-105 hover:bg-[#2563EB]'
+                ? 'bg-[#0B1F3A]/20 text-[#0B1F3A]/50 cursor-not-allowed shadow-none'
+                : 'bg-[#2563EB] text-[#F8FAFC] hover:scale-105 hover:bg-[#1d4ed8] shadow-[#2563EB]/25'
             }`}
             aria-label={`Add ${product.name} to cart`}
           >

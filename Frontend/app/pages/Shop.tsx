@@ -232,15 +232,12 @@ export function Shop() {
   };
 
   return (
-    <div
-      className="min-h-screen relative overflow-x-hidden"
-      style={{ background: 'linear-gradient(135deg, #fdfcfb, #f8f3e8, #f1e6d6)' }}
-    >
+    <div className="min-h-screen relative overflow-x-hidden bg-[#F8FAFC]">
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute -top-24 -right-24 w-[min(520px,90vw)] h-[min(520px,90vw)] rounded-full bg-[#e8c87a]/25 blur-[100px]" />
-        <div className="absolute top-1/4 right-0 w-[380px] h-[380px] rounded-full bg-[#f0d9a8]/20 blur-[90px]" />
-        <div className="absolute -bottom-32 -left-20 w-[min(560px,95vw)] h-[min(560px,95vw)] rounded-full bg-[#e6d4bc]/35 blur-[110px]" />
-        <div className="absolute bottom-0 left-1/4 w-[320px] h-[320px] rounded-full bg-[#f5ead8]/40 blur-[80px]" />
+        <div className="absolute -top-24 -right-24 w-[min(520px,90vw)] h-[min(520px,90vw)] rounded-full bg-[#2563EB]/10 blur-[100px]" />
+        <div className="absolute top-1/4 right-0 w-[380px] h-[380px] rounded-full bg-[#3b82f6]/10 blur-[90px]" />
+        <div className="absolute -bottom-32 -left-20 w-[min(560px,95vw)] h-[min(560px,95vw)] rounded-full bg-[#2563EB]/10 blur-[110px]" />
+        <div className="absolute bottom-0 left-1/4 w-[320px] h-[320px] rounded-full bg-[#60a5fa]/10 blur-[80px]" />
       </div>
 
       <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-8 transition-all duration-300 ease-out">
@@ -248,16 +245,16 @@ export function Shop() {
         <div className="mb-10 sm:mb-12">
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div className="space-y-3">
-              <h1 className="text-[36px] sm:text-[40px] lg:text-[44px] font-bold tracking-tight bg-gradient-to-r from-gray-900 via-[#5c4a2e] to-[#b8860b] bg-clip-text text-transparent">
-                Shop All Products
+              <h1 className="text-[36px] sm:text-[40px] lg:text-[44px] font-extrabold tracking-tight text-[#0B1F3A]">
+                Shop All <span className="text-[#2563EB]">Products</span>
               </h1>
-              <p className="text-base sm:text-lg font-medium text-gray-600/90">
+              <p className="text-base sm:text-lg font-medium text-[#0B1F3A]/70">
                 {isLoading ? 'Loading products...' : `${allProducts.length} products found`}
               </p>
             </div>
             
             {error && (
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-white/50 backdrop-blur-md text-amber-800 rounded-2xl text-sm border border-amber-200/40 shadow-sm shadow-amber-900/5">
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 text-red-700 rounded-2xl text-sm border border-red-200 shadow-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 {error}
               </div>
@@ -270,7 +267,7 @@ export function Shop() {
           <button
             type="button"
             onClick={() => setIsSidebarOpen(true)}
-            className="lg:hidden flex items-center justify-center gap-2 px-5 py-3 rounded-full font-semibold text-gray-900 shadow-md border border-white/60 bg-[linear-gradient(135deg,#d4af37,#f5e6c8)] transition-all duration-300 ease-out hover:scale-[1.02] hover:shadow-lg hover:bg-[linear-gradient(135deg,#c9a332,#ebd9b8)]"
+            className="lg:hidden flex items-center justify-center gap-2 px-5 py-3 rounded-full font-semibold text-[#F8FAFC] shadow-md bg-[#2563EB] hover:bg-[#1d4ed8] transition-all duration-300 ease-out hover:scale-[1.02]"
           >
             <SlidersHorizontal className="w-4 h-4" />
             Filters
@@ -287,49 +284,42 @@ export function Shop() {
           {/* Sidebar */}
           <aside className={`
             lg:w-72 flex-shrink-0 
-            ${isSidebarOpen ? 'fixed inset-y-0 left-0 z-50 w-80 bg-[#fdfcfb]/95 backdrop-blur-xl shadow-2xl shadow-amber-900/10 border-r border-white/50 transform transition-all duration-300 ease-out lg:relative lg:border-0 lg:bg-transparent lg:backdrop-blur-none lg:shadow-none' : 'hidden lg:block'}
+            ${isSidebarOpen ? 'fixed inset-y-0 left-0 z-50 w-80 bg-white/95 backdrop-blur-xl shadow-2xl shadow-[#2563EB]/10 border-r border-[#2563EB]/20 transform transition-all duration-300 ease-out lg:relative lg:border-0 lg:bg-transparent lg:backdrop-blur-none lg:shadow-none' : 'hidden lg:block'}
           `}>
             <div className="h-full overflow-y-auto p-6 lg:p-0">
               {/* Mobile Sidebar Header */}
               <div className="flex items-center justify-between mb-6 lg:hidden">
-                <h2 className="text-lg font-bold text-gray-900">Filters</h2>
+                <h2 className="text-lg font-bold text-[#0B1F3A]">Filters</h2>
                 <button 
                   type="button"
                   onClick={() => setIsSidebarOpen(false)}
-                  className="p-2 rounded-xl bg-white/50 hover:bg-amber-50/80 transition-all duration-300 ease-out"
+                  className="p-2 rounded-xl bg-gray-100 hover:bg-gray-200 transition-all duration-300 ease-out"
                 >
                   <X className="w-5 h-5 text-gray-600" />
                 </button>
               </div>
 
-              <div
-                className="rounded-2xl p-5 shadow-lg shadow-amber-900/[0.06] border border-white/70 transition-all duration-300 ease-out"
-                style={{
-                  background: 'rgba(255,255,255,0.6)',
-                  backdropFilter: 'blur(12px)',
-                  WebkitBackdropFilter: 'blur(12px)',
-                }}
-              >
+              <div className="rounded-2xl p-5 shadow-lg shadow-[#2563EB]/5 border border-[#2563EB]/20 bg-white transition-all duration-300 ease-out">
                 {/* Search */}
                 <div className="mb-6">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0B1F3A]/70 mb-3">
                     Search
                   </label>
                   <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-700/40" />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2563EB]" />
                     <input
                       type="text"
                       placeholder="Search products..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 bg-white/70 border border-white/80 rounded-full text-sm text-gray-800 placeholder:text-gray-400 shadow-sm shadow-amber-900/5 transition-all duration-300 ease-out focus:outline-none focus:border-[#d4af37]/60 focus:ring-2 focus:ring-[#e8c87a]/35 focus:shadow-md focus:shadow-amber-900/10"
+                      className="w-full pl-11 pr-4 py-3 bg-[#F8FAFC] border border-[#0B1F3A]/15 rounded-full text-sm text-[#0B1F3A] placeholder:text-[#0B1F3A]/40 shadow-sm transition-all duration-300 ease-out focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20"
                     />
                   </div>
                 </div>
 
                 {/* Categories */}
                 <div className="mb-6">
-                  <h3 className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">
+                  <h3 className="block text-xs font-bold uppercase tracking-wider text-[#0B1F3A]/70 mb-3">
                     Categories
                   </h3>
                   <div className="space-y-1.5">
@@ -345,12 +335,12 @@ export function Shop() {
                           className={`
                             w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all duration-300 ease-out
                             ${isActive 
-                              ? 'font-bold text-[#9a7b2e] bg-amber-50/90 shadow-sm shadow-amber-900/5' 
-                              : 'font-medium text-gray-600 hover:bg-amber-50/70 hover:text-gray-900'
+                              ? 'font-bold text-[#F8FAFC] bg-[#2563EB] shadow-sm shadow-[#2563EB]/20' 
+                              : 'font-medium text-[#0B1F3A]/80 hover:bg-[#2563EB]/10 hover:text-[#2563EB]'
                             }
                           `}
                         >
-                          {Icon && <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#b8860b]' : 'text-gray-500'}`} />}
+                          {Icon && <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#F8FAFC]' : 'text-[#0B1F3A]/50'}`} />}
                           {category}
                         </button>
                       );
@@ -360,7 +350,7 @@ export function Shop() {
 
                 {/* Price Range */}
                 <div className="mb-6">
-                  <h3 className="block text-xs font-bold uppercase tracking-wider text-gray-600 mb-3">
+                  <h3 className="block text-xs font-bold uppercase tracking-wider text-[#0B1F3A]/70 mb-3">
                     Price Range
                   </h3>
                   <div className="space-y-4">
@@ -371,14 +361,14 @@ export function Shop() {
                       step="500"
                       value={priceRange[1]}
                       onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
-                      className="w-full h-2 bg-amber-100/80 rounded-lg appearance-none cursor-pointer accent-[#c9a332]"
+                      className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-[#2563EB]"
                     />
                     <div className="flex items-center justify-between text-sm">
-                      <span className="px-3 py-1.5 bg-white/60 rounded-lg text-gray-700 font-semibold border border-white/80">
+                      <span className="px-3 py-1.5 bg-[#F8FAFC] rounded-lg text-[#0B1F3A] font-semibold border border-[#0B1F3A]/10">
                         {formatINR(priceRange[0])}
                       </span>
-                      <span className="text-amber-800/30">—</span>
-                      <span className="px-3 py-1.5 bg-white/60 rounded-lg text-gray-700 font-semibold border border-white/80">
+                      <span className="text-[#0B1F3A]/30">—</span>
+                      <span className="px-3 py-1.5 bg-[#F8FAFC] rounded-lg text-[#0B1F3A] font-semibold border border-[#0B1F3A]/10">
                         {formatINR(priceRange[1])}
                       </span>
                     </div>
@@ -403,10 +393,10 @@ export function Shop() {
                         }}
                         className="sr-only peer"
                       />
-                      <div className="w-10 h-6 bg-gray-200/90 rounded-full peer-checked:bg-[#c9a332] transition-colors duration-300 ease-out" />
+                      <div className="w-10 h-6 bg-gray-200 rounded-full peer-checked:bg-[#2563EB] transition-colors duration-300 ease-out" />
                       <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm peer-checked:translate-x-4 transition-transform duration-300 ease-out" />
                     </div>
-                    <span className="text-sm font-medium text-gray-600 group-hover:text-gray-900 transition-colors duration-300 ease-out">
+                    <span className="text-sm font-medium text-[#0B1F3A]/80 group-hover:text-[#2563EB] transition-colors duration-300 ease-out">
                       Sale items only
                     </span>
                   </label>
@@ -418,26 +408,19 @@ export function Shop() {
           {/* Products Grid */}
           <div className="flex-1 min-w-0">
             {/* Toolbar */}
-            <div
-              className="flex items-center justify-between mb-6 rounded-2xl border border-white/70 p-4 shadow-lg shadow-amber-900/[0.06] transition-all duration-300 ease-out"
-              style={{
-                background: 'rgba(255,255,255,0.65)',
-                backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-              }}
-            >
-              <div className="hidden lg:flex items-center gap-2 text-sm text-gray-600">
-                <Package className="w-4 h-4 text-amber-800/50" />
-                Showing <span className="font-bold text-gray-900">{filteredProducts.length}</span> products
+            <div className="flex items-center justify-between mb-6 rounded-2xl border border-[#2563EB]/20 p-4 shadow-lg shadow-[#2563EB]/5 bg-white transition-all duration-300 ease-out">
+              <div className="hidden lg:flex items-center gap-2 text-sm text-[#0B1F3A]/70">
+                <Package className="w-4 h-4 text-[#2563EB]" />
+                Showing <span className="font-bold text-[#0B1F3A]">{filteredProducts.length}</span> products
               </div>
 
               <div className="flex items-center gap-3 ml-auto w-full sm:w-auto justify-end">
-                <label className="text-sm font-semibold text-gray-600 hidden sm:block">Sort by:</label>
+                <label className="text-sm font-semibold text-[#0B1F3A]/70 hidden sm:block">Sort by:</label>
                 <div className="relative min-w-0 flex-1 sm:flex-initial sm:min-w-[200px]">
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value)}
-                    className="w-full appearance-none pl-4 pr-10 py-2.5 bg-white/70 border border-white/90 rounded-full text-sm font-semibold text-gray-800 shadow-sm shadow-amber-900/5 transition-all duration-300 ease-out focus:outline-none focus:border-[#d4af37]/55 focus:ring-2 focus:ring-[#e8c87a]/30 cursor-pointer"
+                    className="w-full appearance-none pl-4 pr-10 py-2.5 bg-[#F8FAFC] border border-[#0B1F3A]/15 rounded-full text-sm font-semibold text-[#0B1F3A] shadow-sm transition-all duration-300 ease-out focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 cursor-pointer"
                   >
                     <option value="featured">Featured</option>
                     <option value="price-low">Price: Low to High</option>
@@ -445,23 +428,16 @@ export function Shop() {
                     <option value="rating">Highest Rated</option>
                     <option value="name">Name: A to Z</option>
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-800/40 pointer-events-none" />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#2563EB] pointer-events-none" />
                 </div>
               </div>
             </div>
 
             {/* Products Grid */}
             {isLoading ? (
-              <div
-                className="flex flex-col items-center justify-center py-24 rounded-[20px] border border-white/70 shadow-lg shadow-amber-900/[0.05]"
-                style={{
-                  background: 'rgba(255,255,255,0.55)',
-                  backdropFilter: 'blur(12px)',
-                  WebkitBackdropFilter: 'blur(12px)',
-                }}
-              >
-                <Loader2 className="w-10 h-10 text-[#b8860b] animate-spin mb-4" />
-                <p className="text-gray-600 font-semibold">Loading your products...</p>
+              <div className="flex flex-col items-center justify-center py-24 rounded-[20px] border border-[#2563EB]/20 bg-white shadow-lg shadow-[#2563EB]/5">
+                <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-4" />
+                <p className="text-[#0B1F3A]/70 font-semibold">Loading your products...</p>
               </div>
             ) : filteredProducts.length > 0 ? (
               <div
@@ -471,7 +447,7 @@ export function Shop() {
                 {filteredProducts.map((product) => (
                   <div
                     key={product.id}
-                    className="group rounded-3xl border border-white/80 bg-white/70 shadow-md shadow-amber-900/[0.07] transition-all duration-300 ease-out backdrop-blur-[10px] hover:scale-[1.03] hover:shadow-xl hover:shadow-amber-900/12 overflow-hidden"
+                    className="group rounded-3xl border border-[#2563EB]/20 bg-white shadow-md shadow-[#2563EB]/5 transition-all duration-300 ease-out backdrop-blur-[10px] hover:border-[#2563EB] hover:scale-[1.02] hover:shadow-xl hover:shadow-[#2563EB]/10 overflow-hidden"
                   >
                     <ProductCard
                       product={product as ShopProduct & { _id?: string }}
@@ -484,26 +460,18 @@ export function Shop() {
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-16 px-4 sm:px-8">
-                <div
-                  className="w-full max-w-md text-center rounded-[20px] p-10 border border-white/80 transition-all duration-300 ease-out"
-                  style={{
-                    background: 'rgba(255,255,255,0.7)',
-                    backdropFilter: 'blur(12px)',
-                    WebkitBackdropFilter: 'blur(12px)',
-                    boxShadow: '0 20px 50px -12px rgba(180, 140, 60, 0.15), 0 0 0 1px rgba(255,255,255,0.5) inset',
-                  }}
-                >
-                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#f5e6c8] via-[#e8c87a]/90 to-[#c9a332] shadow-lg shadow-amber-900/15">
-                    <Package className="w-10 h-10 text-gray-900/85" strokeWidth={1.75} />
+                <div className="w-full max-w-md text-center rounded-[20px] p-10 border border-[#2563EB]/20 bg-white shadow-lg shadow-[#2563EB]/5">
+                  <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-[#2563EB]/10 text-[#2563EB] border border-[#2563EB]/20 shadow-md">
+                    <Package className="w-10 h-10 text-[#2563EB]" strokeWidth={1.75} />
                   </div>
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2 tracking-tight">No products found</h3>
-                  <p className="text-gray-500 text-base mb-8 max-w-sm mx-auto leading-relaxed">
+                  <h3 className="text-2xl font-bold text-[#0B1F3A] mb-2 tracking-tight">No products found</h3>
+                  <p className="text-[#0B1F3A]/70 text-base mb-8 max-w-sm mx-auto leading-relaxed">
                     No products available at the moment.
                   </p>
                   <button
                     type="button"
                     onClick={clearFilters}
-                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-semibold text-gray-900 border border-amber-200/50 shadow-md shadow-amber-900/10 transition-all duration-300 ease-out bg-[linear-gradient(135deg,#d4af37,#f5e6c8)] hover:[background-image:linear-gradient(135deg,#c9a332,#ebd9b8)] hover:scale-105 hover:shadow-lg hover:shadow-amber-900/15"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold text-[#F8FAFC] bg-[#2563EB] hover:bg-[#1d4ed8] shadow-md shadow-[#2563EB]/20 transition-all duration-300 hover:scale-105"
                   >
                     Clear all filters
                   </button>

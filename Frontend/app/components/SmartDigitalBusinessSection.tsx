@@ -172,7 +172,7 @@ export function SmartDigitalBusinessSection() {
   ];
 
   return (
-    <section className="relative w-full bg-[#F8FAFC] py-20 lg:py-28 overflow-hidden text-[#0B1F3A] border-t border-[#0B1F3A]/10">
+    <section className="relative w-full bg-[#F8FAFC] pt-12 sm:pt-16 pb-20 lg:pb-28 overflow-hidden text-[#0B1F3A]">
       <div className="relative mx-auto max-w-[88rem] px-4 sm:px-6 lg:px-8">
 
         {/* ========================================================================= */}

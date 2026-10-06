@@ -106,7 +106,7 @@ export function Header() {
                   }}
                 />
               ) : (
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#FF6B00] text-[#F8FAFC]">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#2563EB] text-[#F8FAFC]">
                   <ShoppingBag className="h-6 w-6" />
                 </div>
               )}

@@ -6,16 +6,19 @@ import {
   Youtube,
   Mail,
   ArrowRight,
+  ShoppingBag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
+import { getFullImageUrl } from '../utils/imageUrl';
 
 export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 'storefront' } = {}) {
   const location = useLocation();
   const { user } = useAuth();
-  const { brandName: brandingBrandName, footerText, isLoading: brandingLoading } = useBranding();
+  const { brandName: brandingBrandName, footerText, isLoading: brandingLoading, logo: brandingLogo } = useBranding();
   const isSuperAdmin = user?.role === 'super_admin';
   const isClientUser = user?.role === 'client';
+  const logoUrl = isSuperAdmin ? '' : brandingLogo || (user as any)?.storeSettings?.logoUrl || '';
   const isPlatformRoute = location.pathname.startsWith('/super-admin') || location.pathname.startsWith('/dashboard');
   const variant = explicitVariant || (isPlatformRoute ? 'platform' : 'storefront');
 
@@ -43,9 +46,21 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
           {/* Brand */}
           <div className="pl-2 sm:pl-3 lg:pl-4 lg:pr-6">
             <Link to="/" className="flex items-center gap-3 flex-wrap">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FF6B00] text-[#F8FAFC]">
-                <span className="text-lg font-bold">E</span>
-              </div>
+              {logoUrl ? (
+                <img
+                  src={getFullImageUrl(logoUrl)}
+                  alt={`${brandName} logo`}
+                  className="h-11 max-w-[160px] object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).onerror = null;
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#2563EB] text-[#F8FAFC]">
+                  <ShoppingBag className="h-6 w-6" />
+                </div>
+              )}
 
               <div className="flex-1 min-w-[140px]">
                 <span className="block text-lg sm:text-xl font-semibold tracking-tight text-[#F8FAFC] break-words leading-tight">
