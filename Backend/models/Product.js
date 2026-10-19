@@ -306,52 +306,62 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-productSchema.post("save", async function (doc) {
-  if (doc.skipShopifySync) {
-    console.log(`[Product Hook] skipShopifySync is true for SKU ${doc.sku}. Skipping auto-sync.`);
-    // Reset skipShopifySync in the DB silently without triggering hooks again
-    try {
-      await mongoose.model("Product").updateOne({ _id: doc._id }, { $set: { skipShopifySync: false } });
-    } catch (e) {
-      console.error("[Product Hook] Failed to reset skipShopifySync:", e.message);
+productSchema.post("save", function (doc) {
+  setImmediate(async () => {
+    if (doc.skipShopifySync) {
+      console.log(`[Product Hook] skipShopifySync is true for SKU ${doc.sku}. Skipping auto-sync.`);
+      // Reset skipShopifySync in the DB silently without triggering hooks again
+      try {
+        await mongoose.model("Product").updateOne({ _id: doc._id }, { $set: { skipShopifySync: false } });
+      } catch (e) {
+        console.error("[Product Hook] Failed to reset skipShopifySync:", e.message);
+      }
+      return;
     }
-    return;
-  }
 
-  try {
-    const MarketplaceConnection = mongoose.model("MarketplaceConnection");
-    const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+    try {
+      const MarketplaceConnection = mongoose.model("MarketplaceConnection");
+      const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
 
-    // Try all possible owner IDs for backward compatibility
-    const ownerIds = [doc.merchantId, doc.clientId, doc.createdBy].filter(Boolean);
+      // Try all possible owner IDs for backward compatibility
+      const ownerIds = [doc.merchantId, doc.clientId, doc.createdBy].filter(Boolean);
 
-    const connections = await MarketplaceConnection.find({
-      merchantId: { $in: ownerIds },
-      marketplace: { $in: ["shopify", "flipkart", "FLIPKART"] },
-      status: "connected",
-      isSyncEnabled: true
-    });
+      const connections = await MarketplaceConnection.find({
+        merchantId: { $in: ownerIds },
+        marketplace: { $in: ["shopify", "flipkart", "FLIPKART"] },
+        status: "connected",
+        isSyncEnabled: true
+      }).lean();
 
-    for (const conn of connections) {
-      const marketplace = conn.marketplace.toLowerCase() === 'flipkart' ? 'flipkart' : conn.marketplace;
-      if (doc._isNewProduct) {
-        await MarketplaceSyncJobService.createJob({
-          merchantId: conn.merchantId,
-          productId: doc._id,
-          marketplace,
-          operation: "CREATE_LISTING"
-        });
-      } else {
-        if (doc._isActiveChanged) {
-          // Unpublish/archive or publish based on isActive state
-          if (doc.isActive === false) {
-            await MarketplaceSyncJobService.createJob({
-              merchantId: conn.merchantId,
-              productId: doc._id,
-              marketplace,
-              operation: "DELETE_LISTING"
-            });
-          } else {
+      for (const conn of connections) {
+        const marketplace = conn.marketplace.toLowerCase() === 'flipkart' ? 'flipkart' : conn.marketplace;
+        if (doc._isNewProduct) {
+          await MarketplaceSyncJobService.createJob({
+            merchantId: conn.merchantId,
+            productId: doc._id,
+            marketplace,
+            operation: "CREATE_LISTING"
+          });
+        } else {
+          if (doc._isActiveChanged) {
+            // Unpublish/archive or publish based on isActive state
+            if (doc.isActive === false) {
+              await MarketplaceSyncJobService.createJob({
+                merchantId: conn.merchantId,
+                productId: doc._id,
+                marketplace,
+                operation: "DELETE_LISTING"
+              });
+            } else {
+              await MarketplaceSyncJobService.createJob({
+                merchantId: conn.merchantId,
+                productId: doc._id,
+                marketplace,
+                operation: "UPDATE_LISTING"
+              });
+            }
+          }
+          if (doc._productUpdated) {
             await MarketplaceSyncJobService.createJob({
               merchantId: conn.merchantId,
               productId: doc._id,
@@ -359,86 +369,81 @@ productSchema.post("save", async function (doc) {
               operation: "UPDATE_LISTING"
             });
           }
-        }
-        if (doc._productUpdated) {
-          await MarketplaceSyncJobService.createJob({
-            merchantId: conn.merchantId,
-            productId: doc._id,
-            marketplace,
-            operation: "UPDATE_LISTING"
-          });
-        }
-        if (doc._stockChanged) {
-          await MarketplaceSyncJobService.createJob({
-            merchantId: conn.merchantId,
-            productId: doc._id,
-            marketplace,
-            operation: "UPDATE_INVENTORY"
-          });
-        }
-        if (doc._priceChanged) {
-          await MarketplaceSyncJobService.createJob({
-            merchantId: conn.merchantId,
-            productId: doc._id,
-            marketplace,
-            operation: "UPDATE_PRICE"
-          });
-        }
-      }
-
-      // Immediately trigger inline Shopify sync for instant synchronization
-      if (marketplace === 'shopify') {
-        try {
-          const shopifySyncService = require("../services/shopifySyncService");
-          const { decryptSecret } = require("../lib/marketplaces/encryption");
-          const shopDomain = conn.storeUrl || conn.shopDomain;
-          const accessToken = conn.credentials?.encryptedAccessToken ? decryptSecret(conn.credentials.encryptedAccessToken) : null;
-          if (shopDomain && accessToken) {
-            shopifySyncService.syncSingleProductInline(doc, conn, shopDomain, accessToken).catch(err => {
-              console.warn(`[Product Hook] Auto-sync inline Shopify error for SKU ${doc.sku}:`, err.message);
+          if (doc._stockChanged) {
+            await MarketplaceSyncJobService.createJob({
+              merchantId: conn.merchantId,
+              productId: doc._id,
+              marketplace,
+              operation: "UPDATE_INVENTORY"
             });
           }
-        } catch (inlineErr) {
-          console.warn("[Product Hook] Failed inline Shopify sync trigger:", inlineErr.message);
+          if (doc._priceChanged) {
+            await MarketplaceSyncJobService.createJob({
+              merchantId: conn.merchantId,
+              productId: doc._id,
+              marketplace,
+              operation: "UPDATE_PRICE"
+            });
+          }
+        }
+
+        // Immediately trigger inline Shopify sync for instant synchronization
+        if (marketplace === 'shopify') {
+          try {
+            const shopifySyncService = require("../services/shopifySyncService");
+            const { decryptSecret } = require("../lib/marketplaces/encryption");
+            const shopDomain = conn.storeUrl || conn.shopDomain;
+            const accessToken = conn.credentials?.encryptedAccessToken ? decryptSecret(conn.credentials.encryptedAccessToken) : null;
+            if (shopDomain && accessToken) {
+              shopifySyncService.syncSingleProductInline(doc, conn, shopDomain, accessToken).catch(err => {
+                console.warn(`[Product Hook] Auto-sync inline Shopify error for SKU ${doc.sku}:`, err.message);
+              });
+            }
+          } catch (inlineErr) {
+            console.warn("[Product Hook] Failed inline Shopify sync trigger:", inlineErr.message);
+          }
         }
       }
+    } catch (err) {
+      console.error("[Product Hook] post-save error:", err.message);
     }
-  } catch (err) {
-    console.error("[Product Hook] post-save error:", err.message);
-  }
+  });
 });
 
-productSchema.post("findOneAndDelete", async function (doc) {
+productSchema.post("findOneAndDelete", function (doc) {
   if (!doc) return;
-  try {
-    const MarketplaceConnection = mongoose.model("MarketplaceConnection");
-    const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+  setImmediate(async () => {
+    try {
+      const MarketplaceConnection = mongoose.model("MarketplaceConnection");
+      const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
 
-    // Try all possible owner IDs for backward compatibility
-    const ownerIds = [doc.merchantId, doc.clientId, doc.createdBy].filter(Boolean);
+      // Try all possible owner IDs for backward compatibility
+      const ownerIds = [doc.merchantId, doc.clientId, doc.createdBy].filter(Boolean);
 
-    const connections = await MarketplaceConnection.find({
-      merchantId: { $in: ownerIds },
-      marketplace: { $in: ["shopify", "flipkart", "FLIPKART"] },
-      status: "connected",
-      isSyncEnabled: true
-    });
+      const connections = await MarketplaceConnection.find({
+        merchantId: { $in: ownerIds },
+        marketplace: { $in: ["shopify", "flipkart", "FLIPKART"] },
+        status: "connected",
+        isSyncEnabled: true
+      }).lean();
 
-    for (const conn of connections) {
-      const marketplace = conn.marketplace.toLowerCase() === 'flipkart' ? 'flipkart' : conn.marketplace;
-      await MarketplaceSyncJobService.createJob({
-        merchantId: conn.merchantId,
-        productId: doc._id,
-        marketplace,
-        operation: "DELETE_LISTING"
-      });
+      for (const conn of connections) {
+        const marketplace = conn.marketplace.toLowerCase() === 'flipkart' ? 'flipkart' : conn.marketplace;
+        await MarketplaceSyncJobService.createJob({
+          merchantId: conn.merchantId,
+          productId: doc._id,
+          marketplace,
+          operation: "DELETE_LISTING"
+        });
+      }
+    } catch (err) {
+      console.error("[Product Hook] post-delete error:", err.message);
     }
-  } catch (err) {
-    console.error("[Product Hook] post-delete error:", err.message);
-  }
+  });
 });
 
 productSchema.index({ barcode: 1 }, { unique: true, sparse: true });
 productSchema.index({ clientId: 1, barcode: 1 });
+productSchema.index({ clientId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

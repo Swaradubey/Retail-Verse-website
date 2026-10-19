@@ -26,6 +26,7 @@ import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { CameraScannerModal } from './CameraScannerModal';
 import { BarcodePrintModal, BarcodePrintProduct } from './BarcodePrintModal';
+import { broadcastProductSync } from '../../utils/posProductSync';
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -227,14 +228,14 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     toast.success(`Barcode scanned: ${scannedCode}`);
   };
 
-  // Process selected or captured image to Base64
+  // Process selected or captured image to Base64 (with fast client compression)
   const processImageFile = (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please select an image file (PNG, JPG, WEBP).');
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error('Image file must be under 8 MB.');
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Image file must be under 12 MB.');
       return;
     }
 
@@ -243,7 +244,39 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       const result = event.target?.result as string;
       if (result) {
         setImagePreview(result);
-        setImageBase64(result);
+
+        // Offscreen canvas compression to ensure rapid upload
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 900;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressed = canvas.toDataURL('image/jpeg', 0.82);
+            setImageBase64(compressed);
+          } else {
+            setImageBase64(result);
+          }
+        };
+        img.onerror = () => {
+          setImageBase64(result);
+        };
+        img.src = result;
+
         setValidationErrors((prev) => {
           const next = { ...prev };
           delete next.image;
@@ -317,7 +350,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     if (!validateForm()) return;
 
     setIsSubmitting(true);
-    const toastId = toast.loading('Saving product to inventory...');
+    const toastId = toast.loading('Saving product to inventory & POS...');
 
     try {
       const payload = {
@@ -341,14 +374,10 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       if (res.success || res.product || res.data) {
         const savedProduct = res.product || res.data || payload;
 
-        // Broadcast update event so inventory tables & POS update instantly
-        window.dispatchEvent(
-          new CustomEvent('retailverse-product-updated', {
-            detail: { product: savedProduct },
-          })
-        );
+        // Broadcast instant update across all tabs, POS screens, and local IndexedDB cache
+        broadcastProductSync(savedProduct, savedProduct.clientId);
 
-        toast.success(res.message || 'Product saved successfully!', { id: toastId });
+        toast.success(res.message || 'Product created & synced to POS!', { id: toastId });
 
         if (onProductCreated) {
           onProductCreated(savedProduct);
@@ -363,6 +392,18 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
           stockLevel: savedProduct.stockLevel !== undefined ? savedProduct.stockLevel : Number(stockLevel),
           category: savedProduct.category || category,
         });
+
+        // Reset form inputs cleanly
+        setName('');
+        setSku(generateAutoSku());
+        setBarcode('');
+        setPrice('');
+        setStockLevel(0);
+        setDescription('');
+        setDimensions({ length: '', width: '', height: '' });
+        setImagePreview(null);
+        setImageBase64('');
+        setValidationErrors({});
 
         // Trigger confirmation prompt
         setShowPrintPrompt(true);

@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const Product = require("../models/Product");
 const Inventory = require("../models/Inventory");
 const Client = require("../models/Client");
@@ -18,6 +21,33 @@ const {
 } = require("../utils/tenantResolver");
 const { getMerchantId } = require("../utils/merchantHelper");
 const { attachMarketplaceStatusToProducts } = require("../utils/marketplaceStatusHelper");
+
+const productsUploadDir = path.resolve(__dirname, "../uploads/products");
+if (!fs.existsSync(productsUploadDir)) {
+  fs.mkdirSync(productsUploadDir, { recursive: true });
+}
+
+function processBase64ImageAsync(rawImg) {
+  if (!rawImg || typeof rawImg !== "string" || !rawImg.startsWith("data:image/")) {
+    return rawImg || "";
+  }
+  try {
+    const matches = rawImg.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!matches) return rawImg;
+    const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+    const filename = `product-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+    const filePath = path.join(productsUploadDir, filename);
+    const publicUrl = `/uploads/products/${filename}`;
+    fs.promises.writeFile(filePath, buffer).catch((err) => {
+      console.error("[productController] Async image write failed:", err.message);
+    });
+    return publicUrl;
+  } catch (err) {
+    console.warn("[productController] Base64 image parsing error:", err.message);
+    return rawImg;
+  }
+}
 
 function userOwnsClientProduct(user, product) {
   const role = normalizeRole(user?.role);
@@ -39,9 +69,9 @@ async function loadProductFormatted(id, req) {
   const doc = await Product.findById(id).populate({
     path: "clientId",
     select: "companyName shopName email storeName",
-  });
+  }).lean();
   if (!doc) return null;
-  const formatted = formatProductWithClient(doc.toObject({ virtuals: true }));
+  const formatted = formatProductWithClient(doc);
   try {
     const merchantId = getMerchantId(req);
     const [enriched] = await attachMarketplaceStatusToProducts({
@@ -365,7 +395,7 @@ const createProduct = async (req, res) => {
       skuQuery.clientId = null;
     }
     
-    const existingProduct = await Product.findOne(skuQuery);
+    const existingProduct = await Product.findOne(skuQuery).lean();
     if (existingProduct) {
       return res.status(400).json({
         success: false,
@@ -381,7 +411,7 @@ const createProduct = async (req, res) => {
       barcodeQuery.clientId = null;
     }
 
-    const existingBarcode = await Product.findOne(barcodeQuery);
+    const existingBarcode = await Product.findOne(barcodeQuery).lean();
     if (existingBarcode) {
       return res.status(409).json({
         success: false,
@@ -392,7 +422,8 @@ const createProduct = async (req, res) => {
     // Prepare data
     const productData = normalizeSaleFields(req.body);
     const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
-    const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    const rawImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    const exactImageUrl = processBase64ImageAsync(rawImageUrl);
     productData.image = exactImageUrl;
     productData.images = exactImageUrl ? [exactImageUrl] : [];
     productData.sku = finalSku;
@@ -416,7 +447,7 @@ const createProduct = async (req, res) => {
     // Fetch clientName if possible to persist it for the UI
     if (isValidObjectId(targetClientId)) {
       const Client = require("../models/Client");
-      const client = await Client.findById(targetClientId).select("companyName shopName storeName");
+      const client = await Client.findById(targetClientId).select("companyName shopName storeName").lean();
       if (client) {
         productData.clientName = client.storeName || client.shopName || client.companyName || "";
       }
@@ -424,36 +455,45 @@ const createProduct = async (req, res) => {
 
     const product = await Product.create(productData);
 
-    // Dispatch background sync job if marketplaces are selected
+    // Dispatch background sync job asynchronously if marketplaces are selected
     const { publishTo } = req.body;
     if (Array.isArray(publishTo) && publishTo.length > 0) {
-      try {
-        const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
-        for (const marketplace of publishTo) {
-          const job = await MarketplaceSyncJobService.createJob({
-            merchantId: targetClientId || product.createdBy,
-            productId: product._id,
-            marketplace: marketplace,
-            operation: "create_product"
-          });
-          if (job) {
-            // Direct execution async mode (Now a no-op, handled by worker)
-            MarketplaceSyncJobService.processJob(job._id).catch(err => {
-               console.error(`[productController] Direct process error for ${marketplace}:`, err.message);
+      setImmediate(async () => {
+        try {
+          const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+          for (const marketplace of publishTo) {
+            const job = await MarketplaceSyncJobService.createJob({
+              merchantId: targetClientId || product.createdBy,
+              productId: product._id,
+              marketplace: marketplace,
+              operation: "create_product"
             });
+            if (job) {
+              MarketplaceSyncJobService.processJob(job._id).catch(err => {
+                 console.error(`[productController] Direct process error for ${marketplace}:`, err.message);
+              });
+            }
           }
+        } catch (queueErr) {
+          console.error("[productController] Failed to dispatch sync job:", queueErr.message);
         }
-      } catch (queueErr) {
-        console.error("[productController] Failed to dispatch sync job:", queueErr.message);
-      }
+      });
     }
 
-    const formatted = await loadProductFormatted(product._id, req);
+    const populatedDoc = await Product.findById(product._id).populate({
+      path: "clientId",
+      select: "companyName shopName email storeName",
+    }).lean();
+
+    const formatted = formatProductWithClient(populatedDoc || product);
+    formatted.marketplaces = [];
+    formatted.marketplaceListings = [];
 
     res.status(201).json({
       success: true,
       message: "Product created successfully",
       data: formatted,
+      product: formatted,
     });
   } catch (error) {
     console.error("CREATE PRODUCT ERROR", error);
@@ -1112,7 +1152,7 @@ const createProductWithImage = async (req, res) => {
     }
 
     // Check unique sku
-    const existingSku = await Product.findOne({ sku });
+    const existingSku = await Product.findOne({ sku }).lean();
     if (existingSku) {
       return res.status(400).json({
         success: false,
@@ -1121,7 +1161,7 @@ const createProductWithImage = async (req, res) => {
     }
 
     // Check unique barcode
-    const existingBarcode = await Product.findOne({ barcode });
+    const existingBarcode = await Product.findOne({ barcode }).lean();
     if (existingBarcode) {
       return res.status(400).json({
         success: false,
@@ -1129,12 +1169,12 @@ const createProductWithImage = async (req, res) => {
       });
     }
 
-    // 3. Image file handling from Multer
+    // 3. Image file handling from Multer or Base64/URL
     let imagePath = "";
     if (req.file) {
       imagePath = `/uploads/products/${req.file.filename}`;
     } else if (body.imageUrl || body.image) {
-      imagePath = String(body.imageUrl || body.image).trim();
+      imagePath = processBase64ImageAsync(String(body.imageUrl || body.image).trim());
     }
 
     const unitPrice = Number(body.unitPrice !== undefined ? body.unitPrice : body.price) || 0;
@@ -1173,7 +1213,7 @@ const createProductWithImage = async (req, res) => {
     });
 
     const saved = await newProduct.save();
-    const formatted = formatProductWithClient(saved.toObject({ virtuals: true }));
+    const formatted = formatProductWithClient(saved.toObject ? saved.toObject({ virtuals: true }) : saved);
 
     return res.status(201).json({
       success: true,

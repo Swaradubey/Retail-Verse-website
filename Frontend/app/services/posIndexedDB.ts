@@ -454,6 +454,53 @@ export async function cacheProducts(products: any[], clientScopeId?: string): Pr
 }
 
 /**
+ * Instantly upserts a single product into IndexedDB cached products store,
+ * strictly scoped to the active client ID.
+ */
+export async function upsertCachedProduct(product: any, clientScopeId?: string): Promise<void> {
+  if (!product) return;
+  const pId = String(product._id || product.id || product.productId || '');
+  if (!pId) return;
+
+  const targetClientId = (clientScopeId || extractProductClientId(product) || '').trim();
+
+  try {
+    const db = await openPOSDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction([STORES.CACHED_PRODUCTS], 'readwrite');
+      const store = tx.objectStore(STORES.CACHED_PRODUCTS);
+
+      store.put({
+        productId: pId,
+        _id: pId,
+        name: product.name || 'Unnamed',
+        barcode: String(product.barcode || '').trim(),
+        sku: String(product.sku || '').trim(),
+        unitPrice: Number(product.unitPrice !== undefined ? product.unitPrice : product.price) || 0,
+        price: Number(product.unitPrice !== undefined ? product.unitPrice : product.price) || 0,
+        stockLevel: Number(product.stockLevel ?? product.stock ?? product.quantity ?? product.currentStock ?? 0),
+        stock: Number(product.stockLevel ?? product.stock ?? product.quantity ?? product.currentStock ?? 0),
+        quantity: Number(product.stockLevel ?? product.stock ?? product.quantity ?? product.currentStock ?? 0),
+        currentStock: Number(product.stockLevel ?? product.stock ?? product.quantity ?? product.currentStock ?? 0),
+        gstRate: Number(product.gstRate) || 0,
+        category: product.category || 'General',
+        imageUrl: product.imageUrl || product.image || '',
+        image: product.imageUrl || product.image || '',
+        clientId: targetClientId,
+        client: targetClientId,
+        ownerId: targetClientId,
+        storeId: product.storeId || targetClientId,
+      });
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] Upsert cached product failed:', err);
+  }
+}
+
+/**
  * Retrieve cached products from IndexedDB when network is unavailable.
  * Strictly scopes results to the authenticated client ID.
  * If clientScopeId is provided and no products match, returns [] (never returns other clients' products).

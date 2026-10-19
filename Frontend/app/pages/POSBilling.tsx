@@ -58,6 +58,7 @@ import {
   syncOfflineAndHeldOrders,
   markHeldOrderSynced,
 } from '../services/posIndexedDB';
+import { subscribeToProductSync } from '../utils/posProductSync';
 
 // Audio feedback helper for POS barcode scan beep
 function playScanSound(type: 'success' | 'error' = 'success') {
@@ -322,14 +323,22 @@ export function POSBilling() {
       toast.warning('Offline mode activated. Cash checkout, barcode scanning & held carts remain fully active.');
     };
 
+    const handleFocus = () => {
+      if (navigator.onLine) {
+        fetchProducts(true);
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [triggerBackgroundSync]);
+  }, [triggerBackgroundSync, fetchProducts]);
 
   // Fetch product catalog for manual search & grid (Offline-First with Client-Scoped IndexedDB Caching)
   const fetchProducts = useCallback(async (silent = false) => {
@@ -419,6 +428,73 @@ export function POSBilling() {
       triggerBackgroundSync();
     }
   }, [currentClientId, fetchProducts, loadHeldOrders, refreshPendingSyncCount, triggerBackgroundSync]);
+
+  // Real-time synchronization: listen for new inventory products and immediately render in POS catalog
+  useEffect(() => {
+    const unsubscribe = subscribeToProductSync((newProduct, incomingClientId) => {
+      if (!newProduct) return;
+
+      const pId = String(newProduct._id || newProduct.id || newProduct.productId || '');
+      const rawPrice = Number(newProduct.unitPrice !== undefined ? newProduct.unitPrice : newProduct.price) || 0;
+      const rawStock = Number(newProduct.stockLevel ?? newProduct.stock ?? newProduct.quantity ?? newProduct.currentStock ?? 0);
+      const rawBarcode = String(newProduct.barcode || '').trim();
+      const rawSku = String(newProduct.sku || '').trim();
+      const rawName = String(newProduct.name || 'New Product').trim();
+      const rawImg = newProduct.imageUrl || newProduct.image || '';
+
+      const normalizedProduct = {
+        _id: pId,
+        productId: pId,
+        id: pId,
+        name: rawName,
+        barcode: rawBarcode,
+        sku: rawSku,
+        price: rawPrice,
+        unitPrice: rawPrice,
+        stock: rawStock,
+        stockLevel: rawStock,
+        quantity: rawStock,
+        currentStock: rawStock,
+        category: newProduct.category || 'General',
+        imageUrl: rawImg,
+        image: rawImg,
+        gstRate: Number(newProduct.gstRate || 0),
+        clientId: incomingClientId || currentClientIdRef.current,
+      };
+
+      setProducts((prev) => {
+        const normId = pId;
+        const normBarcode = rawBarcode.toLowerCase();
+        const normSku = rawSku.toLowerCase();
+
+        const existsIdx = prev.findIndex((p: any) => {
+          const itemPId = String(p._id || p.id || p.productId || '');
+          const itemBarcode = String(p.barcode || '').trim().toLowerCase();
+          const itemSku = String(p.sku || '').trim().toLowerCase();
+          return (
+            (normId && itemPId && normId === itemPId) ||
+            (normBarcode && itemBarcode && normBarcode === itemBarcode) ||
+            (normSku && itemSku && normSku === itemSku)
+          );
+        });
+
+        if (existsIdx >= 0) {
+          const updated = [...prev];
+          updated[existsIdx] = { ...updated[existsIdx], ...normalizedProduct };
+          return updated;
+        }
+
+        // Prepend new item directly so POS grid renders it instantly without refetching
+        return [normalizedProduct, ...prev];
+      });
+
+      toast.success(`"${rawName}" added to POS catalog instantly`);
+    }, currentClientId);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentClientId]);
 
   // Auto-persist active cart draft in IndexedDB scoped to this client
   useEffect(() => {

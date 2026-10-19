@@ -143,3 +143,36 @@ export async function loadPosProductsCache(clientId?: string): Promise<Product[]
   }
   return lsGet(clientId);
 }
+
+/** Instantly upsert a newly created or updated product into the client's local POS cache. */
+export async function upsertPosProductCache(product: Product, clientId?: string): Promise<Product[]> {
+  const normalized = normalizeForCache(product);
+  const existing = (await loadPosProductsCache(clientId)) || [];
+  
+  const normId = String(normalized._id || (normalized as any).id || (normalized as any).productId || '');
+  const normSku = String(normalized.sku || '').trim().toLowerCase();
+  const normBarcode = String((normalized as any).barcode || '').trim().toLowerCase();
+
+  const idx = existing.findIndex((p) => {
+    const pId = String(p._id || (p as any).id || (p as any).productId || '');
+    const pSku = String(p.sku || '').trim().toLowerCase();
+    const pBarcode = String((p as any).barcode || '').trim().toLowerCase();
+    return (
+      (normId && pId && normId === pId) ||
+      (normBarcode && pBarcode && normBarcode === pBarcode) ||
+      (normSku && pSku && normSku === pSku)
+    );
+  });
+
+  let updatedList: Product[];
+  if (idx >= 0) {
+    updatedList = [...existing];
+    updatedList[idx] = { ...updatedList[idx], ...normalized };
+  } else {
+    // Prepend newly added item so it displays first in POS grid
+    updatedList = [normalized, ...existing];
+  }
+
+  await savePosProductsCache(updatedList, clientId);
+  return updatedList;
+}

@@ -59,6 +59,15 @@ const connectDB = async () => {
     cached.connection = await cached.promise;
     console.log("[MongoDB] Connected successfully");
     await ensurePrivilegedUsers();
+
+    // Ensure Product compound indexes exist in MongoDB Atlas (production safe)
+    try {
+      const Product = require("../models/Product");
+      Product.createIndexes().catch((idxErr) => {
+        console.warn("[MongoDB] Product index build warning:", idxErr.message);
+      });
+    } catch (e) {}
+
     return cached.connection;
   } catch (error) {
     cached.promise = null;

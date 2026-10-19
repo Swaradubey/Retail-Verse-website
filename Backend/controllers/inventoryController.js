@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 const Product = require("../models/Product");
 const Inventory = require("../models/Inventory");
 const Client = require("../models/Client");
@@ -15,6 +18,33 @@ const { isClientScopedRole, normalizeRole } = require("../utils/clientScopedRole
 const { resolveClientId, buildScopeQuery, applyScope, buildProductVisibilityFilter, isValidObjectId } = require("../utils/tenantResolver");
 const { getMerchantId } = require("../utils/merchantHelper");
 const { attachMarketplaceStatusToProducts } = require("../utils/marketplaceStatusHelper");
+
+const productsUploadDir = path.resolve(__dirname, "../uploads/products");
+if (!fs.existsSync(productsUploadDir)) {
+  fs.mkdirSync(productsUploadDir, { recursive: true });
+}
+
+function processBase64ImageAsync(rawImg) {
+  if (!rawImg || typeof rawImg !== "string" || !rawImg.startsWith("data:image/")) {
+    return rawImg || "";
+  }
+  try {
+    const matches = rawImg.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+    if (!matches) return rawImg;
+    const ext = matches[1] === "jpeg" ? "jpg" : matches[1];
+    const buffer = Buffer.from(matches[2], "base64");
+    const filename = `product-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
+    const filePath = path.join(productsUploadDir, filename);
+    const publicUrl = `/uploads/products/${filename}`;
+    fs.promises.writeFile(filePath, buffer).catch((err) => {
+      console.error("[inventoryController] Async image write failed:", err.message);
+    });
+    return publicUrl;
+  } catch (err) {
+    console.warn("[inventoryController] Base64 image parsing error:", err.message);
+    return rawImg;
+  }
+}
 
 function userOwnsClientProduct(user, product) {
   const role = normalizeRole(user?.role);
@@ -160,7 +190,7 @@ const createInventoryItem = async (req, res) => {
       skuQuery.clientId = null;
     }
     
-    const existingProduct = await Product.findOne(skuQuery);
+    const existingProduct = await Product.findOne(skuQuery).lean();
     if (existingProduct) {
       return res.status(400).json({
         success: false,
@@ -176,7 +206,7 @@ const createInventoryItem = async (req, res) => {
       barcodeQuery.clientId = null;
     }
 
-    const existingBarcode = await Product.findOne(barcodeQuery);
+    const existingBarcode = await Product.findOne(barcodeQuery).lean();
     if (existingBarcode) {
       return res.status(409).json({
         success: false,
@@ -187,7 +217,8 @@ const createInventoryItem = async (req, res) => {
     // Prepare data
     const payload = { ...req.body };
     const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
-    const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    const rawImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
+    const exactImageUrl = processBase64ImageAsync(rawImageUrl);
     payload.image = exactImageUrl;
     payload.images = exactImageUrl ? [exactImageUrl] : [];
     payload.sku = finalSku;
@@ -211,7 +242,7 @@ const createInventoryItem = async (req, res) => {
     // Fetch clientName if possible to persist it
     if (targetClientId) {
       const Client = require("../models/Client");
-      const client = await Client.findById(targetClientId).select("companyName shopName storeName");
+      const client = await Client.findById(targetClientId).select("companyName shopName storeName").lean();
       if (client) {
         payload.clientName = client.storeName || client.shopName || client.companyName || "";
       }
@@ -219,28 +250,29 @@ const createInventoryItem = async (req, res) => {
 
     const item = await Product.create(payload);
 
-    // Queue marketplace sync if requested
+    // Queue marketplace sync asynchronously if requested
     const { publishTo } = req.body;
     if (Array.isArray(publishTo) && publishTo.length > 0) {
-      try {
-        const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
-        for (const marketplace of publishTo) {
-          const job = await MarketplaceSyncJobService.createJob({
-            merchantId: targetClientId || item.createdBy,
-            productId: item._id,
-            marketplace: marketplace,
-            operation: "create_product"
-          });
-          if (job) {
-            // Direct execution async mode (Now a no-op, handled by worker)
-            MarketplaceSyncJobService.processJob(job._id).catch(err => {
-               console.error(`[inventoryController] Direct process error for ${marketplace}:`, err.message);
+      setImmediate(async () => {
+        try {
+          const MarketplaceSyncJobService = require("../services/MarketplaceSyncJobService");
+          for (const marketplace of publishTo) {
+            const job = await MarketplaceSyncJobService.createJob({
+              merchantId: targetClientId || item.createdBy,
+              productId: item._id,
+              marketplace: marketplace,
+              operation: "create_product"
             });
+            if (job) {
+              MarketplaceSyncJobService.processJob(job._id).catch(err => {
+                 console.error(`[inventoryController] Direct process error for ${marketplace}:`, err.message);
+              });
+            }
           }
+        } catch (queueErr) {
+          console.error("[inventoryController] Failed to queue sync job:", queueErr.message);
         }
-      } catch (queueErr) {
-        console.error("[inventoryController] Failed to queue sync job:", queueErr.message);
-      }
+      });
     }
 
     const populated = await Product.findById(item._id)
@@ -250,7 +282,8 @@ const createInventoryItem = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Product added to inventory successfully",
-      data: formatProductWithClient(populated),
+      data: formatProductWithClient(populated || item),
+      product: formatProductWithClient(populated || item),
     });
   } catch (error) {
     console.error("[Inventory] createInventoryItem Error:", error.message);
@@ -799,7 +832,7 @@ const createInventoryProduct = async (req, res) => {
     const cleanBarcode = barcode.trim();
 
     // Duplicate SKU check
-    const existingSku = await Product.findOne({ sku: cleanSku });
+    const existingSku = await Product.findOne({ sku: cleanSku }).lean();
     if (existingSku) {
       return res.status(400).json({
         success: false,
@@ -808,7 +841,7 @@ const createInventoryProduct = async (req, res) => {
     }
 
     // Duplicate Barcode check
-    const existingBarcode = await Product.findOne({ barcode: cleanBarcode });
+    const existingBarcode = await Product.findOne({ barcode: cleanBarcode }).lean();
     if (existingBarcode) {
       return res.status(400).json({
         success: false,
@@ -832,7 +865,7 @@ const createInventoryProduct = async (req, res) => {
     let clientName = "";
     if (targetClientId) {
       try {
-        const client = await Client.findById(targetClientId).select("companyName shopName storeName");
+        const client = await Client.findById(targetClientId).select("companyName shopName storeName").lean();
         if (client) {
           clientName = client.storeName || client.shopName || client.companyName || "";
         }
@@ -840,6 +873,8 @@ const createInventoryProduct = async (req, res) => {
         // ignore client lookup error
       }
     }
+
+    const processedImage = processBase64ImageAsync(finalImage);
 
     const newProduct = new Product({
       name: name.trim(),
@@ -851,9 +886,9 @@ const createInventoryProduct = async (req, res) => {
       stockLevel: numStock,
       stock: numStock,
       quantity: numStock,
-      image: finalImage,
-      imageUrl: finalImage,
-      images: [finalImage],
+      image: processedImage,
+      imageUrl: processedImage,
+      images: processedImage ? [processedImage] : [],
       category: (category && typeof category === "string" && category.trim()) ? category.trim() : "General",
       dimensions: parsedDimensions,
       description: (description && typeof description === "string") ? description.trim() : "",
@@ -865,12 +900,13 @@ const createInventoryProduct = async (req, res) => {
     });
 
     const savedProduct = await newProduct.save();
+    const leanProduct = savedProduct.toObject ? savedProduct.toObject({ virtuals: true }) : savedProduct;
 
     return res.status(201).json({
       success: true,
       message: "Product saved successfully",
-      product: savedProduct,
-      data: savedProduct,
+      product: leanProduct,
+      data: leanProduct,
     });
   } catch (error) {
     console.error("[inventoryController] createInventoryProduct error:", error);

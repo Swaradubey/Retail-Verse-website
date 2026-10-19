@@ -28,6 +28,7 @@ import { employeesApi, type EmployeeRow } from '../api/employees';
 import { storeManagersApi, type StoreManager } from '../api/storeManagers';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
+import { broadcastProductSync } from '../utils/posProductSync';
 import { slugifyProductName } from '../utils/wishlistPayload';
 import {
   canAccessInventoryEditor,
@@ -299,13 +300,17 @@ export function Inventory() {
           toast.error('You are not allowed to add products');
           return;
         }
+        const saveToastId = toast.loading('Saving product to inventory...');
         const response = await inventoryApi.create(productData as Product);
         if (response.success) {
-          window.dispatchEvent(new CustomEvent('retailverse-product-updated', { detail: { product: response.data || productData } }));
-          await fetchAllProducts();
-          toast.success('Product created successfully');
+          const createdProduct = response.data || productData;
+          broadcastProductSync(createdProduct, user?.clientId);
+          setProducts((prev) => [createdProduct as Product, ...prev.filter((p) => p._id !== createdProduct._id)]);
           setIsProductModalOpen(false);
+          toast.success('Product created & synced to POS!', { id: saveToastId });
+          void fetchAllProducts();
         } else {
+          toast.dismiss(saveToastId);
           throw new Error(response.message);
         }
       } else if (selectedProduct?._id) {
@@ -319,10 +324,14 @@ export function Inventory() {
         }
         const response = await inventoryApi.update(selectedProduct._id, body);
         if (response.success) {
-          window.dispatchEvent(new CustomEvent('retailverse-product-updated', { detail: { product: response.data || { ...selectedProduct, ...body } } }));
-          await fetchAllProducts();
-          toast.success(response.message || 'Product updated successfully');
+          const updatedProduct = response.data || { ...selectedProduct, ...body };
+          broadcastProductSync(updatedProduct, user?.clientId);
+          setProducts((prev) =>
+            prev.map((p) => (p._id === selectedProduct._id ? { ...p, ...updatedProduct } : p))
+          );
           setIsProductModalOpen(false);
+          toast.success(response.message || 'Product updated successfully');
+          void fetchAllProducts();
         } else {
           throw new Error(response.message);
         }
@@ -556,8 +565,11 @@ export function Inventory() {
       <AddProductModal
         isOpen={isAddProductModalOpen}
         onClose={() => setIsAddProductModalOpen(false)}
-        onProductCreated={() => {
-          fetchAllProducts();
+        onProductCreated={(newProduct) => {
+          if (newProduct) {
+            setProducts((prev) => [newProduct as Product, ...prev.filter((p) => p._id !== newProduct._id)]);
+          }
+          void fetchAllProducts();
         }}
       />
 

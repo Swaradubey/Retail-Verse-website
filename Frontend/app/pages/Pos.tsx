@@ -57,6 +57,7 @@ import {
   savePendingOfflinePosOrder,
   syncPendingPosOfflineOrders,
 } from '../lib/posOfflineOrders';
+import { subscribeToProductSync } from '../utils/posProductSync';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { toast } from 'sonner';
@@ -429,6 +430,74 @@ export function Pos() {
     fetchProducts();
   }, [fetchProducts]);
 
+  // Real-time synchronization: listen for new inventory products and render in POS catalog instantly
+  useEffect(() => {
+    const clientIdForScope =
+      user?.clientId ||
+      (user as any)?.assignedClient ||
+      (user as any)?.linkedClientId ||
+      (user?.role === 'client' ? (user.id || (user as any)._id) : undefined) ||
+      localStorage.getItem('retail_verse_client_id') ||
+      undefined;
+
+    const unsubscribe = subscribeToProductSync((newProduct, incomingClientId) => {
+      if (!newProduct) return;
+
+      const pId = String(newProduct._id || newProduct.id || newProduct.productId || '');
+      const rawPrice = Number(newProduct.unitPrice !== undefined ? newProduct.unitPrice : newProduct.price) || 0;
+      const rawStock = Number(newProduct.stockLevel ?? newProduct.stock ?? newProduct.quantity ?? newProduct.currentStock ?? 0);
+      const rawBarcode = String(newProduct.barcode || '').trim();
+      const rawSku = String(newProduct.sku || '').trim();
+      const rawName = String(newProduct.name || 'New Product').trim();
+      const rawImg = newProduct.imageUrl || newProduct.image || '';
+
+      const normalizedProduct: Product = {
+        _id: pId,
+        name: rawName,
+        barcode: rawBarcode,
+        sku: rawSku,
+        price: rawPrice,
+        stock: rawStock,
+        category: newProduct.category || 'General',
+        image: rawImg,
+        gstRate: Number(newProduct.gstRate || 0),
+        clientId: incomingClientId || clientIdForScope,
+        isActive: true,
+      };
+
+      setProducts((prev) => {
+        const normId = pId;
+        const normBarcode = rawBarcode.toLowerCase();
+        const normSku = rawSku.toLowerCase();
+
+        const existsIdx = prev.findIndex((p: Product) => {
+          const itemPId = String(p._id || '');
+          const itemBarcode = String(p.barcode || '').trim().toLowerCase();
+          const itemSku = String(p.sku || '').trim().toLowerCase();
+          return (
+            (normId && itemPId && normId === itemPId) ||
+            (normBarcode && itemBarcode && normBarcode === itemBarcode) ||
+            (normSku && itemSku && normSku === itemSku)
+          );
+        });
+
+        if (existsIdx >= 0) {
+          const updated = [...prev];
+          updated[existsIdx] = { ...updated[existsIdx], ...normalizedProduct };
+          return updated;
+        }
+
+        return [normalizedProduct, ...prev];
+      });
+
+      toast.success(`"${rawName}" added to POS catalog instantly`);
+    }, clientIdForScope);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [user]);
+
   // Polling for swipe payment success - structural placeholder for future integration
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
@@ -451,12 +520,19 @@ export function Pos() {
       });
     };
     const onOffline = () => setNetworkOnline(false);
+    const onFocus = () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        fetchProducts();
+      }
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    window.addEventListener('focus', onFocus);
     syncOnline();
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      window.removeEventListener('focus', onFocus);
     };
   }, [fetchProducts, refreshPendingOfflineCount]);
 
