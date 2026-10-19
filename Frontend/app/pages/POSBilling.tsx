@@ -310,36 +310,6 @@ export function POSBilling() {
     }
   }, [loadHeldOrders, refreshPendingSyncCount]);
 
-  // Network online/offline event listeners
-  useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      toast.success('Online mode restored. Cloud sync active.');
-      triggerBackgroundSync();
-    };
-
-    const handleOffline = () => {
-      setIsOnline(false);
-      toast.warning('Offline mode activated. Cash checkout, barcode scanning & held carts remain fully active.');
-    };
-
-    const handleFocus = () => {
-      if (navigator.onLine) {
-        fetchProducts(true);
-      }
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [triggerBackgroundSync, fetchProducts]);
-
   // Fetch product catalog for manual search & grid (Offline-First with Client-Scoped IndexedDB Caching)
   const fetchProducts = useCallback(async (silent = false) => {
     if (!silent) setIsLoadingProducts(true);
@@ -404,6 +374,36 @@ export function POSBilling() {
       if (!silent) setIsLoadingProducts(false);
     }
   }, []);
+
+  // Network online/offline event listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      toast.success('Online mode restored. Cloud sync active.');
+      triggerBackgroundSync();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      toast.warning('Offline mode activated. Cash checkout, barcode scanning & held carts remain fully active.');
+    };
+
+    const handleFocus = () => {
+      if (navigator.onLine) {
+        fetchProducts(true);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [triggerBackgroundSync, fetchProducts]);
 
   // 1. Initial product catalog fetch, draft restore, and held orders load on mount / client change
   useEffect(() => {
