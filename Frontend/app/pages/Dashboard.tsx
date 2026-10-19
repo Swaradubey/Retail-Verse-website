@@ -320,6 +320,7 @@ export function Dashboard() {
         item.href === '/dashboard/customers' ||
         item.href === '/dashboard/users' ||
         item.href === '/super-admin/custom-domain' ||
+        item.href === '/dashboard/marketplaces' ||
         item.href === '/dashboard/add-employee' ||
         item.href === '/dashboard/support' ||
         item.href === '/dashboard/settings'

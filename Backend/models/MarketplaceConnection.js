@@ -1,19 +1,35 @@
 const mongoose = require('mongoose');
 
 const MarketplaceConnectionSchema = new mongoose.Schema({
+  // New standardized client field
+  clientId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    index: true,
+  },
+  // Legacy merchantId retained for Shopify & backward compatibility
   merchantId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User', // or Client, depending on the system's auth structure. Existing used User
-    required: true,
+    ref: 'User',
   },
+  // Standardized channel field
+  channel: {
+    type: String,
+    enum: ['flipkart', 'amazon', 'meesho', 'swiggy', 'myntra', 'shopify'],
+    index: true,
+  },
+  // Legacy marketplace field
   marketplace: {
     type: String,
-    enum: ['amazon', 'shopify', 'flipkart', 'FLIPKART'],
-    required: true,
+    enum: ['flipkart', 'amazon', 'meesho', 'swiggy', 'myntra', 'shopify', 'FLIPKART'],
+  },
+  sellerId: {
+    type: String,
+    default: ''
   },
   integrationMode: {
     type: String,
-    enum: ['DIRECT_API', 'INTEGRATION_PARTNER'],
+    enum: ['DIRECT_API', 'INTEGRATION_PARTNER', 'SELF_ACCESS', 'THIRD_PARTY_OAUTH'],
     default: null
   },
   vendorId: { type: String, default: '' },
@@ -31,31 +47,51 @@ const MarketplaceConnectionSchema = new mongoose.Schema({
   storeUrl: {
     type: String,
   },
+  // Unified status supporting both uppercase standard enum and lowercase legacy states
   status: {
     type: String,
     enum: [
-      'configuration_missing',
+      'CONNECTED',
+      'DISCONNECTED',
+      'FAILED',
+      'SYNCING',
+      'connected',
       'disconnected',
       'connecting',
-      'connected',
       'token_expired',
       'connection_error',
       'approval_required',
-      'sync_paused'
+      'sync_paused',
+      'configuration_missing'
     ],
-    default: 'disconnected',
+    default: 'DISCONNECTED',
+    index: true,
+  },
+  autoSync: {
+    type: Boolean,
+    default: true,
   },
   isSyncEnabled: {
     type: Boolean,
     default: false,
   },
+  // Credentials object including accessToken, refreshToken, tokenExpiresAt
   credentials: {
+    accessToken: { type: String, default: '' },
+    refreshToken: { type: String, default: '' },
+    tokenExpiresAt: { type: Date },
+    // Legacy encrypted fields
     encryptedAccessToken: { type: String },
     encryptedRefreshToken: { type: String },
     encryptedConsumerKey: { type: String },
     encryptedConsumerSecret: { type: String },
     iv: { type: String },
     authTag: { type: String }
+  },
+  syncStats: {
+    totalProducts: { type: Number, default: 0 },
+    syncedProducts: { type: Number, default: 0 },
+    failedProducts: { type: Number, default: 0 }
   },
   metadata: {
     shopName: { type: String },
@@ -88,7 +124,6 @@ const MarketplaceConnectionSchema = new mongoose.Schema({
     products: { type: Boolean, default: true },
     pricing: { type: Boolean, default: true }
   },
-  // Flipkart Integration fields
   accountLabel: {
     type: String
   },
@@ -105,25 +140,10 @@ const MarketplaceConnectionSchema = new mongoose.Schema({
   },
   connectionStatus: {
     type: String,
-    enum: [
-      'DISCONNECTED',
-      'CONNECTING',
-      'CONNECTED',
-      'TOKEN_EXPIRING',
-      'AUTHENTICATION_FAILED',
-      'API_ACCESS_PENDING',
-      'SYNCING',
-      'PARTIAL_FAILURE',
-      'REAUTH_REQUIRED',
-      'ACCESS_PENDING',
-      'RATE_LIMITED',
-      'UNHEALTHY'
-    ],
     default: 'DISCONNECTED'
   },
   apiHealthStatus: {
     type: String,
-    enum: ['HEALTHY', 'TOKEN_EXPIRING', 'REAUTH_REQUIRED', 'ACCESS_PENDING', 'RATE_LIMITED', 'UNHEALTHY', 'UNKNOWN'],
     default: 'UNKNOWN'
   },
   lastHealthCheckAt: {
@@ -144,17 +164,42 @@ const MarketplaceConnectionSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Add compound unique index
-MarketplaceConnectionSchema.index({ merchantId: 1, marketplace: 1, sellerAccountId: 1 }, { unique: true, sparse: true });
-
-// Retaining virtuals for backwards compatibility if some existing code still relies on it,
-// though we aim to transition completely.
-MarketplaceConnectionSchema.virtual('sellerId').get(function() {
-  return this.sellerAccountId || '';
-}).set(function(val) {
-  this.sellerAccountId = val;
+// Pre-save synchronization hook between legacy & new standardized fields
+MarketplaceConnectionSchema.pre('save', function (next) {
+  if (!this.merchantId && this.clientId) {
+    this.merchantId = this.clientId;
+  }
+  if (!this.clientId && this.merchantId) {
+    this.clientId = this.merchantId;
+  }
+  if (!this.marketplace && this.channel) {
+    this.marketplace = this.channel;
+  }
+  if (!this.channel && this.marketplace) {
+    this.channel = this.marketplace.toLowerCase();
+  }
+  if (!this.sellerId && this.sellerAccountId) {
+    this.sellerId = this.sellerAccountId;
+  }
+  if (!this.sellerAccountId && this.sellerId) {
+    this.sellerAccountId = this.sellerId;
+  }
+  // Keep credentials.accessToken in sync with top-level accessToken if present
+  if (this.credentials?.accessToken && !this.accessToken) {
+    this.accessToken = this.credentials.accessToken;
+  }
+  if (this.accessToken && !this.credentials?.accessToken) {
+    if (!this.credentials) this.credentials = {};
+    this.credentials.accessToken = this.accessToken;
+  }
+  next();
 });
 
+// Indexes
+MarketplaceConnectionSchema.index({ clientId: 1, channel: 1 });
+MarketplaceConnectionSchema.index({ merchantId: 1, marketplace: 1, sellerAccountId: 1 }, { unique: true, sparse: true });
+
+// Retaining virtuals for backwards compatibility
 MarketplaceConnectionSchema.virtual('sellerAccountName').get(function() {
   return this.accountName || '';
 }).set(function(val) {
@@ -177,13 +222,16 @@ MarketplaceConnectionSchema.virtual('encryptedRefreshToken').get(function() {
 
 MarketplaceConnectionSchema.virtual('account').get(function() {
   return {
-    sellerId: this.sellerAccountId,
+    sellerId: this.sellerId || this.sellerAccountId,
     storeName: this.accountName,
     shopDomain: this.shopDomain || this.storeUrl
   };
 }).set(function(val) {
   if (val) {
-    if (val.sellerId !== undefined) this.sellerAccountId = val.sellerId;
+    if (val.sellerId !== undefined) {
+      this.sellerId = val.sellerId;
+      this.sellerAccountId = val.sellerId;
+    }
     if (val.storeName !== undefined) this.accountName = val.storeName;
     if (val.shopDomain !== undefined) {
       this.shopDomain = val.shopDomain;

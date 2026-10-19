@@ -461,11 +461,43 @@ exports.getMarketplaces = async (req, res) => {
     
     const availableMarketplaces = [
       { 
+        code: 'flipkart', 
+        name: 'Flipkart', 
+        displayName: 'Flipkart', 
+        description: 'Connect Flipkart seller account with one-click OAuth to sync inventory and orders.', 
+        logo: '/marketplace-logos/flipkart.svg', 
+        hasOAuth: true 
+      },
+      { 
         code: 'amazon', 
         name: 'Amazon', 
-        displayName: 'Amazon SP-API', 
-        description: 'Connect to Amazon Seller Central to sync orders and inventory.', 
+        displayName: 'Amazon', 
+        description: 'Connect to Amazon SP-API seller portal with one-click authorization.', 
         logo: '/marketplace-logos/amazon.svg', 
+        hasOAuth: true 
+      },
+      { 
+        code: 'meesho', 
+        name: 'Meesho', 
+        displayName: 'Meesho', 
+        description: 'Direct integration with Meesho Supplier Panel to automate catalog and inventory sync.', 
+        logo: '/marketplace-logos/meesho.svg', 
+        hasOAuth: true 
+      },
+      { 
+        code: 'swiggy', 
+        name: 'Swiggy', 
+        displayName: 'Swiggy Minis', 
+        description: 'Sync hyperlocal catalog, pricing, and live inventory with Swiggy partner store.', 
+        logo: '/marketplace-logos/swiggy.svg', 
+        hasOAuth: true 
+      },
+      { 
+        code: 'myntra', 
+        name: 'Myntra', 
+        displayName: 'Myntra Partner', 
+        description: 'Seamless fashion catalog and inventory sync with Myntra Partner Central.', 
+        logo: '/marketplace-logos/myntra.svg', 
         hasOAuth: true 
       },
       { 
@@ -475,26 +507,21 @@ exports.getMarketplaces = async (req, res) => {
         description: 'Integrate your Shopify store to automate operations.', 
         logo: '/marketplace-logos/shopify.svg', 
         hasOAuth: true 
-      },
-      { 
-        code: 'flipkart', 
-        name: 'Flipkart', 
-        displayName: 'Flipkart', 
-        description: 'Connect Flipkart seller account to manage listings.', 
-        logo: '/marketplace-logos/flipkart.svg', 
-        hasOAuth: false 
       }
     ];
 
     const data = availableMarketplaces.map(m => {
-      const conn = connections.find(c => c.marketplace === m.code);
+      const conn = connections.find(c => (c.channel === m.code || c.marketplace === m.code));
       return {
         ...m,
         status: conn ? conn.status : 'disconnected',
         connectionId: conn ? conn._id : null,
         accountName: conn ? conn.accountName : null,
-        sellerAccountId: conn ? conn.sellerAccountId : null,
+        sellerAccountId: conn ? conn.sellerAccountId || conn.sellerId : null,
+        sellerId: conn ? conn.sellerId || conn.sellerAccountId : null,
         storeUrl: conn ? conn.storeUrl || conn.shopDomain : null,
+        autoSync: conn ? conn.autoSync !== false : true,
+        syncStats: conn ? conn.syncStats || { totalProducts: 0, syncedProducts: 0, failedProducts: 0 } : { totalProducts: 0, syncedProducts: 0, failedProducts: 0 },
         isSyncEnabled: conn ? conn.isSyncEnabled : false,
         apiHealth: conn ? conn.apiHealth : null,
         lastSyncAt: conn ? conn.lastSyncAt : null,

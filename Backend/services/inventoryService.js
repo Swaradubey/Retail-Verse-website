@@ -51,6 +51,8 @@ async function updateInventory({
 
   // 2. Persist local update in MongoDB (Product & Inventory collections)
   product.stock = numericQuantity;
+  product.stockLevel = numericQuantity;
+  product.quantity = numericQuantity;
   product.updatedAt = updateTimestamp;
 
   if (variantId && product.variants && Array.isArray(product.variants)) {

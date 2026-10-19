@@ -332,6 +332,7 @@ export function ProductModal({
         category: formData.category || product.category || '',
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
+        stockLevel: Number(formData.stockLevel) ?? product.stock ?? 0,
         gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
@@ -347,7 +348,8 @@ export function ProductModal({
         barcode: finalBarcode,
         category: formData.category,
         price: formData.unitPrice,
-        stock: formData.stockLevel,
+        stock: Number(formData.stockLevel) || 0,
+        stockLevel: Number(formData.stockLevel) || 0,
         gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
@@ -834,9 +836,12 @@ export function ProductModal({
 
                 {/* Description */}
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-indigo-500" />
-                    Description
+                  <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-indigo-500" />
+                      Description
+                    </span>
+                    <span className="text-xs font-normal text-gray-400 dark:text-gray-500">(Optional)</span>
                   </label>
                   <textarea
                     name="description"
@@ -844,7 +849,7 @@ export function ProductModal({
                     value={formData.description}
                     onChange={handleChange}
                     className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/[0.03] text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all placeholder:text-gray-400 resize-none"
-                    placeholder="Tell something about the product..."
+                    placeholder="Tell something about the product... (Optional)"
                   />
                 </div>
               </div>

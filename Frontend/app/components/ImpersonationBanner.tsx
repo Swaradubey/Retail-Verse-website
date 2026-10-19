@@ -43,7 +43,7 @@ export function ImpersonationBanner() {
   return (
     <div
       role="status"
-      className="sticky top-0 z-[60] w-full shrink-0 flex flex-col gap-2 border-b border-[#2563EB] bg-[#0B1F3A] px-4 py-2.5 text-sm text-[#F8FAFC] sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+      className="sticky top-0 z-30 w-full shrink-0 flex flex-col gap-2 border-b border-[#2563EB] bg-[#0B1F3A] px-4 py-2.5 text-sm text-[#F8FAFC] sm:flex-row sm:items-center sm:justify-between sm:gap-4"
     >
       <p className="min-w-0 font-medium whitespace-normal break-words">
         Viewing as <span className="font-semibold text-[#FF6B00]">{roleLabel}</span>:{' '}

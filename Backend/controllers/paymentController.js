@@ -71,17 +71,26 @@ const createRazorpayOrder = async (req, res) => {
 
     // Key ID only — never log the secret
     console.log("[RAZORPAY CREATE ORDER] Key ID:", razorpayKeyId, "isClientSpecific:", isClientSpecific);
-    console.log("[RAZORPAY CREATE ORDER] Amount received (INR):", amount, "→ paise:", Math.round(Number(amount) * 100));
+    // Support both raw INR value and pre-computed paise (e.g. from POS checkout)
+    const isAmountInPaise =
+      Boolean(req.body.isPaise) ||
+      req.body.amountInPaise !== undefined ||
+      Boolean(req.originalUrl && req.originalUrl.includes("razorpay-order")) ||
+      Boolean(req.path && req.path.includes("razorpay-order"));
+
+    const optionsAmount = isAmountInPaise
+      ? Math.round(Number(req.body.amountInPaise !== undefined ? req.body.amountInPaise : amount))
+      : Math.round(Number(amount) * 100);
+
+    console.log("[RAZORPAY CREATE ORDER] Final amount in paise:", optionsAmount, "isAmountInPaise:", isAmountInPaise);
 
     const instance = new Razorpay({
       key_id: razorpayKeyId,
       key_secret: razorpayKeySecret,
     });
 
-    // Frontend sends raw INR value. Backend multiplies by 100 to convert to paise.
-    // DEV NOTE: Do NOT multiply on the frontend — that would double-count.
     const options = {
-      amount: Math.round(Number(amount) * 100), // convert INR → paise
+      amount: optionsAmount,
       currency,
       receipt: `receipt_${Date.now()}`,
     };

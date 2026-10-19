@@ -14,6 +14,7 @@ import { InventoryTable } from '../components/inventory/InventoryTable';
 import { DeleteConfirmModal } from '../components/inventory/DeleteConfirmModal';
 import { InventorySkeleton } from '../components/inventory/InventorySkeleton';
 import { ProductModal } from '../components/inventory/ProductModal';
+import { AddProductModal } from '../components/inventory/AddProductModal';
 import { ProductDetailModal } from '../components/inventory/ProductDetailModal';
 import { StoreManagerModal } from '../components/inventory/StoreManagerModal';
 import { EmployeeModal } from '../components/inventory/EmployeeModal';
@@ -74,6 +75,7 @@ export function Inventory() {
 
   // Modal states
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [productModalMode, setProductModalMode] = useState<'add' | 'edit'>('add');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -299,6 +301,7 @@ export function Inventory() {
         }
         const response = await inventoryApi.create(productData as Product);
         if (response.success) {
+          window.dispatchEvent(new CustomEvent('retailverse-product-updated', { detail: { product: response.data || productData } }));
           await fetchAllProducts();
           toast.success('Product created successfully');
           setIsProductModalOpen(false);
@@ -316,6 +319,7 @@ export function Inventory() {
         }
         const response = await inventoryApi.update(selectedProduct._id, body);
         if (response.success) {
+          window.dispatchEvent(new CustomEvent('retailverse-product-updated', { detail: { product: response.data || { ...selectedProduct, ...body } } }));
           await fetchAllProducts();
           toast.success(response.message || 'Product updated successfully');
           setIsProductModalOpen(false);
@@ -425,9 +429,7 @@ export function Inventory() {
                   {allowAdd && (
                     <Button
                       onClick={() => {
-                        setProductModalMode('add');
-                        setSelectedProduct(null);
-                        setIsProductModalOpen(true);
+                        setIsAddProductModalOpen(true);
                       }}
                       className="h-11 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 px-5 text-sm font-semibold text-white shadow-[0_4px_20px_-4px_rgba(79,70,229,0.45)] transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:-translate-y-0.5 hover:shadow-[0_12px_32px_-8px_rgba(79,70,229,0.55)] active:translate-y-0"
                     >
@@ -551,6 +553,14 @@ export function Inventory() {
       </main>
 
       {/* Modals */}
+      <AddProductModal
+        isOpen={isAddProductModalOpen}
+        onClose={() => setIsAddProductModalOpen(false)}
+        onProductCreated={() => {
+          fetchAllProducts();
+        }}
+      />
+
       <ProductModal
         isOpen={isProductModalOpen}
         mode={productModalMode}

@@ -179,7 +179,8 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/uploads", cors(), express.static(path.join(__dirname, "uploads")));
+app.use("/api/uploads", cors(), express.static(path.join(__dirname, "uploads")));
 
 // Session middleware (required for Passport OAuth flow)
 app.use(
@@ -237,6 +238,7 @@ const voiceOrderRoutes = require("./routes/voiceOrderRoutes");
 const marketplaceRoutes = require("./routes/marketplace.routes");
 const marketplaceSyncJobRoutes = require("./routes/marketplaceSyncJobRoutes");
 const flipkartRoutes = require("./routes/flipkartRoutes");
+const posRoutes = require("./routes/posRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -252,6 +254,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/pos", posRoutes);
 app.use("/api/track-orders", trackOrderRoutes);
 app.use("/api/admin-login", adminLoginRoutes);
 app.use("/api/clients", clientRoutes);
@@ -261,6 +264,7 @@ app.use("/api/store-managers", storeManagerRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/help-center", helpCenterRoutes);
 app.use("/api/payments", paymentRoutes);
+app.use("/api/payment", paymentRoutes);
 app.use("/api/razorpay", paymentRoutes);
 app.use("/api/support-tickets", supportTicketRoutes);
 app.use("/api/support/tickets", supportTicketRoutes); // Alias as per request

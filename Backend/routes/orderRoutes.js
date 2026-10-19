@@ -4,6 +4,7 @@ const { protect, allowRoles, optionalProtect } = require("../middleware/authMidd
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const {
   createOrder,
+  checkoutOrder,
   getOrders,
   getLatestTransactions,
   getOrderById,
@@ -15,6 +16,9 @@ const {
   patchOrderTrackingStatus,
   cancelOrder,
 } = require("../controllers/orderController");
+
+// @route   POST /api/orders/checkout (POS barcode checkout with session/transaction)
+router.post("/checkout", optionalProtect, tenantMiddleware, checkoutOrder);
 
 // @route   POST /api/orders (optional JWT — links order to logged-in customer when token present)
 router.post("/", optionalProtect, tenantMiddleware, createOrder);

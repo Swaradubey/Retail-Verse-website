@@ -117,11 +117,11 @@ const getProducts = async (req, res) => {
       if (maxPrice && maxPrice !== "undefined") query.price.$lte = Number(maxPrice);
     }
 
-    // Non-staff (customers/guests) should only see active products
+    // Non-staff (customers/guests) should only see active products (allow true or unset)
     const role = normalizeRole(req.user?.role);
     const isStaff = req.user && (role === "admin" || role === "super_admin" || isClientScopedRole(req.user.role));
     if (!isStaff) {
-      query.isActive = true;
+      query.isActive = { $ne: false };
     } else if (isActive !== undefined) {
       query.isActive = isActive === "true";
     }
@@ -138,7 +138,7 @@ const getProducts = async (req, res) => {
 
     let dbQuery = Product.find(query)
       .populate("clientId", "storeName companyName shopName email")
-      .sort("-createdAt");
+      .sort({ createdAt: -1 });
     
     if (limit > 0) {
       dbQuery = dbQuery.skip(skip).limit(limit);
@@ -167,10 +167,43 @@ const getProducts = async (req, res) => {
                       m.status === 'synced' ? 'success' : 'pending',
           syncError: m.error || ''
         }));
+
+        // Single source of truth for stockLevel in API response
+        const availableStock = Number(
+          pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
+            ? pObj.stockLevel
+            : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
+            ? pObj.stock
+            : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
+            ? pObj.quantity
+            : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
+        ) || 0;
+        pObj.stockLevel = availableStock;
+        pObj.stock = availableStock;
+        pObj.quantity = availableStock;
+        pObj.currentStock = availableStock;
+
         return pObj;
       });
     } catch (err) {
       console.error("[productController] Error resolving marketplace status in list:", err.message);
+      productsWithListings = productsWithListings.map(p => {
+        const pObj = typeof p.toObject === 'function' ? p.toObject({ virtuals: true }) : { ...p };
+        const availableStock = Number(
+          pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
+            ? pObj.stockLevel
+            : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
+            ? pObj.stock
+            : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
+            ? pObj.quantity
+            : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
+        ) || 0;
+        pObj.stockLevel = availableStock;
+        pObj.stock = availableStock;
+        pObj.quantity = availableStock;
+        pObj.currentStock = availableStock;
+        return pObj;
+      });
     }
 
     res.status(200).json({
@@ -367,6 +400,18 @@ const createProduct = async (req, res) => {
     productData.createdBy = req.user._id;
     productData.createdByRole = role;
     productData.clientId = targetClientId || null;
+
+    // Explicitly parse stockLevel as Number (single source of truth for quantity)
+    const rawStock = req.body.stockLevel !== undefined
+      ? req.body.stockLevel
+      : (req.body.stock !== undefined ? req.body.stock : req.body.quantity);
+    const parsedStockLevel = Math.max(0, parseInt(rawStock, 10) || Number(rawStock) || 0);
+    productData.stockLevel = parsedStockLevel;
+    productData.stock = parsedStockLevel;
+    productData.quantity = parsedStockLevel;
+
+    // Validate that new products are saved with isActive: true
+    productData.isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : true;
 
     // Fetch clientName if possible to persist it for the UI
     if (isValidObjectId(targetClientId)) {
@@ -684,6 +729,16 @@ const updateProduct = async (req, res) => {
       }
     }
 
+    if (normalizedPayload.stockLevel !== undefined || normalizedPayload.stock !== undefined || normalizedPayload.quantity !== undefined) {
+      const rawStock = normalizedPayload.stockLevel !== undefined
+        ? normalizedPayload.stockLevel
+        : (normalizedPayload.stock !== undefined ? normalizedPayload.stock : normalizedPayload.quantity);
+      const parsedStock = Math.max(0, parseInt(rawStock, 10) || Number(rawStock) || 0);
+      normalizedPayload.stockLevel = parsedStock;
+      normalizedPayload.stock = parsedStock;
+      normalizedPayload.quantity = parsedStock;
+    }
+
     Object.assign(product, normalizedPayload);
     const updated = await product.save();
     console.log("[Backend Debug] Product After Update:", {
@@ -693,13 +748,13 @@ const updateProduct = async (req, res) => {
       updatedAt: updated.updatedAt,
     });
 
-    if (normalizedPayload.stock !== undefined) {
+    if (normalizedPayload.stockLevel !== undefined || normalizedPayload.stock !== undefined) {
       try {
         const { updateInventory } = require('../services/inventoryService');
         await updateInventory({
           tenantId: resolvedClientId || updated.clientId || updated.merchantId,
           productId: updated._id,
-          quantity: updated.stock,
+          quantity: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
           source: 'product_update',
           referenceId: req.user?._id
         });
@@ -731,8 +786,9 @@ const updateProduct = async (req, res) => {
 // @access  Private (Admin/Staff)
 const updateProductStock = async (req, res) => {
   try {
-    const { stock } = req.body;
-    if (stock === undefined || isNaN(stock)) {
+    const rawStock = req.body.stockLevel !== undefined ? req.body.stockLevel : req.body.stock;
+    const stock = Number(rawStock);
+    if (rawStock === undefined || isNaN(stock)) {
       return res.status(400).json({
         success: false,
         message: "Valid stock count is required",
@@ -978,11 +1034,166 @@ const getProductSyncStatus = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Lookup product by barcode or SKU
+ * @route   GET /api/products/lookup?code=:code
+ * @access  Public / Protected
+ */
+const lookupProduct = async (req, res) => {
+  try {
+    const rawCode = req.query.code || req.query.barcode || req.params.code;
+    const code = rawCode ? String(rawCode).trim() : "";
+    if (!code) {
+      return res.status(400).json({ success: false, message: "Code parameter is required" });
+    }
+
+    const query = {
+      $or: [
+        { barcode: code },
+        { sku: code }
+      ]
+    };
+
+    let product = await Product.findOne(query);
+
+    if (!product) {
+      product = await Product.findOne({
+        $or: [
+          { barcode: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } },
+          { sku: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } }
+        ]
+      });
+    }
+
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const formatted = formatProductWithClient(product.toObject({ virtuals: true }));
+    return res.status(200).json({
+      success: true,
+      product: formatted,
+      data: formatted
+    });
+  } catch (error) {
+    console.error("[productController] lookupProduct error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Create product supporting multipart/form-data for productImage
+ * @route   POST /api/products/create
+ * @access  Private / Optional Auth
+ */
+const createProductWithImage = async (req, res) => {
+  try {
+    const body = { ...req.body };
+    const name = String(body.name || "").trim();
+    if (!name) {
+      return res.status(400).json({ success: false, message: "Product name is required" });
+    }
+
+    // 1. Auto-generate barcode if not provided (Format: RV + Date(YYMMDD) + 4-digit random string)
+    let barcode = String(body.barcode || "").trim();
+    if (!barcode) {
+      const now = new Date();
+      const yy = String(now.getFullYear()).slice(-2);
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const rand4 = Math.floor(1000 + Math.random() * 9000);
+      barcode = `RV${yy}${mm}${dd}${rand4}`;
+    }
+
+    // 2. If sku is missing, assign the barcode as SKU
+    let sku = String(body.sku || "").trim();
+    if (!sku) {
+      sku = barcode;
+    }
+
+    // Check unique sku
+    const existingSku = await Product.findOne({ sku });
+    if (existingSku) {
+      return res.status(400).json({
+        success: false,
+        message: `Product with SKU "${sku}" already exists.`,
+      });
+    }
+
+    // Check unique barcode
+    const existingBarcode = await Product.findOne({ barcode });
+    if (existingBarcode) {
+      return res.status(400).json({
+        success: false,
+        message: `Product with Barcode "${barcode}" already exists.`,
+      });
+    }
+
+    // 3. Image file handling from Multer
+    let imagePath = "";
+    if (req.file) {
+      imagePath = `/uploads/products/${req.file.filename}`;
+    } else if (body.imageUrl || body.image) {
+      imagePath = String(body.imageUrl || body.image).trim();
+    }
+
+    const unitPrice = Number(body.unitPrice !== undefined ? body.unitPrice : body.price) || 0;
+    const rawStock = body.stockLevel !== undefined ? body.stockLevel : (body.stock !== undefined ? body.stock : body.quantity);
+    const stockLevel = Math.max(0, parseInt(rawStock, 10) || Number(rawStock) || 0);
+    const gstRate = Number(body.gstRate) || 0;
+    const lowStockAlert = Number(body.lowStockAlert !== undefined ? body.lowStockAlert : 5);
+    const category = String(body.category || "General").trim();
+
+    let resolvedClientId = null;
+    try {
+      resolvedClientId = await resolveClientId(req);
+    } catch (e) {}
+
+    const newProduct = new Product({
+      name,
+      sku,
+      barcode,
+      category,
+      unitPrice,
+      price: unitPrice,
+      stockLevel,
+      stock: stockLevel,
+      quantity: stockLevel,
+      gstRate,
+      lowStockAlert,
+      imageUrl: imagePath,
+      image: imagePath,
+      images: imagePath ? [imagePath] : [],
+      description: body.description || "",
+      brand: body.brand || "",
+      createdBy: req.user?._id || null,
+      createdByRole: req.user?.role || "admin",
+      clientId: body.clientId || resolvedClientId || null,
+      isActive: true,
+    });
+
+    const saved = await newProduct.save();
+    const formatted = formatProductWithClient(saved.toObject({ virtuals: true }));
+
+    return res.status(201).json({
+      success: true,
+      message: "Product created successfully",
+      product: formatted,
+      data: formatted,
+    });
+  } catch (error) {
+    console.error("[productController] createProductWithImage error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   getProducts,
   getFeaturedProducts,
   getProductById,
+  lookupProduct,
   createProduct,
+  createProductWithImage,
   updateProduct,
   updateProductStock,
   deleteProduct,

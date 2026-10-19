@@ -367,8 +367,13 @@ export function Pos() {
 
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
-    const online = typeof navigator !== 'undefined' && navigator.onLine;
-    const clientIdForCache = localStorage.getItem('retail_verse_client_id') || undefined;
+    const clientIdForCache =
+      user?.clientId ||
+      (user as any)?.assignedClient ||
+      (user as any)?.linkedClientId ||
+      (user?.role === 'client' ? (user.id || (user as any)._id) : undefined) ||
+      localStorage.getItem('retail_verse_client_id') ||
+      undefined;
 
     try {
       let dbProducts: Product[] = [];
@@ -1815,6 +1820,15 @@ export function Pos() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {filteredProducts.map((product) => {
+                  const availableStock = Number(
+                    (product.stockLevel !== undefined && product.stockLevel !== null && Number(product.stockLevel) > 0)
+                      ? product.stockLevel
+                      : (product.stock !== undefined && product.stock !== null && Number(product.stock) > 0)
+                      ? product.stock
+                      : (product.currentStock !== undefined && product.currentStock !== null && Number(product.currentStock) > 0)
+                      ? product.currentStock
+                      : (product.stockLevel ?? product.stock ?? product.currentStock ?? 0)
+                  ) || 0;
                   const shop = posProductToShopProduct(product);
                   const wKey = buildWishlistKeyForProduct(shop, wishlistPool);
                   const inWishlist = !!(user && wishlistKeySet.has(wKey));
@@ -1860,14 +1874,14 @@ export function Pos() {
                         {/* Quick-add button */}
                         <button
                           type="button"
-                          title={product.stock > 0 ? 'Add to Cart' : 'Out of stock'}
+                          title={availableStock > 0 ? 'Add to Cart' : 'Out of stock'}
                           aria-label={`Add ${product.name} to cart`}
-                          disabled={product.stock < 1}
+                          disabled={availableStock < 1}
                           onClick={(e) => {
                             e.stopPropagation();
                             addToCart(product);
                           }}
-                          className={`absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition-all duration-200 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${product.stock > 0
+                          className={`absolute bottom-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-full shadow-md transition-all duration-200 hover:scale-110 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${availableStock > 0
                             ? 'bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500'
                             : 'cursor-not-allowed bg-gray-300 text-gray-500'
                             }`}
@@ -1880,17 +1894,17 @@ export function Pos() {
 
                       <div className="mt-auto flex items-center justify-between">
                         <span className="font-bold text-[#111111]">{formatINR(product.price)}</span>
-                        <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${product.stock <= 0
+                        <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${availableStock <= 0
                           ? 'bg-red-100 text-red-700'
-                          : product.stock < 10
+                          : availableStock < 10
                             ? 'bg-amber-100 text-amber-700'
                             : 'bg-green-100 text-green-700'
                           }`}>
-                          {product.stock <= 0
+                          {availableStock <= 0
                             ? 'Out of stock'
-                            : product.stock < 10
+                            : availableStock < 10
                               ? 'Low Stock'
-                              : `${product.stock} in stock`}
+                              : `${availableStock} in stock`}
                         </span>
                       </div>
                     </div>

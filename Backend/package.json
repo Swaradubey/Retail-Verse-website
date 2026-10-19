@@ -27,6 +27,7 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "razorpay": "^2.9.6",
+    "socket.io": "^4.8.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "uuid": "^14.0.1"

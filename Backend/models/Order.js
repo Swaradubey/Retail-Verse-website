@@ -48,6 +48,13 @@ const orderSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+    invoiceNumber: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true,
+    },
     clientId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Client",
@@ -61,13 +68,17 @@ const orderSchema = new mongoose.Schema(
           ref: "Product",
           required: true,
         },
+        barcode: { type: String, default: "", trim: true },
         name: { type: String, required: true },
         price: { type: Number, required: true },
+        unitPrice: { type: Number, required: false },
         quantity: { type: Number, required: true },
+        itemTotal: { type: Number, required: false },
         image: { type: String, required: false },
         category: { type: String, required: false },
         gstRate: { type: Number, default: 0 },
         gstAmount: { type: Number, default: 0 },
+        tax: { type: Number, default: 0 },
       },
     ],
     /** Set to "pos" for in-store sales; "ai_voice" for voice orders; website checkout omits (legacy orders have no value). */
@@ -110,6 +121,51 @@ const orderSchema = new mongoose.Schema(
       cardLast4: { type: String },
       expiryDate: { type: String },
       upiId: { type: String },
+      whatsappPhone: { type: String },
+      paymentLinkId: { type: String },
+      paymentLinkUrl: { type: String },
+      paymentLinkStatus: { type: String },
+    },
+    upiId: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    whatsappPhone: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    paymentLinkId: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    paymentLinkUrl: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    subtotal: {
+      type: Number,
+      default: 0.0,
+    },
+    couponCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    discountAmount: {
+      type: Number,
+      default: 0.0,
+    },
+    totalGst: {
+      type: Number,
+      default: 0.0,
+    },
+    grandTotal: {
+      type: Number,
+      default: 0.0,
     },
     totalPrice: {
       type: Number,
@@ -181,11 +237,27 @@ const orderSchema = new mongoose.Schema(
       trim: true,
       default: "placed",
     },
-    /** Primary status field for explicit MongoDB visibility requirements */
+    /** Primary status field for explicit MongoDB visibility requirements: 'HELD', 'COMPLETED', 'CANCELLED', etc. */
     status: {
       type: String,
       trim: true,
       default: "placed",
+    },
+    /** Reference label for held/parked orders or customer token */
+    reference: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    /** Total amount alias aligned with POS schema requirements */
+    totalAmount: {
+      type: Number,
+      default: 0,
+    },
+    /** Offline-to-cloud synchronization status */
+    isSynced: {
+      type: Boolean,
+      default: true,
     },
     /** Human-readable status for UI */
     trackingStatus: {
@@ -377,5 +449,52 @@ const orderSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+orderSchema.pre("save", function (next) {
+  if (this.invoiceNumber && !this.orderId) {
+    this.orderId = this.invoiceNumber;
+  } else if (this.orderId && !this.invoiceNumber) {
+    this.invoiceNumber = this.orderId;
+  }
+
+  if (this.grandTotal && (!this.totalPrice || this.totalPrice === 0)) {
+    this.totalPrice = this.grandTotal;
+  } else if (this.totalPrice && (!this.grandTotal || this.grandTotal === 0)) {
+    this.grandTotal = this.totalPrice;
+  }
+
+  if (this.grandTotal && (!this.totalAmount || this.totalAmount === 0)) {
+    this.totalAmount = this.grandTotal;
+  } else if (this.totalAmount && (!this.grandTotal || this.grandTotal === 0)) {
+    this.grandTotal = this.totalAmount;
+    if (!this.totalPrice || this.totalPrice === 0) this.totalPrice = this.totalAmount;
+  }
+
+  if (this.totalGst && (!this.taxPrice || this.taxPrice === 0)) {
+    this.taxPrice = this.totalGst;
+  } else if (this.taxPrice && (!this.totalGst || this.totalGst === 0)) {
+    this.totalGst = this.taxPrice;
+  }
+
+  if (Array.isArray(this.items)) {
+    this.items.forEach((item) => {
+      if (item.unitPrice !== undefined && item.price === undefined) {
+        item.price = item.unitPrice;
+      } else if (item.price !== undefined && item.unitPrice === undefined) {
+        item.unitPrice = item.price;
+      }
+      if (item.unitPrice && item.quantity && !item.itemTotal) {
+        item.itemTotal = item.unitPrice * item.quantity;
+      }
+      if (item.tax !== undefined && (item.gstAmount === undefined || item.gstAmount === 0)) {
+        item.gstAmount = item.tax;
+      } else if (item.gstAmount !== undefined && (item.tax === undefined || item.tax === 0)) {
+        item.tax = item.gstAmount;
+      }
+    });
+  }
+
+  next();
+});
 
 module.exports = mongoose.model("Order", orderSchema);

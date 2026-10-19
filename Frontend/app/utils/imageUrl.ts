@@ -83,11 +83,18 @@ const _IMAGE_API_BASE: string = (
 
 export function getFullImageUrl(url?: string | null): string {
   if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
-    return url;
+  let cleanUrl = String(url).trim().replace(/\\/g, '/');
+  if (!cleanUrl) return '';
+  if (
+    cleanUrl.startsWith('http://') ||
+    cleanUrl.startsWith('https://') ||
+    cleanUrl.startsWith('data:') ||
+    cleanUrl.startsWith('blob:')
+  ) {
+    return cleanUrl;
   }
   if (isWindowsAbsolutePath(url)) return '';
-  const path = url.startsWith("/") ? url : `/${url}`;
+  const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
   return `${_IMAGE_API_BASE}${path}`;
 }
 
@@ -95,8 +102,8 @@ export function getFullImageUrl(url?: string | null): string {
 export function getProductImageUrl(product: any, fallback?: string): string {
   if (!product) return fallback || '';
   const img =
-    product.image ||
     product.imageUrl ||
+    product.image ||
     product.productImage ||
     product.thumbnail ||
     (Array.isArray(product.images) && product.images.length > 0
@@ -113,5 +120,6 @@ export function getProductImageUrl(product: any, fallback?: string): string {
       ? product.media[0]?.url
       : undefined) ||
     '';
-  return img || fallback || '';
+  if (!img) return fallback || '';
+  return getFullImageUrl(img);
 }

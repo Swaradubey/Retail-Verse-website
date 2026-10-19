@@ -2082,8 +2082,263 @@ const getUserDashboardOverview = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Process POS checkout with atomic stock deduction, ledger recording, and MongoDB session/transaction
+ * @route   POST /api/orders/checkout
+ * @access  Public / Optional Protect
+ */
+const checkoutOrder = async (req, res) => {
+  const InventoryLedger = require("../models/InventoryLedger");
+  const items = req.body.items || [];
+  const paymentMethod = (req.body.paymentMethod || "CASH").toUpperCase();
+  const paymentStatus = (req.body.paymentStatus || "PAID").toUpperCase();
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Cart is empty. Please add items to checkout.",
+    });
+  }
+
+  // Generate invoice number format: INV-YYMMDD-XXXX
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const rand4 = Math.floor(1000 + Math.random() * 9000);
+  const invoiceNumber = `INV-${yy}${mm}${dd}-${rand4}`;
+
+  // Start MongoDB session
+  let session = null;
+  let useTransaction = true;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+  } catch (sessErr) {
+    console.warn("[checkoutOrder] Standalone MongoDB detected. Falling back to atomic execution without transaction session:", sessErr.message);
+    useTransaction = false;
+    session = null;
+  }
+
+  try {
+    // 1. Verify all items exist and have enough stockLevel
+    const preparedItems = [];
+    let calculatedSubtotal = 0;
+    let calculatedTotalGst = 0;
+
+    for (const item of items) {
+      const pId = item.productId || item._id;
+      const quantity = Number(item.quantity) || 1;
+
+      if (quantity <= 0) {
+        throw new Error(`Invalid quantity ${quantity} for item: ${item.name || pId}`);
+      }
+
+      let productDoc = null;
+      if (isValidObjectId(pId)) {
+        productDoc = session
+          ? await Product.findById(pId).session(session)
+          : await Product.findById(pId);
+      } else {
+        productDoc = session
+          ? await Product.findOne({ $or: [{ barcode: item.barcode || pId }, { sku: pId }] }).session(session)
+          : await Product.findOne({ $or: [{ barcode: item.barcode || pId }, { sku: pId }] });
+      }
+
+      if (!productDoc) {
+        throw new Error(`Product not found: ${item.name || pId}`);
+      }
+
+      const currentStock = Number(productDoc.stockLevel !== undefined ? productDoc.stockLevel : productDoc.stock) || 0;
+      if (currentStock < quantity) {
+        throw new Error(`Insufficient stock for "${productDoc.name}". Available: ${currentStock}, In Cart: ${quantity}`);
+      }
+
+      const unitPrice = Number(item.unitPrice !== undefined ? item.unitPrice : productDoc.unitPrice || productDoc.price) || 0;
+      const gstRate = Number(item.gstRate !== undefined ? item.gstRate : productDoc.gstRate) || 0;
+      const lineSubtotal = unitPrice * quantity;
+      const lineGst = (lineSubtotal * gstRate) / 100;
+      const itemTotal = lineSubtotal + lineGst;
+
+      calculatedSubtotal += lineSubtotal;
+      calculatedTotalGst += lineGst;
+
+      preparedItems.push({
+        productDoc,
+        productId: String(productDoc._id),
+        barcode: productDoc.barcode || item.barcode || "",
+        name: productDoc.name,
+        unitPrice,
+        quantity,
+        gstRate,
+        gstAmount: lineGst,
+        itemTotal,
+      });
+    }
+
+    // Server-side Coupon Verification & Anti-tampering
+    let discountAmount = 0;
+    let appliedCouponCode = "";
+    const rawCouponCode = req.body.couponCode ? String(req.body.couponCode).trim().toUpperCase() : "";
+
+    if (rawCouponCode) {
+      if (rawCouponCode === "SAVE1000" || rawCouponCode === "FLAT1000") {
+        if (calculatedSubtotal >= 3000) {
+          discountAmount = 1000;
+          appliedCouponCode = rawCouponCode;
+        } else {
+          throw new Error(`Coupon requires minimum subtotal of ₹3,000. Add ₹${(3000 - calculatedSubtotal).toFixed(2)} more to apply.`);
+        }
+      } else {
+        try {
+          const Coupon = require("../models/Coupon");
+          const dbCoupon = await Coupon.findOne({ code: rawCouponCode, isActive: true });
+          if (dbCoupon && calculatedSubtotal >= (dbCoupon.minOrderSubtotal || 3000)) {
+            discountAmount = dbCoupon.discountAmount || 1000;
+            appliedCouponCode = dbCoupon.code;
+          } else if (dbCoupon) {
+            throw new Error(`Coupon requires minimum subtotal of ₹${dbCoupon.minOrderSubtotal || 3000}.`);
+          } else {
+            throw new Error(`Invalid or expired coupon code "${rawCouponCode}".`);
+          }
+        } catch (cErr) {
+          throw cErr;
+        }
+      }
+    }
+
+    const subtotal = Number(calculatedSubtotal.toFixed(2));
+    const totalGst = Number(calculatedTotalGst.toFixed(2));
+    const grandTotal = Math.max(0, Number((subtotal - discountAmount + totalGst).toFixed(2)));
+
+    // 2. Atomically deduct stock using $inc: { stock: -quantity, stockLevel: -quantity } where stock >= quantity
+    const updatedProducts = [];
+    for (const pItem of preparedItems) {
+      const filter = {
+        _id: pItem.productDoc._id,
+        $or: [
+          { stock: { $gte: pItem.quantity } },
+          { stockLevel: { $gte: pItem.quantity } },
+        ],
+      };
+
+      const update = {
+        $inc: {
+          stock: -pItem.quantity,
+          stockLevel: -pItem.quantity,
+          quantity: -pItem.quantity,
+        },
+      };
+
+      const options = { new: true };
+      if (session) options.session = session;
+
+      const updated = await Product.findOneAndUpdate(filter, update, options);
+      if (!updated) {
+        throw new Error(`Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`);
+      }
+      updatedProducts.push({
+        pItem,
+        remainingStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
+      });
+    }
+
+    // 3. Create Order document
+    let resolvedClientId = null;
+    try {
+      resolvedClientId = await resolveClientId(req);
+    } catch (e) {}
+
+    const orderPayload = {
+      orderId: invoiceNumber,
+      invoiceNumber,
+      customerName: req.body.customerName || "Walk-in Customer",
+      customerEmail: req.body.customerEmail || "",
+      items: preparedItems.map((item) => ({
+        productId: item.productId,
+        barcode: item.barcode,
+        name: item.name,
+        unitPrice: item.unitPrice,
+        price: item.unitPrice,
+        quantity: item.quantity,
+        gstRate: item.gstRate,
+        gstAmount: item.gstAmount,
+        itemTotal: item.itemTotal,
+      })),
+      subtotal,
+      couponCode: appliedCouponCode,
+      discountAmount,
+      totalGst,
+      grandTotal,
+      totalPrice: grandTotal,
+      taxPrice: totalGst,
+      paymentMethod,
+      paymentStatus,
+      isPaid: paymentStatus === "PAID",
+      paidAt: paymentStatus === "PAID" ? new Date() : null,
+      orderSource: "pos",
+      orderStatus: "delivered",
+      trackingStatus: "Delivered",
+      clientId: req.body.clientId || resolvedClientId || null,
+      user: req.user?._id || null,
+    };
+
+    let order = null;
+    if (session) {
+      const created = await Order.create([orderPayload], { session });
+      order = created[0];
+    } else {
+      order = await Order.create(orderPayload);
+    }
+
+    // 4. Create entries in InventoryLedger with type 'SALE'
+    const ledgerEntries = updatedProducts.map(({ pItem, remainingStock }) => ({
+      productId: pItem.productDoc._id,
+      barcode: pItem.barcode || "N/A",
+      type: "SALE",
+      quantityChanged: -pItem.quantity,
+      remainingStock,
+      referenceOrderId: order._id,
+    }));
+
+    if (session) {
+      await InventoryLedger.insertMany(ledgerEntries, { session });
+      await session.commitTransaction();
+      session.endSession();
+    } else {
+      await InventoryLedger.insertMany(ledgerEntries);
+    }
+
+    const populatedInvoice = await Order.findById(order._id).populate({
+      path: "clientId",
+      select: "companyName shopName email storeName address phone",
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Order processed and invoice generated successfully",
+      invoiceNumber,
+      invoice: populatedInvoice || order,
+      order: populatedInvoice || order,
+    });
+  } catch (error) {
+    if (session && useTransaction) {
+      try {
+        await session.abortTransaction();
+        session.endSession();
+      } catch (abortErr) {}
+    }
+    console.error("[checkoutOrder] Checkout failed:", error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || "Failed to process checkout",
+    });
+  }
+};
+
 module.exports = {
   createOrder,
+  checkoutOrder,
   getOrders,
   getLatestTransactions,
   getOrderById,

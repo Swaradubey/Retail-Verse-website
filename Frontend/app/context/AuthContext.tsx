@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { authApi } from '../api/auth';
 import { userApi, type ProfileUser, type ImpersonationInfo } from '../api/user';
+import { clearCachedProducts, clearActiveCartDraft } from '../services/posIndexedDB';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -324,6 +325,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('retail_verse_client_domain');
     localStorage.removeItem('retail_verse_client_origin');
     localStorage.removeItem('selectedClientId');
+    // Clear POS offline cache and cart draft to prevent cross-client leaks on shared devices
+    try {
+      clearCachedProducts().catch(() => {});
+      clearActiveCartDraft().catch(() => {});
+    } catch {}
   };
 
   const patchUser = (partial: Partial<User>) => {

@@ -196,6 +196,18 @@ const createInventoryItem = async (req, res) => {
     payload.createdByRole = role;
     payload.clientId = targetClientId || null;
 
+    // Explicitly parse stockLevel as Number (single source of truth for quantity)
+    const rawStock = req.body.stockLevel !== undefined
+      ? req.body.stockLevel
+      : (req.body.stock !== undefined ? req.body.stock : req.body.quantity);
+    const parsedStockLevel = Math.max(0, parseInt(rawStock, 10) || Number(rawStock) || 0);
+    payload.stockLevel = parsedStockLevel;
+    payload.stock = parsedStockLevel;
+    payload.quantity = parsedStockLevel;
+
+    // Ensure new items are saved with isActive: true
+    payload.isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : true;
+
     // Fetch clientName if possible to persist it
     if (targetClientId) {
       const Client = require("../models/Client");
@@ -727,9 +739,159 @@ const deleteInventoryItem = async (req, res) => {
   }
 };
 
+// @desc    Add new product with strict validation, auto SKU/Barcode support, and duplicate checks
+// @route   POST /api/inventory/products
+// @access  Private / Scoped Auth
+const createInventoryProduct = async (req, res) => {
+  try {
+    const {
+      name,
+      sku,
+      barcode,
+      price,
+      stockLevel,
+      image,
+      imageUrl,
+      category,
+      dimensions,
+      description,
+    } = req.body;
+
+    const errors = [];
+
+    // MANDATORY Fields Validation
+    if (!name || typeof name !== "string" || !name.trim()) {
+      errors.push("Product Name is mandatory.");
+    }
+
+    const finalImage = (image || imageUrl || "").trim();
+    if (!finalImage) {
+      errors.push("Product Photo is mandatory. Please upload or capture an image.");
+    }
+
+    if (!barcode || typeof barcode !== "string" || !barcode.trim()) {
+      errors.push("Barcode is mandatory.");
+    }
+
+    if (!sku || typeof sku !== "string" || !sku.trim()) {
+      errors.push("SKU is mandatory.");
+    }
+
+    const numPrice = Number(price);
+    if (price === undefined || price === null || isNaN(numPrice) || numPrice <= 0) {
+      errors.push("Price must be a valid number greater than 0.");
+    }
+
+    const numStock = Number(stockLevel);
+    if (stockLevel === undefined || stockLevel === null || isNaN(numStock) || numStock < 0) {
+      errors.push("Stock Level must be a valid number greater than or equal to 0.");
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: errors.join(" "),
+        errors,
+      });
+    }
+
+    const cleanSku = sku.trim();
+    const cleanBarcode = barcode.trim();
+
+    // Duplicate SKU check
+    const existingSku = await Product.findOne({ sku: cleanSku });
+    if (existingSku) {
+      return res.status(400).json({
+        success: false,
+        message: `A product with SKU "${cleanSku}" already exists.`,
+      });
+    }
+
+    // Duplicate Barcode check
+    const existingBarcode = await Product.findOne({ barcode: cleanBarcode });
+    if (existingBarcode) {
+      return res.status(400).json({
+        success: false,
+        message: `A product with Barcode "${cleanBarcode}" already exists.`,
+      });
+    }
+
+    // Parse dimensions
+    const parsedDimensions = {
+      length: Number(dimensions?.length) || 0,
+      width: Number(dimensions?.width) || 0,
+      height: Number(dimensions?.height) || 0,
+    };
+
+    // Client and ownership resolution
+    let targetClientId = req.body.clientId;
+    if (!targetClientId && req.user) {
+      targetClientId = req.user.clientId || req.user.assignedClient || null;
+    }
+
+    let clientName = "";
+    if (targetClientId) {
+      try {
+        const client = await Client.findById(targetClientId).select("companyName shopName storeName");
+        if (client) {
+          clientName = client.storeName || client.shopName || client.companyName || "";
+        }
+      } catch (clientErr) {
+        // ignore client lookup error
+      }
+    }
+
+    const newProduct = new Product({
+      name: name.trim(),
+      sku: cleanSku,
+      barcode: cleanBarcode,
+      price: numPrice,
+      unitPrice: numPrice,
+      originalPrice: numPrice,
+      stockLevel: numStock,
+      stock: numStock,
+      quantity: numStock,
+      image: finalImage,
+      imageUrl: finalImage,
+      images: [finalImage],
+      category: (category && typeof category === "string" && category.trim()) ? category.trim() : "General",
+      dimensions: parsedDimensions,
+      description: (description && typeof description === "string") ? description.trim() : "",
+      createdBy: req.user?._id || null,
+      merchantId: req.user?._id || null,
+      clientId: targetClientId,
+      clientName: clientName,
+      isActive: true,
+    });
+
+    const savedProduct = await newProduct.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Product saved successfully",
+      product: savedProduct,
+      data: savedProduct,
+    });
+  } catch (error) {
+    console.error("[inventoryController] createInventoryProduct error:", error);
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || "SKU/Barcode";
+      return res.status(400).json({
+        success: false,
+        message: `A product with this ${field} already exists.`,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create product.",
+    });
+  }
+};
+
 module.exports = {
   getInventoryManage,
   createInventoryItem,
+  createInventoryProduct,
   getInventory,
   getInventoryById,
   updateInventoryItem,

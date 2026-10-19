@@ -181,6 +181,77 @@ export const getFlipkartLogs = async (params: { level?: string, action?: string 
   return response.data || response;
 };
 
+// ── One-Click Marketplace Integration & Inventory Sync APIs ──
+
+export const getMarketplaceAuthUrl = async (
+  channel: string,
+  params?: {
+    sellerId?: string;
+    accountName?: string;
+    storeUrl?: string;
+    syncSettings?: { inventory?: boolean; products?: boolean; pricing?: boolean };
+  }
+) => {
+  const query = new URLSearchParams();
+  if (params?.sellerId) query.append('sellerId', params.sellerId);
+  if (params?.accountName) query.append('accountName', params.accountName);
+  if (params?.storeUrl) query.append('storeUrl', params.storeUrl);
+  if (params?.syncSettings) query.append('syncSettings', JSON.stringify(params.syncSettings));
+
+  const qs = query.toString() ? `?${query.toString()}` : '';
+  const response = await api.get(`/api/marketplaces/${channel}/auth-url${qs}`, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const connectMarketplaceDirect = async (
+  channel: string,
+  payload: {
+    accountName?: string;
+    sellerId?: string;
+    storeUrl?: string;
+    credentials?: {
+      clientId?: string;
+      clientSecret?: string;
+      accessToken?: string;
+      refreshToken?: string;
+    };
+    syncSettings?: {
+      inventory?: boolean;
+      products?: boolean;
+      pricing?: boolean;
+    };
+    autoSync?: boolean;
+  }
+) => {
+  const response = await api.post(`/api/marketplaces/${channel}/connect-direct`, payload, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const syncMarketplaceInventory = async (channel: string) => {
+  const response = await api.post(`/api/marketplaces/${channel}/sync-inventory`, {}, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const disconnectMarketplaceChannel = async (channel: string) => {
+  const response = await api.post(`/api/marketplaces/${channel}/disconnect`, {}, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const toggleMarketplaceAutoSync = async (channel: string, autoSync: boolean) => {
+  const response = await api.patch(`/api/marketplaces/${channel}/auto-sync`, { autoSync }, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const getMarketplaceSyncLogs = async (channel: string) => {
+  const response = await api.get(`/api/marketplaces/${channel}/sync-logs`, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
+export const getMarketplaceChannelStatus = async (channel: string) => {
+  const response = await api.get(`/api/marketplaces/${channel}/status`, { pageName: PAGE_NAME });
+  return response.data || response;
+};
+
 // Named object for import { marketplaceApi } pattern
 export const marketplaceApi = {
   getMarketplaces,
@@ -199,6 +270,13 @@ export const marketplaceApi = {
   retryFailedSyncs,
   syncToShopify,
   getConnectionLogs,
+  // One-Click Integration & Inventory Sync
+  getMarketplaceAuthUrl,
+  syncMarketplaceInventory,
+  disconnectMarketplaceChannel,
+  toggleMarketplaceAutoSync,
+  getMarketplaceSyncLogs,
+  getMarketplaceChannelStatus,
   // Flipkart Integration
   connectFlipkart,
   disconnectFlipkart,
@@ -212,5 +290,6 @@ export const marketplaceApi = {
   updateFlipkartProductAttributes,
   getFlipkartLogs
 };
+
 
 

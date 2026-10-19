@@ -61,6 +61,7 @@ const BlogPostDetail = lazy(() => import('./pages/BlogPostDetail').then(m => ({ 
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
 const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
 const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos || m.default })));
+const POSBilling = lazy(() => import('./pages/POSBilling').then(m => ({ default: m.POSBilling || m.default })));
 const DashboardProducts = lazy(() => import('./pages/dashboard/DashboardProducts').then(m => ({ default: m.DashboardProducts })));
 const DashboardOrders = lazy(() => import('./pages/dashboard/DashboardOrders').then(m => ({ default: m.DashboardOrders })));
 const DashboardInvoices = lazy(() => import('./pages/dashboard/DashboardInvoices').then(m => ({ default: m.DashboardInvoices })));
@@ -166,6 +167,22 @@ export const router = createBrowserRouter([
       { path: 'delete-account', element: withSuspense(<DeleteAccount />) },
       {
         path: 'pos',
+        element: withSuspense(
+          <ProtectedRoute>
+            <POSBilling />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'pos-billing',
+        element: withSuspense(
+          <ProtectedRoute>
+            <POSBilling />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: 'pos-classic',
         element: withSuspense(
           <ProtectedRoute>
             <Pos />

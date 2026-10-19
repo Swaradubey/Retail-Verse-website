@@ -16,6 +16,23 @@ function formatProductWithClient(doc) {
     plain.client = null;
   }
   delete plain.clientId;
+
+  // Single source of truth for inventory quantity
+  const availableStock = Number(
+    plain.stockLevel !== undefined && plain.stockLevel !== null && Number(plain.stockLevel) > 0
+      ? plain.stockLevel
+      : plain.stock !== undefined && plain.stock !== null && Number(plain.stock) > 0
+      ? plain.stock
+      : plain.quantity !== undefined && plain.quantity !== null && Number(plain.quantity) > 0
+      ? plain.quantity
+      : plain.stockLevel ?? plain.stock ?? plain.quantity ?? plain.currentStock ?? 0
+  ) || 0;
+
+  plain.stockLevel = availableStock;
+  plain.stock = availableStock;
+  plain.quantity = availableStock;
+  plain.currentStock = availableStock;
+
   return plain;
 }
 

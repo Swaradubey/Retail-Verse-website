@@ -4,6 +4,7 @@ const { check } = require("express-validator");
 const { 
   getInventoryManage,
   createInventoryItem, 
+  createInventoryProduct,
   getInventory, 
   getInventoryById, 
   updateInventoryItem, 
@@ -23,6 +24,14 @@ router.get(
   getInventoryManage
 );
 router.get("/:id", optionalProtect, tenantMiddleware, getInventoryById);
+
+// Add Product route for Retailverse Add Product flow
+router.post(
+  "/products",
+  optionalProtect,
+  tenantMiddleware,
+  createInventoryProduct
+);
 
 // Protected routes for management (create/update/delete/stock)
 router.post(

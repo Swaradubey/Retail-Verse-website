@@ -63,14 +63,35 @@ const checkShopifyConfig = async (req, res, next) => {
 // Apply Shopify configuration protection
 router.use(checkShopifyConfig);
 
+const oneClickMarketplaceController = require('../controllers/oneClickMarketplace.controller');
+const marketplaceTokenMiddleware = require('../middleware/marketplaceTokenMiddleware');
+
 router.get('/', protect, marketplaceController.getMarketplaces);
 router.get('/connections', protect, marketplaceController.getConnections);
+
+// ── One-Click Marketplace Integration Routes (Flipkart, Amazon, Meesho, Swiggy, Myntra) ──
+router.get('/:channel/auth-url', protect, oneClickMarketplaceController.getAuthUrl);
+router.post('/:channel/connect-direct', protect, oneClickMarketplaceController.connectDirect);
+router.get('/:channel/mock-oauth', oneClickMarketplaceController.handleMockOAuthConsent);
+router.post('/:channel/sync-inventory', protect, marketplaceTokenMiddleware, oneClickMarketplaceController.syncInventory);
+router.post('/:channel/disconnect', protect, oneClickMarketplaceController.disconnectMarketplace);
+router.patch('/:channel/auto-sync', protect, oneClickMarketplaceController.toggleAutoSync);
+router.get('/:channel/sync-logs', protect, oneClickMarketplaceController.getSyncLogs);
+router.get('/:channel/status', protect, oneClickMarketplaceController.getChannelStatus);
+
+// Unified Callback Route: routes shopify to legacy handler and other channels to one-click OAuth handler
+router.get('/:marketplace/callback', (req, res, next) => {
+  const channel = (req.params.marketplace || '').toLowerCase();
+  if (channel === 'shopify') {
+    return marketplaceController.handleCallback(req, res, next);
+  }
+  return oneClickMarketplaceController.handleOAuthCallback(req, res, next);
+});
 
 router.post('/shopify/sync', protect, marketplaceController.syncShopify);
 router.get('/shopify/sync/status', protect, marketplaceController.getShopifySyncStatus);
 
 router.get('/:marketplace/connect', protect, marketplaceController.connectMarketplace);
-router.get('/:marketplace/callback', marketplaceController.handleCallback); // Usually open for callback redirection
 router.post('/:marketplace/connect', protect, marketplaceController.connectMarketplace);
 
 router.get('/connections/:connectionId', protect, marketplaceController.getConnection);

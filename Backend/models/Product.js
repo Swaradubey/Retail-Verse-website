@@ -20,8 +20,12 @@ const productSchema = new mongoose.Schema(
     },
     price: {
       type: Number,
-      required: [true, "Price is required"],
+      required: false,
       min: [0, "Price cannot be negative"],
+    },
+    unitPrice: {
+      type: Number,
+      min: [0, "Unit price cannot be negative"],
     },
     originalPrice: {
       type: Number,
@@ -29,11 +33,24 @@ const productSchema = new mongoose.Schema(
     },
     stock: {
       type: Number,
-      required: [true, "Stock level is required"],
       default: 0,
       min: [0, "Stock cannot be negative"],
     },
+    stockLevel: {
+      type: Number,
+      default: 0,
+      min: [0, "Stock level cannot be negative"],
+    },
+    lowStockAlert: {
+      type: Number,
+      default: 5,
+      min: [0, "Low stock alert cannot be negative"],
+    },
     image: {
+      type: String,
+      default: "",
+    },
+    imageUrl: {
       type: String,
       default: "",
     },
@@ -165,8 +182,17 @@ const productSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+// Mongoose virtuals for backward compatibility
+productSchema.virtual("currentStock").get(function () {
+  return this.stockLevel !== undefined && this.stockLevel !== null
+    ? this.stockLevel
+    : (this.stock !== undefined && this.stock !== null ? this.stock : 0);
+});
 
 const computeSaleData = (docLike) => {
   const price = Number(docLike.price);
@@ -190,7 +216,7 @@ const computeSaleData = (docLike) => {
 
 productSchema.pre("save", function (next) {
   this._isNewProduct = this.isNew;
-  this._stockChanged = this.isModified("stock");
+  this._stockChanged = this.isModified("stock") || this.isModified("stockLevel") || this.isModified("quantity");
   this._priceChanged = this.isModified("price");
   this._productUpdated = !this.isNew && (
     this.isModified("name") ||
@@ -217,12 +243,30 @@ productSchema.pre("save", function (next) {
     this.name = this.title;
   }
 
-  // Sync quantity and stock
-  if (this.stock !== undefined && (this.quantity === undefined || this.quantity === 0)) {
-    this.quantity = this.stock;
-  } else if (this.quantity !== undefined && (this.stock === undefined || this.stock === 0)) {
-    this.stock = this.quantity;
+  // Single source of truth for quantity: stockLevel
+  let effectiveStock = 0;
+  if (this.isModified("stockLevel")) {
+    effectiveStock = Number(this.stockLevel) || 0;
+  } else if (this.isModified("stock")) {
+    effectiveStock = Number(this.stock) || 0;
+  } else if (this.isModified("quantity")) {
+    effectiveStock = Number(this.quantity) || 0;
+  } else {
+    // If not explicitly modified, prioritize positive stock from any field
+    if (this.stockLevel !== undefined && this.stockLevel !== null && Number(this.stockLevel) > 0) {
+      effectiveStock = Number(this.stockLevel);
+    } else if (this.stock !== undefined && this.stock !== null && Number(this.stock) > 0) {
+      effectiveStock = Number(this.stock);
+    } else if (this.quantity !== undefined && this.quantity !== null && Number(this.quantity) > 0) {
+      effectiveStock = Number(this.quantity);
+    } else {
+      effectiveStock = Number(this.stockLevel ?? this.stock ?? this.quantity ?? 0) || 0;
+    }
   }
+
+  this.stockLevel = Math.max(0, effectiveStock);
+  this.stock = Math.max(0, effectiveStock);
+  this.quantity = Math.max(0, effectiveStock);
 
   // Sync comparePrice and originalPrice
   if (this.originalPrice !== undefined && (this.comparePrice === undefined || this.comparePrice === 0)) {
@@ -236,6 +280,20 @@ productSchema.pre("save", function (next) {
     this.images = [this.image];
   } else if (this.images && this.images.length > 0 && !this.image) {
     this.image = this.images[0];
+  }
+
+  // Sync unitPrice and price
+  if (this.unitPrice !== undefined && (this.price === undefined || this.price === 0)) {
+    this.price = this.unitPrice;
+  } else if (this.price !== undefined && (this.unitPrice === undefined || this.unitPrice === 0)) {
+    this.unitPrice = this.price;
+  }
+
+  // Sync imageUrl and image
+  if (this.imageUrl && !this.image) {
+    this.image = this.imageUrl;
+  } else if (this.image && !this.imageUrl) {
+    this.imageUrl = this.image;
   }
 
   // Sync merchantId and createdBy
@@ -380,7 +438,7 @@ productSchema.post("findOneAndDelete", async function (doc) {
   }
 });
 
-productSchema.index({ barcode: 1 });
+productSchema.index({ barcode: 1 }, { unique: true, sparse: true });
 productSchema.index({ clientId: 1, barcode: 1 });
 
 module.exports = mongoose.model("Product", productSchema);
