@@ -339,6 +339,16 @@ function buildInvoiceEmailHtml(invoice) {
                   <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase;">Subtotal</td>
                   <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #111111; text-align: right;">${formatCurrency(invoice.subtotal)}</td>
                 </tr>
+                ${Number(invoice.discountAmount) > 0 ? `
+                <tr>
+                  <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #16a34a; text-transform: uppercase;">
+                    Coupon Discount (${invoice.couponCode || 'COUPON'})
+                    <div style="font-size: 9px; font-weight: normal; color: #16a34a; text-transform: none; margin-top: 2px;">
+                      Coupon Applied: ₹500 OFF on purchase of ₹3000+
+                    </div>
+                  </td>
+                  <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #16a34a; text-align: right; vertical-align: top;">-${formatCurrency(invoice.discountAmount)}</td>
+                </tr>` : ''}
                 <tr>
                   <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase;">GST / Tax</td>
                   <td style="padding: 8px 16px; font-size: 12px; font-weight: 700; color: #111111; text-align: right;">${formatCurrency(invoice.tax || 0)}</td>

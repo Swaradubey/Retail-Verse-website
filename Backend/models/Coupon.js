@@ -11,12 +11,12 @@ const couponSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      default: "Flat ₹1,000 off on orders of ₹3,000 or more",
+      default: "Flat ₹500 off on orders of ₹3,000 or more",
     },
     discountAmount: {
       type: Number,
       required: true,
-      default: 1000,
+      default: 500,
       min: [0, "Discount amount cannot be negative"],
     },
     minOrderSubtotal: {

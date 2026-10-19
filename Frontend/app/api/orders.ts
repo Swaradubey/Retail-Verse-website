@@ -59,6 +59,9 @@ export interface OrderPayload {
     upiId?: string;
   };
   totalPrice: number;
+  subtotal?: number;
+  discountAmount?: number;
+  couponCode?: string;
   /** Linked storefront account (POS); omit for walk-in — do not send null. */
   user?: string;
   /** Alias for `user` on POS payloads (same backend resolution). */

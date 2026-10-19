@@ -13,7 +13,7 @@ const isValidObjectId = (id) => {
 };
 
 /**
- * Helper to validate coupon against MongoDB Coupon model or default rule (SAVE1000: min ₹3000 -> ₹1000 off)
+ * Helper to validate coupon against MongoDB Coupon model or default rule (SAVE1000: min ₹3000 -> ₹500 off)
  */
 async function resolveCouponRule(code) {
   const normalized = String(code || "").trim().toUpperCase();
@@ -25,22 +25,27 @@ async function resolveCouponRule(code) {
     if (dbCoupon) {
       return {
         code: dbCoupon.code,
-        discountAmount: Number(dbCoupon.discountAmount) || 1000,
+        discountAmount: Number(dbCoupon.discountAmount) || 500,
         minOrderSubtotal: Number(dbCoupon.minOrderSubtotal) || 3000,
-        description: dbCoupon.description,
+        description: dbCoupon.description || "Flat ₹500 off on cart subtotal of ₹3,000 or more",
       };
     }
   } catch (err) {
     console.warn("[posController] Coupon lookup warning:", err.message);
   }
 
-  // 2. Default standard rule: SAVE1000 gives flat ₹1000 off on min subtotal ₹3000
-  if (normalized === "SAVE1000" || normalized === "FLAT1000") {
+  // 2. Default standard rule: SAVE1000 / FLAT1000 gives flat ₹500 off on min subtotal ₹3000
+  if (
+    normalized === "SAVE1000" ||
+    normalized === "FLAT1000" ||
+    normalized === "SAVE500" ||
+    normalized === "FLAT500"
+  ) {
     return {
       code: normalized,
-      discountAmount: 1000,
+      discountAmount: 500,
       minOrderSubtotal: 3000,
-      description: "Flat ₹1,000 off on cart subtotal of ₹3,000 or more",
+      description: "Flat ₹500 off on cart subtotal of ₹3,000 or more",
     };
   }
 
@@ -84,7 +89,7 @@ const validateCoupon = async (req, res) => {
         minSubtotal: coupon.minOrderSubtotal,
         discount: coupon.discountAmount,
         amountNeeded,
-        message: `Add ₹${amountNeeded.toFixed(2)} more to avail ₹1000 OFF`,
+        message: `Add ₹${amountNeeded.toFixed(2)} more to avail ₹${coupon.discountAmount} OFF`,
       });
     }
 
@@ -263,7 +268,7 @@ const checkoutPOS = async (req, res) => {
         );
       }
 
-      discountAmount = couponRule.discountAmount; // Flat ₹1,000
+      discountAmount = couponRule.discountAmount; // Flat ₹500
       appliedCouponCode = couponRule.code;
     }
 
@@ -594,9 +599,10 @@ const createWhatsAppPaymentLink = async (req, res) => {
     // 2. Server-side Coupon Verification
     let discountAmount = 0;
     let appliedCouponCode = "";
+    let couponRule = null;
 
     if (rawCouponCode) {
-      const couponRule = await resolveCouponRule(rawCouponCode);
+      couponRule = await resolveCouponRule(rawCouponCode);
       if (!couponRule) {
         throw new Error(`Invalid or expired coupon code "${rawCouponCode}".`);
       }
@@ -690,18 +696,16 @@ const createWhatsAppPaymentLink = async (req, res) => {
     }
 
     // Construct WhatsApp message & direct URL
-    const messageLines = [
-      `*Receipt & Payment Link - Retailverse POS*`,
-      `Invoice: *${invoiceNumber}*`,
-      `Customer: *${customerName}*`,
-      `Amount Due: *₹${grandTotal.toFixed(2)}*`,
-      ``,
-      `Please complete your payment securely via the link below:`,
-      `${paymentLinkUrl}`,
-      ``,
-      `Thank you for shopping with us!`,
-    ];
-    const messageText = messageLines.join("\n");
+    const originalBillAmount = (subtotal + totalGst).toFixed(2);
+    const finalAmountStr = grandTotal.toFixed(2);
+
+    let messageText = "";
+    if (discountAmount > 0 && appliedCouponCode) {
+      const minThreshold = couponRule?.minOrderSubtotal || 3000;
+      messageText = `Hello! Your bill amount is ₹${originalBillAmount}. Coupon ${appliedCouponCode} applied (-₹${discountAmount.toFixed(0)} on shopping above ₹${minThreshold}). Total Payable: ₹${finalAmountStr}. Please complete your payment here: ${paymentLinkUrl}`;
+    } else {
+      messageText = `Hello! Your bill amount is ₹${originalBillAmount}. Total Payable: ₹${finalAmountStr}. Please complete your payment here: ${paymentLinkUrl}`;
+    }
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;
 
     // 4. Atomically deduct inventory stock in MongoDB using $inc: { stock: -quantity }

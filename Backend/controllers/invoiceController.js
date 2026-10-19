@@ -155,6 +155,8 @@ const getInvoices = async (req, res) => {
             tax,
             cgst: tax / 2,
             sgst: tax / 2,
+            discountAmount: Number(order.discountAmount) || 0,
+            couponCode: order.couponCode || "",
             totalAmount,
             paymentMethod: order.paymentMethod || "N/A",
             paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),

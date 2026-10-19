@@ -2182,9 +2182,14 @@ const checkoutOrder = async (req, res) => {
     const rawCouponCode = req.body.couponCode ? String(req.body.couponCode).trim().toUpperCase() : "";
 
     if (rawCouponCode) {
-      if (rawCouponCode === "SAVE1000" || rawCouponCode === "FLAT1000") {
+      if (
+        rawCouponCode === "SAVE1000" ||
+        rawCouponCode === "FLAT1000" ||
+        rawCouponCode === "SAVE500" ||
+        rawCouponCode === "FLAT500"
+      ) {
         if (calculatedSubtotal >= 3000) {
-          discountAmount = 1000;
+          discountAmount = 500;
           appliedCouponCode = rawCouponCode;
         } else {
           throw new Error(`Coupon requires minimum subtotal of ₹3,000. Add ₹${(3000 - calculatedSubtotal).toFixed(2)} more to apply.`);
@@ -2194,7 +2199,7 @@ const checkoutOrder = async (req, res) => {
           const Coupon = require("../models/Coupon");
           const dbCoupon = await Coupon.findOne({ code: rawCouponCode, isActive: true });
           if (dbCoupon && calculatedSubtotal >= (dbCoupon.minOrderSubtotal || 3000)) {
-            discountAmount = dbCoupon.discountAmount || 1000;
+            discountAmount = dbCoupon.discountAmount || 500;
             appliedCouponCode = dbCoupon.code;
           } else if (dbCoupon) {
             throw new Error(`Coupon requires minimum subtotal of ₹${dbCoupon.minOrderSubtotal || 3000}.`);

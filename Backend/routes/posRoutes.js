@@ -16,7 +16,7 @@ const { createRazorpayOrder, verifyRazorpayPayment } = require("../controllers/p
 const { sendInvoiceEmail } = require("../controllers/invoiceController");
 
 // @route   POST /api/pos/validate-coupon
-// @desc    Validate coupon rule (e.g. SAVE1000 min ₹3000 -> flat ₹1000 off)
+// @desc    Validate coupon rule (e.g. SAVE1000 min ₹3000 -> flat ₹500 off)
 // @access  Public / POS Cashier
 router.post("/validate-coupon", optionalProtect, tenantMiddleware, validateCoupon);
 

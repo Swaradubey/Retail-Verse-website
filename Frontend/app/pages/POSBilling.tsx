@@ -978,7 +978,7 @@ export function POSBilling() {
     if (appliedCoupon) {
       const minRequired = appliedCoupon.minSubtotal || 3000;
       if (subtotalFixed >= minRequired) {
-        discount = appliedCoupon.discount || 1000;
+        discount = appliedCoupon.discount || 500;
         couponEligible = true;
       } else {
         shortfall = Number((minRequired - subtotalFixed).toFixed(2));
@@ -1034,12 +1034,12 @@ export function POSBilling() {
       if (res.success && res.valid) {
         setAppliedCoupon({
           code: res.couponCode || code,
-          discount: res.discount || 1000,
+          discount: res.discount || 500,
           minSubtotal: res.minSubtotal || 3000,
         });
         setCouponInput('');
         setShowHighValueModal(false);
-        toast.success(res.message || `Coupon applied! ₹${res.discount || 1000} OFF`);
+        toast.success(res.message || `Coupon applied! ₹${res.discount || 500} OFF`);
       } else {
         const msg = res.message || 'Invalid coupon code';
         setCouponError(msg);
@@ -1047,15 +1047,18 @@ export function POSBilling() {
       }
     } catch (err: any) {
       // Offline / fallback calculation if backend error
-      if (calculations.subtotal >= 3000 && (code === 'SAVE1000' || code === 'FLAT1000')) {
+      if (
+        calculations.subtotal >= 3000 &&
+        (code === 'SAVE1000' || code === 'FLAT1000' || code === 'SAVE500' || code === 'FLAT500')
+      ) {
         setAppliedCoupon({
           code,
-          discount: 1000,
+          discount: 500,
           minSubtotal: 3000,
         });
         setCouponInput('');
         setShowHighValueModal(false);
-        toast.success(`Coupon applied! ₹1000 OFF`);
+        toast.success(`Coupon applied! ₹500 OFF`);
       } else {
         const msg = err.message || 'Failed to apply coupon';
         setCouponError(msg);
@@ -1427,11 +1430,17 @@ export function POSBilling() {
           const orderData = res.invoice || res.order || res;
           const invoiceNum = res.invoiceNumber || orderData.invoiceNumber || orderData.orderId;
           const paymentLink = res.paymentLinkUrl || orderData.paymentLinkUrl || orderData.paymentDetails?.paymentLinkUrl;
-          const fullPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+          const originalBill = (calculations.subtotal + calculations.totalGst).toFixed(2);
+          const finalPayable = calculations.grandTotal.toFixed(2);
+          const couponMsg =
+            calculations.discount > 0 && appliedCoupon
+              ? ` Coupon ${appliedCoupon.code} applied (-₹${calculations.discount.toFixed(0)} on shopping above ₹${appliedCoupon.minSubtotal || 3000}).`
+              : '';
+          const defaultWhatsappMsg = `Hello! Your bill amount is ₹${originalBill}.${couponMsg} Total Payable: ₹${finalPayable}. Please complete your payment here: ${paymentLink}`;
           const targetWhatsAppUrl =
             res.whatsappUrl ||
             (paymentLink
-              ? `https://wa.me/${fullPhone}?text=${encodeURIComponent(`Hi Walk-in Customer,\nHere is your payment link for Retailverse Invoice #${invoiceNum}:\n${paymentLink}`)}`
+              ? `https://wa.me/${fullPhone}?text=${encodeURIComponent(defaultWhatsappMsg)}`
               : null);
 
           if (targetWhatsAppUrl) {
@@ -1640,9 +1649,19 @@ export function POSBilling() {
       )
       .join('');
 
+    const discountAmt = Number(order.discountAmount) || 0;
+    const appliedCode = order.couponCode || 'SAVE1000';
     const discountHtml =
-      Number(order.discountAmount) > 0
-        ? `<div class="total-row" style="color: green;"><span>Discount (${order.couponCode || 'Coupon'}):</span><span>-&#8377;${Number(order.discountAmount).toFixed(2)}</span></div>`
+      discountAmt > 0
+        ? `
+        <div class="total-row" style="color: #15803d; font-weight: bold;">
+          <span>Coupon Discount (${appliedCode}):</span>
+          <span>-&#8377;${discountAmt.toFixed(2)}</span>
+        </div>
+        <div style="font-size: 8.5px; color: #15803d; text-align: left; padding: 1px 0 3px 0; font-weight: normal;">
+          Coupon Applied: &#8377;500 OFF on purchase of &#8377;3000+
+        </div>
+        `
         : '';
 
     printWindow.document.write(`
@@ -2363,11 +2382,17 @@ export function POSBilling() {
                 </div>
 
                 {calculations.discount > 0 && (
-                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                    <span className="flex items-center gap-1">
-                      Discount ({appliedCoupon?.code})
-                    </span>
-                    <span>-₹{calculations.discount.toFixed(2)}</span>
+                  <div className="py-1 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                    <div className="flex justify-between text-emerald-700 dark:text-emerald-300 font-bold">
+                      <span className="flex items-center gap-1">
+                        <Tag className="w-3 h-3 text-emerald-600" />
+                        Coupon Discount ({appliedCoupon?.code})
+                      </span>
+                      <span>-₹{calculations.discount.toFixed(2)}</span>
+                    </div>
+                    <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      Coupon Applied: ₹500 OFF on purchase of ₹3000+
+                    </div>
                   </div>
                 )}
 
@@ -2500,7 +2525,7 @@ export function POSBilling() {
                   type="button"
                   onClick={() => {
                     const fullPhone = pendingWhatsAppPayment.whatsappPhone.length === 10 ? `91${pendingWhatsAppPayment.whatsappPhone}` : pendingWhatsAppPayment.whatsappPhone;
-                    const url = pendingWhatsAppPayment.whatsappUrl || `https://wa.me/${fullPhone}?text=${encodeURIComponent(`Payment link: ${pendingWhatsAppPayment.paymentLinkUrl}`)}`;
+                    const url = pendingWhatsAppPayment.whatsappUrl || `https://wa.me/${fullPhone}?text=${encodeURIComponent(`Hello! Total Payable: ₹${(pendingWhatsAppPayment.grandTotal || 0).toFixed(2)}. Please complete your payment here: ${pendingWhatsAppPayment.paymentLinkUrl}`)}`;
                     window.open(url, '_blank', 'noopener,noreferrer');
                   }}
                   className="flex-1 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition"
@@ -2677,9 +2702,17 @@ export function POSBilling() {
                 <span className="font-semibold">₹{Number(completedOrder.subtotal || 0).toFixed(2)}</span>
               </div>
               {Number(completedOrder.discountAmount) > 0 && (
-                <div className="flex justify-between text-emerald-600 font-semibold">
-                  <span>Discount ({completedOrder.couponCode || 'Coupon'}):</span>
-                  <span>-₹{Number(completedOrder.discountAmount).toFixed(2)}</span>
+                <div className="py-1 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                  <div className="flex justify-between text-emerald-700 dark:text-emerald-300 font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <Tag className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      Coupon Code: {completedOrder.couponCode || 'SAVE1000'}
+                    </span>
+                    <span>-₹{Number(completedOrder.discountAmount).toFixed(2)}</span>
+                  </div>
+                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium pt-0.5">
+                    Coupon Applied: ₹500 OFF on purchase of ₹3000+
+                  </div>
                 </div>
               )}
               <div className="flex justify-between">
@@ -2736,9 +2769,16 @@ export function POSBilling() {
                         type="button"
                         onClick={() => {
                           const targetPhone = completedOrder.whatsappPhone || completedOrder.paymentDetails?.whatsappPhone || '';
+                          const cleanTargetPhone = targetPhone.replace(/\D/g, '');
+                          const fullTargetPhone = cleanTargetPhone.length === 10 ? `91${cleanTargetPhone}` : cleanTargetPhone;
                           const pLink = completedOrder.paymentLinkUrl || completedOrder.paymentDetails?.paymentLinkUrl || '';
-                          const text = `Hi, here is your payment link for Invoice #${completedOrder.invoiceNumber || completedOrder.orderId}: ${pLink}`;
-                          const url = completedOrder.whatsappUrl || `https://wa.me/${targetPhone}?text=${encodeURIComponent(text)}`;
+                          const origBill = (Number(completedOrder.subtotal || 0) + Number(completedOrder.totalGst || completedOrder.taxPrice || 0)).toFixed(2);
+                          const finalPay = Number(completedOrder.grandTotal || completedOrder.totalPrice || 0).toFixed(2);
+                          const couponText = Number(completedOrder.discountAmount) > 0
+                            ? ` Coupon ${completedOrder.couponCode || 'SAVE1000'} applied (-₹${Number(completedOrder.discountAmount).toFixed(0)} on shopping above ₹3000).`
+                            : '';
+                          const text = `Hello! Your bill amount is ₹${origBill}.${couponText} Total Payable: ₹${finalPay}. Please complete your payment here: ${pLink}`;
+                          const url = completedOrder.whatsappUrl || `https://wa.me/${fullTargetPhone}?text=${encodeURIComponent(text)}`;
                           window.open(url, '_blank');
                         }}
                         className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded text-[10px] font-bold flex items-center gap-1 transition"
@@ -2888,7 +2928,7 @@ export function POSBilling() {
                 Congratulations!
               </h3>
               <p className="text-sm text-zinc-600 dark:text-zinc-300 leading-snug font-medium">
-                You are eligible for <span className="font-bold text-emerald-600 dark:text-emerald-400">₹1000 OFF</span>. Apply coupon code now.
+                You are eligible for <span className="font-bold text-emerald-600 dark:text-emerald-400">₹500 OFF</span>. Apply coupon code now.
               </p>
             </div>
 
@@ -2899,7 +2939,7 @@ export function POSBilling() {
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-emerald-600 font-medium">Eligible Discount</p>
-                <p className="font-bold text-emerald-600">-₹1000.00</p>
+                <p className="font-bold text-emerald-600">-₹500.00</p>
               </div>
             </div>
 

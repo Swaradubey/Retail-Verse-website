@@ -236,6 +236,22 @@ export function InvoiceDetail() {
       doc.text("Subtotal:", pageWidth - 70, finalY);
       doc.text(formatINRForPDF(subtotal), pageWidth - 14, finalY, { align: "right" });
 
+      const couponDiscount = Number((invoice as any)?.discountAmount || (invoice as any)?.discount || 0);
+      const appliedCouponCode = (invoice as any)?.couponCode || '';
+      if (couponDiscount > 0) {
+        finalY += 6;
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(22, 163, 74);
+        doc.text(`Coupon (${appliedCouponCode || 'COUPON'}):`, pageWidth - 70, finalY);
+        doc.text(`-${formatINRForPDF(couponDiscount)}`, pageWidth - 14, finalY, { align: "right" });
+        finalY += 4;
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.text("Coupon Applied: Rs. 500 OFF on purchase of Rs. 3000+", pageWidth - 70, finalY);
+        doc.setFontSize(10);
+        doc.setTextColor(0, 0, 0);
+      }
+
       if (calcTotalTax > 0) {
         finalY += 6;
         doc.setFont("helvetica", "bold");
