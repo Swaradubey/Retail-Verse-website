@@ -65,19 +65,23 @@ function generateOAuthUrl(channel, clientId, redirectUri, backendBaseUrl, option
   let liveOAuthUrl = '';
   switch (normChannel) {
     case 'flipkart':
-      liveOAuthUrl = `https://api.flipkart.net/oauth-service/oauth/authorize?client_id=${devCreds.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=Seller_Api&state=${stateString}`;
+      // Official Flipkart Seller Hub Portal
+      liveOAuthUrl = 'https://seller.flipkart.com/';
       break;
     case 'amazon':
-      liveOAuthUrl = `https://sellercentral.amazon.com/apps/authorize/consent?application_id=${devCreds.appId}&state=${stateString}&version=beta&redirect_uri=${encodeURIComponent(redirectUri)}`;
+      // Official Amazon Seller Central Portal
+      liveOAuthUrl = 'https://sellercentral.amazon.in/';
       break;
     case 'meesho':
-      liveOAuthUrl = `https://supplier.meesho.com/oauth/authorize?client_id=${devCreds.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=catalog_sync,inventory_write&state=${stateString}`;
+      // Official Meesho Supplier Panel
+      liveOAuthUrl = 'https://supplier.meesho.com/';
       break;
     case 'swiggy':
       liveOAuthUrl = `https://partner.swiggy.com/oauth/authorize?client_id=${devCreds.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=store_inventory,catalog_write&state=${stateString}`;
       break;
     case 'myntra':
-      liveOAuthUrl = `https://partners.myntra.com/oauth/authorize?client_id=${devCreds.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=style_catalog,stock_update&state=${stateString}`;
+      // Official Myntra Partner / Seller Portal
+      liveOAuthUrl = 'https://partners.myntrainfo.com/';
       break;
     default:
       liveOAuthUrl = mockConsentUrl;

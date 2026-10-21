@@ -10,7 +10,8 @@ import {
   RefreshCw,
   Box,
   Tag,
-  Layers
+  Layers,
+  AlertCircle
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
@@ -20,6 +21,7 @@ import { Switch } from '../ui/switch';
 import { toast } from 'sonner';
 import { marketplaceLogoMap, MarketplaceItem } from './MarketplaceCard';
 import * as marketplaceApi from '../../services/marketplaceApi';
+import api from '../../api/apiService';
 
 interface ConnectMarketplaceModalProps {
   isOpen: boolean;
@@ -44,6 +46,7 @@ export function ConnectMarketplaceModal({
   // Mode: oauth vs direct credentials
   const [connectMode, setConnectMode] = useState<'oauth' | 'direct'>('oauth');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Form Fields
   const [accountName, setAccountName] = useState('');
@@ -72,6 +75,7 @@ export function ConnectMarketplaceModal({
       setSyncProducts(true);
       setSyncPricing(true);
       setAutoSync(true);
+      setErrorMessage(null);
     }
   }, [channel, displayName]);
 
@@ -117,6 +121,14 @@ export function ConnectMarketplaceModal({
   const handleSubmit = async () => {
     try {
       setLoading(true);
+      setErrorMessage(null);
+
+      const preferences = {
+        inventory: syncInventory,
+        products: syncProducts,
+        pricing: syncPricing,
+        autoSync: autoSync
+      };
 
       const syncSettings = {
         inventory: syncInventory,
@@ -124,12 +136,17 @@ export function ConnectMarketplaceModal({
         pricing: syncPricing
       };
 
+      const storeLabel = accountName.trim() || `${displayName} Store`;
+      const merchantToken = sellerId.trim();
+
       // ── MODE 1: OAuth Flow ──
       if (connectMode === 'oauth') {
         if (channel === 'shopify') {
           const shopInput = (sellerId || storeUrl).trim();
           if (!shopInput) {
-            toast.error('Please enter your Shopify store domain (e.g., store-name.myshopify.com).');
+            const err = 'Please enter your Shopify store domain (e.g., store-name.myshopify.com).';
+            setErrorMessage(err);
+            toast.error(err);
             setLoading(false);
             return;
           }
@@ -138,25 +155,45 @@ export function ConnectMarketplaceModal({
           const apiBase = rawBase.endsWith('/api') ? rawBase : `${rawBase}/api`;
           const tokenQuery = token ? `&token=${token}` : '';
           const connectUrl = `${apiBase}/marketplaces/shopify/connect?shop=${encodeURIComponent(shopInput)}${tokenQuery}`;
-          window.location.assign(connectUrl);
+          window.location.href = connectUrl;
           return;
         }
 
-        // Channels other than shopify: generate dynamic auth URL with client details
-        const res = await marketplaceApi.getMarketplaceAuthUrl(channel, {
-          sellerId: sellerId.trim(),
-          accountName: accountName.trim() || `${displayName} Store`,
-          storeUrl: storeUrl.trim(),
-          syncSettings: syncSettings
-        });
+        // Multi-marketplace Dynamic OAuth Flow (Amazon, Flipkart, Meesho, Swiggy, Myntra, etc.)
+        const response: any = await api.post(
+          `/api/marketplaces/${channel}/auth-url`,
+          {
+            channel,
+            marketplace: channel,
+            storeLabel,
+            accountName: storeLabel,
+            sellerId: merchantToken,
+            supplierId: merchantToken,
+            partnerId: merchantToken,
+            merchantToken,
+            storeUrl: storeUrl.trim(),
+            preferences,
+            syncSettings,
+            syncPreferences: preferences
+          },
+          { pageName: 'Connect Marketplace Modal' }
+        );
 
-        if (res && res.authUrl) {
-          toast.info(`Redirecting to ${displayName} authorization screen...`);
-          window.location.assign(res.authUrl);
+        const targetUrl = response?.redirectUrl || response?.data?.redirectUrl || response?.authUrl || response?.data?.authUrl;
+
+        if (response?.success && targetUrl) {
+          toast.info(`Redirecting to official ${displayName} portal...`);
+          window.location.href = targetUrl;
           return;
         }
 
-        throw new Error(res?.message || `Failed to initiate ${displayName} authorization.`);
+        if (!response?.success) {
+          throw new Error(response?.message || `Failed to initiate ${displayName} authorization.`);
+        }
+
+        if (!targetUrl) {
+          throw new Error(`Failed to retrieve authorization URL for ${displayName}. Please check your credentials.`);
+        }
       }
 
       // ── MODE 2: Direct API Access / Self-Serve Credentials ──
@@ -165,12 +202,14 @@ export function ConnectMarketplaceModal({
           const shopDomain = (sellerId || storeUrl).trim();
           const token = accessToken.trim();
           if (!shopDomain || !token) {
-            toast.error('Please enter both Store Domain and Admin API Access Token.');
+            const err = 'Please enter both Store Domain and Admin API Access Token.';
+            setErrorMessage(err);
+            toast.error(err);
             setLoading(false);
             return;
           }
           const res = await marketplaceApi.connectMarketplaceWithCredentials('shopify', {
-            storeName: accountName.trim() || `${displayName} Store`,
+            storeName: storeLabel,
             storeDomain: shopDomain,
             accessToken: token
           });
@@ -186,8 +225,8 @@ export function ConnectMarketplaceModal({
 
         // Direct connect for Flipkart, Amazon, Meesho, Swiggy, Myntra
         const res = await marketplaceApi.connectMarketplaceDirect(channel, {
-          accountName: accountName.trim() || `${displayName} Store`,
-          sellerId: sellerId.trim() || `seller_${Date.now()}`,
+          accountName: storeLabel,
+          sellerId: merchantToken || `seller_${Date.now()}`,
           storeUrl: storeUrl.trim(),
           credentials: {
             clientId: apiKey.trim(),
@@ -207,7 +246,9 @@ export function ConnectMarketplaceModal({
         }
       }
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.message || 'Failed to connect marketplace.';
+      console.error(`[ConnectMarketplaceModal] Authorization Error:`, err);
+      const msg = err.response?.data?.message || err.data?.message || err.message || 'Failed to connect marketplace.';
+      setErrorMessage(msg);
       toast.error(msg);
     } finally {
       setLoading(false);
@@ -281,6 +322,14 @@ export function ConnectMarketplaceModal({
               </span>
             )}
           </div>
+
+          {/* Inline Error Message */}
+          {errorMessage && (
+            <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-xs text-red-600 dark:text-red-400 flex items-start gap-2 shadow-sm animate-in fade-in-50">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+              <span className="leading-snug">{errorMessage}</span>
+            </div>
+          )}
 
           {/* Store / Account Label */}
           <div className="space-y-1.5">
@@ -401,6 +450,7 @@ export function ConnectMarketplaceModal({
             Cancel
           </Button>
           <Button
+            id="btn-authorize-marketplace"
             className="rounded-xl text-xs h-9 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 font-semibold gap-1.5"
             onClick={handleSubmit}
             disabled={loading}
@@ -412,7 +462,11 @@ export function ConnectMarketplaceModal({
             ) : (
               <Link2 className="w-3.5 h-3.5" />
             )}
-            {connectMode === 'oauth' ? `Authorize on ${displayName}` : 'Save & Connect Store'}
+            {loading
+              ? 'Authorizing...'
+              : connectMode === 'oauth'
+              ? `Authorize on ${displayName}`
+              : 'Save & Connect Store'}
           </Button>
         </DialogFooter>
       </DialogContent>

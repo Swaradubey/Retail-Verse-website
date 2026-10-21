@@ -70,7 +70,12 @@ router.get('/', protect, marketplaceController.getMarketplaces);
 router.get('/connections', protect, marketplaceController.getConnections);
 
 // ── One-Click Marketplace Integration Routes (Flipkart, Amazon, Meesho, Swiggy, Myntra) ──
+router.post('/auth-url', protect, oneClickMarketplaceController.getAuthUrl);
+router.post('/:channel/auth-url', protect, oneClickMarketplaceController.getAuthUrl);
 router.get('/:channel/auth-url', protect, oneClickMarketplaceController.getAuthUrl);
+router.post('/authorize', protect, oneClickMarketplaceController.getAuthUrl);
+router.post('/:channel/authorize', protect, oneClickMarketplaceController.getAuthUrl);
+router.get('/:channel/authorize', protect, oneClickMarketplaceController.getAuthUrl);
 router.post('/:channel/connect-direct', protect, oneClickMarketplaceController.connectDirect);
 router.get('/:channel/mock-oauth', oneClickMarketplaceController.handleMockOAuthConsent);
 router.post('/:channel/sync-inventory', protect, marketplaceTokenMiddleware, oneClickMarketplaceController.syncInventory);

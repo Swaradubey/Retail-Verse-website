@@ -32,13 +32,18 @@ import {
   Wifi,
   WifiOff,
   FolderOpen,
+  User,
+  Phone,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import api from '../api/apiService';
 import { useAuth } from '../context/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { formatINR } from '../utils/formatINR';
-import { getProductImageUrl, PRODUCT_PLACEHOLDER } from '../utils/imageUrl';
+import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../utils/imageUrl';
 import {
   HeldOrder,
   OfflineOrder,
@@ -142,6 +147,8 @@ export interface POSCartItem {
   gstRate: number;
   stockLevel: number;
   imageUrl?: string;
+  image?: string;
+  product_image?: string;
   category?: string;
 }
 
@@ -180,6 +187,13 @@ export function POSBilling() {
   const [upiError, setUpiError] = useState<string | null>(null);
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
+
+  // Customer Details Form State (Optional for Walk-in, Bound to Checkout & Orders)
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerPhoneError, setCustomerPhoneError] = useState<string | null>(null);
+  const [isCustomerFormExpanded, setIsCustomerFormExpanded] = useState(true);
 
   // WhatsApp Pending Payment state (holds order while awaiting customer payment)
   const [pendingWhatsAppPayment, setPendingWhatsAppPayment] = useState<{
@@ -511,7 +525,11 @@ export function POSBilling() {
     }
 
     const timestampSlice = Date.now().toString().slice(-4);
-    const defaultRef = `HOLD-#${timestampSlice}`;
+    const effectiveCustomerName = customerName.trim() || 'Walk-in Customer';
+    const effectiveCustomerPhone = (customerPhone.trim() || whatsappPhone.trim() || '').replace(/\D/g, '');
+    const effectiveCustomerAddress = customerAddress.trim();
+
+    const defaultRef = customerName.trim() ? `${customerName.trim()} (#${timestampSlice})` : `HOLD-#${timestampSlice}`;
     const reference = holdReferenceInput.trim() || defaultRef;
 
     const now = new Date();
@@ -537,7 +555,9 @@ export function POSBilling() {
       grandTotal: calculations.grandTotal,
       totalAmount: calculations.grandTotal,
       appliedCoupon: appliedCoupon ? { ...appliedCoupon } : null,
-      customerName: 'Walk-in Customer',
+      customerName: effectiveCustomerName,
+      customerPhone: effectiveCustomerPhone || undefined,
+      ...(effectiveCustomerAddress ? { customerAddress: effectiveCustomerAddress } : {}),
       status: 'HELD',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -598,6 +618,18 @@ export function POSBilling() {
       setAppliedCoupon(heldOrder.appliedCoupon);
     } else {
       setAppliedCoupon(null);
+    }
+
+    // Restore customer details if present in held order
+    if (heldOrder.customerName && heldOrder.customerName !== 'Walk-in Customer') {
+      setCustomerName(heldOrder.customerName);
+    }
+    if (heldOrder.customerPhone) {
+      setCustomerPhone(heldOrder.customerPhone);
+      setWhatsappPhone(heldOrder.customerPhone);
+    }
+    if ((heldOrder as any).customerAddress) {
+      setCustomerAddress((heldOrder as any).customerAddress);
     }
 
     // Remove from IndexedDB store 'held_orders'
@@ -770,9 +802,18 @@ export function POSBilling() {
           return prevCart;
         }
         const updated = [...prevCart];
+        const existingImage =
+          updated[existingIndex].imageUrl ||
+          getProductImageUrl(product) ||
+          product.imageUrl ||
+          product.image ||
+          product.product_image;
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: currentQty + 1,
+          imageUrl: existingImage,
+          image: existingImage,
+          product_image: existingImage,
         };
         playScanSound('success');
         toast.success(`Incremented "${product.name}" (Qty: ${currentQty + 1})`);
@@ -782,6 +823,22 @@ export function POSBilling() {
         playScanSound('success');
         toast.success(`Added "${product.name}" to cart`);
         success = true;
+
+        const resolvedImage =
+          getProductImageUrl(product) ||
+          (product.product_image ? getFullImageUrl(product.product_image) : '') ||
+          product.imageUrl ||
+          product.image ||
+          product.product_image ||
+          product.productImage ||
+          product.thumbnail ||
+          (Array.isArray(product.images) && product.images.length > 0
+            ? typeof product.images[0] === 'string'
+              ? product.images[0]
+              : product.images[0]?.url
+            : '') ||
+          '';
+
         return [
           ...prevCart,
           {
@@ -792,7 +849,9 @@ export function POSBilling() {
             quantity: 1,
             gstRate,
             stockLevel: availableStock,
-            imageUrl: product.imageUrl || product.image,
+            imageUrl: resolvedImage,
+            image: resolvedImage,
+            product_image: resolvedImage,
             category: product.category,
           },
         ];
@@ -947,6 +1006,14 @@ export function POSBilling() {
     setCart([]);
     setAppliedCoupon(null);
     setCouponError(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
+    setCustomerPhoneError(null);
+    setUpiId('');
+    setWhatsappPhone('');
+    setUpiError(null);
+    setWhatsappError(null);
     clearActiveCartDraft(currentClientId);
     toast.info('Cart cleared');
   };
@@ -1154,6 +1221,18 @@ export function POSBilling() {
       return;
     }
 
+    const effectiveCustomerName = customerName.trim() || 'Walk-in Customer';
+    const effectiveCustomerPhone = (customerPhone.trim() || whatsappPhone.trim() || '').replace(/\D/g, '');
+    const effectiveCustomerAddress = customerAddress.trim();
+
+    // Optional phone validation: if cashier entered a mobile number, ensure 10 digits
+    if (effectiveCustomerPhone && effectiveCustomerPhone.length !== 10) {
+      setCustomerPhoneError('Please enter a valid 10-digit mobile number');
+      toast.error('Customer mobile number must be 10 digits');
+      return;
+    }
+    setCustomerPhoneError(null);
+
     // ── Offline Network Validation & Cash Offline Billing ──────────────────
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       if (paymentMethod !== 'CASH') {
@@ -1196,7 +1275,15 @@ export function POSBilling() {
           paymentStatus: 'PAID',
           status: 'COMPLETED',
           syncStatus: 'PENDING_SYNC',
-          customerName: 'Walk-in Customer',
+          customerName: effectiveCustomerName,
+          customerPhone: effectiveCustomerPhone || undefined,
+          ...(effectiveCustomerAddress ? { customerAddress: effectiveCustomerAddress, address: effectiveCustomerAddress } : {}),
+          shippingAddress: {
+            fullName: effectiveCustomerName,
+            phone: effectiveCustomerPhone,
+            email: '',
+            address: effectiveCustomerAddress,
+          },
           createdAt: new Date().toISOString(),
           paidAt: new Date().toISOString(),
           isSynced: false,
@@ -1217,13 +1304,20 @@ export function POSBilling() {
           ...offlineOrderDoc,
           orderNumber: offlineInvoiceNum,
           isPaid: true,
+          customerName: effectiveCustomerName,
+          customerPhone: effectiveCustomerPhone,
+          customerAddress: effectiveCustomerAddress,
         });
 
-        // 3. Clear active cart & active draft
+        // 3. Clear active cart & active draft & customer form
         setCart([]);
         setAppliedCoupon(null);
         setCouponInput('');
         setCouponError(null);
+        setCustomerName('');
+        setCustomerPhone('');
+        setCustomerAddress('');
+        setCustomerPhoneError(null);
         await clearActiveCartDraft(currentClientId);
 
         // 4. Update pending sync counter
@@ -1249,8 +1343,6 @@ export function POSBilling() {
           throw new Error('Failed to load Razorpay SDK. Please check your internet connection.');
         }
 
-        // 1. Trigger backend endpoint (/api/payment/razorpay-order or existing route) to create a Razorpay order:
-        // Amount: Math.round(grandTotal * 100) (in paise), Currency: 'INR'
         const grandTotal = calculations.grandTotal;
         const amountInPaise = Math.round(grandTotal * 100);
 
@@ -1287,9 +1379,9 @@ export function POSBilling() {
           description: `POS Bill #${Date.now().toString().slice(-6)}`,
           order_id: orderId,
           prefill: {
-            name: 'Walk-in Customer',
+            name: effectiveCustomerName,
             email: 'pos@retailverse.com',
-            contact: '9999999999',
+            contact: effectiveCustomerPhone || '9999999999',
           },
           theme: {
             color: '#7c3aed',
@@ -1303,7 +1395,6 @@ export function POSBilling() {
           handler: async (response: any) => {
             const verifyToastId = toast.loading('Verifying payment signature...');
             try {
-              // 3. Send razorpay_order_id, razorpay_payment_id, and razorpay_signature to verification route
               let verifyRes: any = null;
               try {
                 verifyRes = await api.post('/payment/verify-payment', {
@@ -1329,7 +1420,16 @@ export function POSBilling() {
               const payload = {
                 paymentMethod: 'RAZORPAY',
                 paymentStatus: 'PAID',
-                customerName: 'Walk-in Customer',
+                customerName: effectiveCustomerName,
+                customerPhone: effectiveCustomerPhone || undefined,
+                customerAddress: effectiveCustomerAddress || undefined,
+                address: effectiveCustomerAddress || undefined,
+                shippingAddress: {
+                  fullName: effectiveCustomerName,
+                  phone: effectiveCustomerPhone,
+                  email: '',
+                  address: effectiveCustomerAddress,
+                },
                 couponCode: calculations.couponEligible && appliedCoupon ? appliedCoupon.code : undefined,
                 razorpayOrderId: response.razorpay_order_id,
                 razorpayPaymentId: response.razorpay_payment_id,
@@ -1353,11 +1453,20 @@ export function POSBilling() {
                   `Payment Complete! Invoice: ${res.invoiceNumber || orderData.invoiceNumber || orderData.orderId}`,
                   { id: verifyToastId }
                 );
-                setCompletedOrder(orderData);
+                setCompletedOrder({
+                  ...orderData,
+                  customerName: orderData.customerName || effectiveCustomerName,
+                  customerPhone: orderData.customerPhone || effectiveCustomerPhone,
+                  customerAddress: orderData.customerAddress || effectiveCustomerAddress,
+                });
                 setCart([]);
                 setAppliedCoupon(null);
                 setCouponInput('');
                 setCouponError(null);
+                setCustomerName('');
+                setCustomerPhone('');
+                setCustomerAddress('');
+                setCustomerPhoneError(null);
                 fetchProducts(true);
               } else {
                 throw new Error(res.message || 'Checkout failed');
@@ -1390,13 +1499,17 @@ export function POSBilling() {
 
     // ── WhatsApp Payment Execution (Razorpay Payment Link) ───────────────────
     if (paymentMethod === 'WHATSAPP') {
-      const cleanPhone = whatsappPhone.replace(/\D/g, '');
-      if (!whatsappPhone.trim() || cleanPhone.length < 10) {
+      const cleanPhone = (whatsappPhone || customerPhone).replace(/\D/g, '');
+      if (!cleanPhone || cleanPhone.length < 10) {
         setWhatsappError('Please enter a valid 10-digit mobile number for WhatsApp');
+        setCustomerPhoneError('Valid 10-digit mobile number required for WhatsApp payment');
         toast.error('Valid 10-digit mobile number required for WhatsApp payment');
         return;
       }
       setWhatsappError(null);
+      setCustomerPhoneError(null);
+
+      const fullPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
       setIsProcessingCheckout(true);
       const toastId = toast.loading('Generating Razorpay Payment Link for WhatsApp...');
@@ -1405,7 +1518,16 @@ export function POSBilling() {
         const payload = {
           paymentMethod: 'WHATSAPP',
           paymentStatus: 'PENDING',
-          customerName: 'Walk-in Customer',
+          customerName: effectiveCustomerName,
+          customerPhone: cleanPhone,
+          customerAddress: effectiveCustomerAddress || undefined,
+          address: effectiveCustomerAddress || undefined,
+          shippingAddress: {
+            fullName: effectiveCustomerName,
+            phone: cleanPhone,
+            email: '',
+            address: effectiveCustomerAddress,
+          },
           whatsappPhone: cleanPhone,
           phone: cleanPhone,
           couponCode: calculations.couponEligible && appliedCoupon ? appliedCoupon.code : undefined,
@@ -1436,7 +1558,7 @@ export function POSBilling() {
             calculations.discount > 0 && appliedCoupon
               ? ` Coupon ${appliedCoupon.code} applied (-₹${calculations.discount.toFixed(0)} on shopping above ₹${appliedCoupon.minSubtotal || 3000}).`
               : '';
-          const defaultWhatsappMsg = `Hello! Your bill amount is ₹${originalBill}.${couponMsg} Total Payable: ₹${finalPayable}. Please complete your payment here: ${paymentLink}`;
+          const defaultWhatsappMsg = `Hello ${effectiveCustomerName !== 'Walk-in Customer' ? effectiveCustomerName : ''}! Your bill amount is ₹${originalBill}.${couponMsg} Total Payable: ₹${finalPayable}. Please complete your payment here: ${paymentLink}`;
           const targetWhatsAppUrl =
             res.whatsappUrl ||
             (paymentLink
@@ -1465,7 +1587,7 @@ export function POSBilling() {
             paymentLinkUrl: paymentLink,
             whatsappUrl: targetWhatsAppUrl,
             whatsappPhone: cleanPhone,
-            customerName: 'Walk-in Customer',
+            customerName: effectiveCustomerName,
             orderDoc: orderData,
           });
 
@@ -1474,6 +1596,10 @@ export function POSBilling() {
           setAppliedCoupon(null);
           setCouponInput('');
           setCouponError(null);
+          setCustomerName('');
+          setCustomerPhone('');
+          setCustomerAddress('');
+          setCustomerPhoneError(null);
           fetchProducts(true);
         } else {
           throw new Error(res.message || 'Failed to generate WhatsApp payment link');
@@ -1512,7 +1638,16 @@ export function POSBilling() {
       const payload = {
         paymentMethod,
         paymentStatus: 'PAID',
-        customerName: 'Walk-in Customer',
+        customerName: effectiveCustomerName,
+        customerPhone: effectiveCustomerPhone || undefined,
+        customerAddress: effectiveCustomerAddress || undefined,
+        address: effectiveCustomerAddress || undefined,
+        shippingAddress: {
+          fullName: effectiveCustomerName,
+          phone: effectiveCustomerPhone,
+          email: '',
+          address: effectiveCustomerAddress,
+        },
         upiId: paymentMethod === 'UPI' ? upiId.trim() : undefined,
         paymentDetails: paymentMethod === 'UPI' ? { upiId: upiId.trim() } : undefined,
         couponCode: calculations.couponEligible && appliedCoupon ? appliedCoupon.code : undefined,
@@ -1535,11 +1670,20 @@ export function POSBilling() {
           `Payment Complete! Invoice: ${res.invoiceNumber || orderData.invoiceNumber || orderData.orderId}`,
           { id: toastId }
         );
-        setCompletedOrder(orderData);
+        setCompletedOrder({
+          ...orderData,
+          customerName: orderData.customerName || effectiveCustomerName,
+          customerPhone: orderData.customerPhone || effectiveCustomerPhone,
+          customerAddress: orderData.customerAddress || effectiveCustomerAddress,
+        });
         setCart([]);
         setAppliedCoupon(null);
         setCouponInput('');
         setCouponError(null);
+        setCustomerName('');
+        setCustomerPhone('');
+        setCustomerAddress('');
+        setCustomerPhoneError(null);
         setUpiId('');
         setWhatsappPhone('');
         setUpiError(null);
@@ -1696,6 +1840,9 @@ export function POSBilling() {
             <div class="meta">Invoice: ${order.invoiceNumber || order.orderId}</div>
             <div class="meta">Date: ${new Date(order.createdAt || Date.now()).toLocaleString()}</div>
             <div class="meta">Payment: ${order.paymentMethod || 'CASH'} (${order.paymentMethod === 'WHATSAPP' && order.paymentStatus !== 'PAID' ? 'LINK SENT' : 'PAID'})</div>
+            ${order.customerName && order.customerName !== 'Walk-in Customer' ? `<div class="meta">Customer: ${order.customerName}</div>` : ''}
+            ${order.customerPhone ? `<div class="meta">Phone: ${order.customerPhone}</div>` : ''}
+            ${order.customerAddress ? `<div class="meta">Address: ${order.customerAddress}</div>` : ''}
             ${order.upiId || order.paymentDetails?.upiId ? `<div class="meta">UPI ID: ${order.upiId || order.paymentDetails?.upiId}</div>` : ''}
             ${order.whatsappPhone || order.paymentDetails?.whatsappPhone ? `<div class="meta">WhatsApp: +${order.whatsappPhone || order.paymentDetails?.whatsappPhone}</div>` : ''}
             ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl ? `<div class="meta" style="word-break: break-all;">Link: ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl}</div>` : ''}
@@ -2044,14 +2191,20 @@ export function POSBilling() {
                       className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 hover:border-violet-200 dark:hover:border-violet-800/60 transition flex items-center gap-3"
                     >
                       {/* Product Thumbnail */}
-                      <div className="w-12 h-12 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200/80 dark:border-zinc-700 overflow-hidden shrink-0 flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 overflow-hidden shrink-0 flex items-center justify-center">
                         <img
-                          src={item.imageUrl || PRODUCT_PLACEHOLDER}
+                          src={
+                            getProductImageUrl(item) ||
+                            (item.imageUrl ? getFullImageUrl(item.imageUrl) : '') ||
+                            (item.image ? getFullImageUrl(item.image) : '') ||
+                            ((item as any).product_image ? getFullImageUrl((item as any).product_image) : '') ||
+                            PRODUCT_PLACEHOLDER
+                          }
                           alt={item.name}
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
                           }}
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover rounded-lg"
                         />
                       </div>
 
@@ -2192,6 +2345,101 @@ export function POSBilling() {
 
                 {couponError && !appliedCoupon && (
                   <p className="mt-1 text-[10px] text-rose-500 font-medium">{couponError}</p>
+                )}
+              </div>
+
+              {/* Customer Details Form (Clean, Compact & Collapsible) */}
+              <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white/70 dark:bg-zinc-850/60 p-2.5 space-y-2 transition shadow-2xs">
+                <div
+                  className="flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => setIsCustomerFormExpanded((prev) => !prev)}
+                >
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                    <User className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                    <span>Customer Details</span>
+                    <span className="text-[10px] font-normal text-zinc-400">(Optional)</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition"
+                    aria-label={isCustomerFormExpanded ? 'Collapse customer details' : 'Expand customer details'}
+                  >
+                    {isCustomerFormExpanded ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
+                {isCustomerFormExpanded && (
+                  <div className="space-y-1.5 pt-0.5 animate-in fade-in duration-150">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {/* Customer Name */}
+                      <div className="relative">
+                        <User className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-400" />
+                        <input
+                          type="text"
+                          value={customerName}
+                          onChange={(e) => setCustomerName(e.target.value)}
+                          placeholder="Customer Name"
+                          className="w-full h-8 pl-8 pr-2 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/20"
+                        />
+                      </div>
+
+                      {/* Mobile Number */}
+                      <div className="relative">
+                        <Phone className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-400" />
+                        <input
+                          type="tel"
+                          value={customerPhone}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^\d+]/g, '');
+                            setCustomerPhone(val);
+                            // Auto-populate whatsappPhone if currently empty or paymentMethod is WHATSAPP
+                            if (paymentMethod === 'WHATSAPP' || !whatsappPhone) {
+                              setWhatsappPhone(val);
+                            }
+                            if (customerPhoneError) setCustomerPhoneError(null);
+                          }}
+                          onBlur={() => {
+                            const clean = customerPhone.replace(/\D/g, '');
+                            if (clean && clean.length !== 10) {
+                              setCustomerPhoneError('Enter a valid 10-digit mobile number');
+                            } else {
+                              setCustomerPhoneError(null);
+                            }
+                          }}
+                          maxLength={13}
+                          placeholder="Mobile Number"
+                          className={`w-full h-8 pl-8 pr-2 text-xs rounded-lg border bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none transition ${
+                            customerPhoneError
+                              ? 'border-rose-400 focus:ring-1 focus:ring-rose-500/20'
+                              : 'border-zinc-200 dark:border-zinc-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500/20'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {customerPhoneError && (
+                      <p className="text-[10px] text-rose-500 font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                        {customerPhoneError}
+                      </p>
+                    )}
+
+                    {/* Customer Address */}
+                    <div className="relative">
+                      <MapPin className="absolute left-2.5 top-2 h-3.5 w-3.5 text-zinc-400" />
+                      <input
+                        type="text"
+                        value={customerAddress}
+                        onChange={(e) => setCustomerAddress(e.target.value)}
+                        placeholder="Customer Address"
+                        className="w-full h-8 pl-8 pr-2 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500/20"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -2733,6 +2981,30 @@ export function POSBilling() {
                   {completedOrder.paymentMethod}
                 </span>
               </div>
+              {completedOrder.customerName && completedOrder.customerName !== 'Walk-in Customer' && (
+                <div className="flex justify-between text-[11px] text-zinc-400 pt-0.5">
+                  <span>Customer Name:</span>
+                  <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                    {completedOrder.customerName}
+                  </span>
+                </div>
+              )}
+              {completedOrder.customerPhone && (
+                <div className="flex justify-between text-[11px] text-zinc-400 pt-0.5">
+                  <span>Customer Phone:</span>
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                    {completedOrder.customerPhone}
+                  </span>
+                </div>
+              )}
+              {completedOrder.customerAddress && (
+                <div className="flex justify-between text-[11px] text-zinc-400 pt-0.5">
+                  <span>Customer Address:</span>
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300 text-right max-w-[200px] truncate" title={completedOrder.customerAddress}>
+                    {completedOrder.customerAddress}
+                  </span>
+                </div>
+              )}
               {(completedOrder.upiId || completedOrder.paymentDetails?.upiId) && (
                 <div className="flex justify-between text-[11px] text-zinc-400 pt-0.5">
                   <span>Customer UPI ID:</span>
