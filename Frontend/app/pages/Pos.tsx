@@ -49,7 +49,12 @@ import {
   buildWishlistToggleBody,
 } from '../utils/wishlistPayload';
 import { createOrder, type OrderPayload } from '../api/orders';
-import { loadPosProductsCache, savePosProductsCache } from '../lib/posProductCache';
+import {
+  loadPosProductsCache,
+  savePosProductsCache,
+  getPosProductsLocalStorage,
+  haveProductsChanged,
+} from '../lib/posProductCache';
 import { formatINR, formatINRForPDF } from '../utils/formatINR';
 import {
   getPendingOfflinePosOrdersCount,
@@ -181,8 +186,17 @@ export function Pos() {
   }, [location.state, navigate, getDashboardRoute]);
 
   const showSaleOnly = searchParams.get('sale') === 'true';
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(() => {
+    return getPosProductsLocalStorage(
+      localStorage.getItem('retail_verse_client_id') || undefined
+    );
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    const initial = getPosProductsLocalStorage(
+      localStorage.getItem('retail_verse_client_id') || undefined
+    );
+    return initial.length === 0;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortOrder, setSortOrder] = useState<'default' | 'price-asc' | 'price-desc' | 'name-asc'>('default');
@@ -366,8 +380,37 @@ export function Pos() {
     }
   }, []);
 
-  const fetchProducts = useCallback(async () => {
-    setIsLoading(true);
+  // Immediate IndexedDB cache hydration on mount to ensure zero waiting time even if localStorage was empty
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const clientIdForCache =
+        user?.clientId ||
+        (user as any)?.assignedClient ||
+        (user as any)?.linkedClientId ||
+        (user?.role === 'client' ? (user.id || (user as any)._id) : undefined) ||
+        localStorage.getItem('retail_verse_client_id') ||
+        undefined;
+      try {
+        const cached = await loadPosProductsCache(clientIdForCache);
+        if (active && cached && cached.length > 0) {
+          setProducts((prev) => {
+            if (prev.length === 0) {
+              setIsLoading(false);
+              setProductSource('cache');
+              return cached;
+            }
+            return prev;
+          });
+        }
+      } catch {}
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const fetchProducts = useCallback(async (silent = false) => {
     const clientIdForCache =
       user?.clientId ||
       (user as any)?.assignedClient ||
@@ -376,6 +419,11 @@ export function Pos() {
       localStorage.getItem('retail_verse_client_id') ||
       undefined;
 
+    const hasCachedData = products.length > 0 || getPosProductsLocalStorage(clientIdForCache).length > 0;
+    if (!silent && !hasCachedData) {
+      setIsLoading(true);
+    }
+
     try {
       let dbProducts: Product[] = [];
       if (online) {
@@ -383,51 +431,60 @@ export function Pos() {
           const response = await productApi.getManage();
           if (response.success && Array.isArray(response.data)) {
             dbProducts = response.data as Product[];
-            setProductSource(dbProducts.length > 0 ? 'live' : 'none');
-            await savePosProductsCache(dbProducts, clientIdForCache);
+            const changed = haveProductsChanged(products, dbProducts);
+            if (changed) {
+              setProducts(dbProducts);
+              setProductSource(dbProducts.length > 0 ? 'live' : 'none');
+              await savePosProductsCache(dbProducts, clientIdForCache);
+            }
+            return;
           } else {
             // Try cache on unexpected response
             const cached = await loadPosProductsCache(clientIdForCache);
             if (cached && cached.length > 0) {
-              dbProducts = cached;
-              setProductSource('cache');
-            } else {
+              if (haveProductsChanged(products, cached)) {
+                setProducts(cached);
+                setProductSource('cache');
+              }
+            } else if (!hasCachedData) {
               setProductSource('none');
             }
           }
         } catch {
           const cached = await loadPosProductsCache(clientIdForCache);
           if (cached && cached.length > 0) {
-            dbProducts = cached;
-            setProductSource('cache');
-          } else {
+            if (haveProductsChanged(products, cached)) {
+              setProducts(cached);
+              setProductSource('cache');
+            }
+          } else if (!hasCachedData) {
             setProductSource('none');
           }
         }
       } else {
         const cached = await loadPosProductsCache(clientIdForCache);
         if (cached && cached.length > 0) {
-          dbProducts = cached;
-          setProductSource('cache');
-        } else {
+          if (haveProductsChanged(products, cached)) {
+            setProducts(cached);
+            setProductSource('cache');
+          }
+        } else if (!hasCachedData) {
           setProductSource('none');
         }
       }
-
-      // Only use real inventory products — no static/demo product merging
-      setProducts(dbProducts);
     } catch (err: unknown) {
       console.error('POS fetchProducts error:', err);
-      // On catastrophic error, show empty state — do NOT fall back to static products
-      setProducts([]);
-      setProductSource('none');
+      if (!hasCachedData) {
+        setProducts([]);
+        setProductSource('none');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [online, products, user]);
 
   useEffect(() => {
-    fetchProducts();
+    fetchProducts(true);
   }, [fetchProducts]);
 
   // Real-time synchronization: listen for new inventory products and render in POS catalog instantly
@@ -727,8 +784,8 @@ export function Pos() {
     }
 
     const resolvedGstRate = Number(
-      product.gstRate ??
       (product as any).gst ??
+      product.gstRate ??
       (product as any).taxRate ??
       (product as any).tax_rate ??
       (product as any).taxPercent ??
@@ -744,7 +801,7 @@ export function Pos() {
         }
         return prev.map(item =>
           item._id === product._id
-            ? { ...item, gstRate: resolvedGstRate, cartQuantity: item.cartQuantity + 1 }
+            ? { ...item, gst: resolvedGstRate, gstRate: resolvedGstRate, cartQuantity: item.cartQuantity + 1 }
             : item
         );
       }
@@ -752,7 +809,7 @@ export function Pos() {
         toast.error('Product is out of stock');
         return prev;
       }
-      return [...prev, { ...product, gstRate: resolvedGstRate, cartQuantity: 1 }];
+      return [...prev, { ...product, gst: resolvedGstRate, gstRate: resolvedGstRate, cartQuantity: 1 }];
     });
 
     setShowAddedToast(true);

@@ -166,59 +166,38 @@ const getProducts = async (req, res) => {
     console.log("-----------------------------------------");
     const totalProducts = await Product.countDocuments(query);
 
-    let dbQuery = Product.find(query)
-      .populate("clientId", "storeName companyName shopName email")
-      .sort({ createdAt: -1 });
-    
+    const isPosRequest = req.query.pos === "true" || req.query.source === "pos";
+    const requestedFields = req.query.fields;
+
+    let dbQuery = Product.find(query);
+
+    if (requestedFields) {
+      const fieldList = requestedFields.split(",").map(f => f.trim()).join(" ");
+      dbQuery = dbQuery.select(fieldList);
+    } else if (isPosRequest) {
+      // Select only the necessary fields required for the POS catalog
+      dbQuery = dbQuery.select(
+        "_id name sku barcode price unitPrice stock stockLevel quantity currentStock category image imageUrl description clientId gst gstRate"
+      );
+    } else {
+      dbQuery = dbQuery.populate("clientId", "storeName companyName shopName email");
+    }
+
+    dbQuery = dbQuery.sort({ createdAt: -1 });
+
     if (limit > 0) {
       dbQuery = dbQuery.skip(skip).limit(limit);
     }
 
-    const products = await dbQuery;
+    // Ensure the query uses .lean() on Mongoose/MongoDB queries for faster JSON serialization
+    const products = await dbQuery.lean();
     console.log("Returned count:", products.length);
 
-    // Dynamic Marketplace Status mapping to prevent N+1 queries
+    // Dynamic Marketplace Status mapping or fast path for POS
     let productsWithListings = products;
-    try {
-      const merchantId = getMerchantId(req);
-      productsWithListings = await attachMarketplaceStatusToProducts({
-        products,
-        merchantId
-      });
-      productsWithListings = productsWithListings.map(pObj => {
-        pObj.marketplaceListings = (pObj.marketplaces || []).map(m => ({
-          _id: m.connectionId,
-          marketplace: m.provider,
-          syncStatus: m.status === 'not_connected' ? 'not_connected' :
-                      m.status === 'not_synced' ? 'pending' :
-                      m.status === 'queued' ? 'queued' :
-                      m.status === 'processing' ? 'syncing' :
-                      m.status === 'failed' ? 'failed' :
-                      m.status === 'synced' ? 'success' : 'pending',
-          syncError: m.error || ''
-        }));
-
-        // Single source of truth for stockLevel in API response
-        const availableStock = Number(
-          pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
-            ? pObj.stockLevel
-            : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
-            ? pObj.stock
-            : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
-            ? pObj.quantity
-            : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
-        ) || 0;
-        pObj.stockLevel = availableStock;
-        pObj.stock = availableStock;
-        pObj.quantity = availableStock;
-        pObj.currentStock = availableStock;
-
-        return pObj;
-      });
-    } catch (err) {
-      console.error("[productController] Error resolving marketplace status in list:", err.message);
-      productsWithListings = productsWithListings.map(p => {
-        const pObj = typeof p.toObject === 'function' ? p.toObject({ virtuals: true }) : { ...p };
+    if (isPosRequest) {
+      // Fast path for POS catalog: avoid external marketplace lookups
+      productsWithListings = products.map((pObj) => {
         const availableStock = Number(
           pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
             ? pObj.stockLevel
@@ -234,6 +213,63 @@ const getProducts = async (req, res) => {
         pObj.currentStock = availableStock;
         return pObj;
       });
+    } else {
+      try {
+        const merchantId = getMerchantId(req);
+        productsWithListings = await attachMarketplaceStatusToProducts({
+          products,
+          merchantId
+        });
+        productsWithListings = productsWithListings.map(pObj => {
+          pObj.marketplaceListings = (pObj.marketplaces || []).map(m => ({
+            _id: m.connectionId,
+            marketplace: m.provider,
+            syncStatus: m.status === 'not_connected' ? 'not_connected' :
+                        m.status === 'not_synced' ? 'pending' :
+                        m.status === 'queued' ? 'queued' :
+                        m.status === 'processing' ? 'syncing' :
+                        m.status === 'failed' ? 'failed' :
+                        m.status === 'synced' ? 'success' : 'pending',
+            syncError: m.error || ''
+          }));
+
+          // Single source of truth for stockLevel in API response
+          const availableStock = Number(
+            pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
+              ? pObj.stockLevel
+              : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
+              ? pObj.stock
+              : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
+              ? pObj.quantity
+              : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
+          ) || 0;
+          pObj.stockLevel = availableStock;
+          pObj.stock = availableStock;
+          pObj.quantity = availableStock;
+          pObj.currentStock = availableStock;
+
+          return pObj;
+        });
+      } catch (err) {
+        console.error("[productController] Error resolving marketplace status in list:", err.message);
+        productsWithListings = productsWithListings.map(p => {
+          const pObj = typeof p.toObject === 'function' ? p.toObject({ virtuals: true }) : { ...p };
+          const availableStock = Number(
+            pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
+              ? pObj.stockLevel
+              : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
+              ? pObj.stock
+              : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
+              ? pObj.quantity
+              : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
+          ) || 0;
+          pObj.stockLevel = availableStock;
+          pObj.stock = availableStock;
+          pObj.quantity = availableStock;
+          pObj.currentStock = availableStock;
+          return pObj;
+        });
+      }
     }
 
     res.status(200).json({
@@ -443,6 +479,12 @@ const createProduct = async (req, res) => {
 
     // Validate that new products are saved with isActive: true
     productData.isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : true;
+
+    // Optional GST support (default 0 if blank/empty)
+    const rawGst = req.body.gst !== undefined ? req.body.gst : req.body.gstRate;
+    const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
+    productData.gst = parsedGst;
+    productData.gstRate = parsedGst;
 
     // Fetch clientName if possible to persist it for the UI
     if (isValidObjectId(targetClientId)) {
@@ -777,6 +819,13 @@ const updateProduct = async (req, res) => {
       normalizedPayload.stockLevel = parsedStock;
       normalizedPayload.stock = parsedStock;
       normalizedPayload.quantity = parsedStock;
+    }
+
+    if (normalizedPayload.gst !== undefined || normalizedPayload.gstRate !== undefined) {
+      const rawGst = normalizedPayload.gst !== undefined ? normalizedPayload.gst : normalizedPayload.gstRate;
+      const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
+      normalizedPayload.gst = parsedGst;
+      normalizedPayload.gstRate = parsedGst;
     }
 
     Object.assign(product, normalizedPayload);

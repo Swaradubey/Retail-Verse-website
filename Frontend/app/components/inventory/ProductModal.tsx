@@ -213,7 +213,7 @@ export function ProductModal({
         stockLevel: product.stock || 0,
         imageUrl: initialUrl,
         description: product.description || '',
-        gstRate: product.gstRate ?? 0,
+        gstRate: (product as any).gst ?? product.gstRate ?? 0,
       });
       if (initialUrl && !isValidImageUrlFormat(initialUrl)) {
         setImageLoadError("Unable to load image from this URL");
@@ -333,6 +333,7 @@ export function ProductModal({
         price: formData.unitPrice ?? product.price ?? 0,
         stock: Number(formData.stockLevel) ?? product.stock ?? 0,
         stockLevel: Number(formData.stockLevel) ?? product.stock ?? 0,
+        gst: Number(formData.gstRate) || 0,
         gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
@@ -350,6 +351,7 @@ export function ProductModal({
         price: formData.unitPrice,
         stock: Number(formData.stockLevel) || 0,
         stockLevel: Number(formData.stockLevel) || 0,
+        gst: Number(formData.gstRate) || 0,
         gstRate: Number(formData.gstRate) || 0,
         image: trimmedImg,
         imageUrl: trimmedImg,
@@ -647,11 +649,14 @@ export function ProductModal({
                       />
                     </div>
 
-                    {/* GST Rate (%) */}
+                    {/* GST Rate (%) (Optional) */}
                     <div className="space-y-2">
-                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-emerald-500" />
-                        GST Rate (%)
+                      <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                          <Tag className="w-4 h-4 text-emerald-500" />
+                          GST Rate (%) (Optional)
+                        </span>
+                        <span className="text-xs text-gray-400 font-normal">Default: 0%</span>
                       </label>
                       <select
                         name="gstRate"
@@ -666,7 +671,7 @@ export function ProductModal({
                         <option value={28}>28% GST</option>
                       </select>
                       <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                        Selected rate persists for consecutive items.
+                        Select applicable rate or leave as 0% for tax-exempt products.
                       </p>
                     </div>
 

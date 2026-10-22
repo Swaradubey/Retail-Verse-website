@@ -487,20 +487,24 @@ export function Dashboard() {
                   className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 group/logo"
                 >
                   {brandLogo ? (
-                    <div className="w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center bg-[#0B1F3A] border border-[#2563EB] shrink-0">
+                    <div className="w-9 h-9 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center">
                       <img
                         src={getFullImageUrl(brandLogo)}
                         alt={`${dsFinalBrandName} logo`}
-                        className="w-full h-full object-contain p-0.5"
+                        className="w-7 h-7 object-contain rounded-full"
                         onError={(e) => {
                           (e.target as HTMLImageElement).onerror = null;
-                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).src = '/logo.png';
                         }}
                       />
                     </div>
                   ) : (
-                    <div className="w-8 h-8 rounded-xl bg-[#2563EB] flex items-center justify-center text-[#F8FAFC] shrink-0 font-bold text-lg">
-                      <span>R</span>
+                    <div className="w-9 h-9 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center">
+                      <img
+                        src="/logo.png"
+                        alt={`${dsFinalBrandName} logo`}
+                        className="w-7 h-7 object-contain rounded-full"
+                      />
                     </div>
                   )}
                   <div className="flex flex-col min-w-0 flex-1 leading-tight">

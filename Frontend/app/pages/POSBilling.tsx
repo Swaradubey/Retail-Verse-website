@@ -63,6 +63,12 @@ import {
   syncOfflineAndHeldOrders,
   markHeldOrderSynced,
 } from '../services/posIndexedDB';
+import {
+  getPosProductsLocalStorage,
+  haveProductsChanged,
+  savePosProductsCache,
+  loadPosProductsCache,
+} from '../lib/posProductCache';
 import { subscribeToProductSync } from '../utils/posProductSync';
 
 // Audio feedback helper for POS barcode scan beep
@@ -179,8 +185,13 @@ export function POSBilling() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [cart, setCart] = useState<POSCartItem[]>([]);
-  const [products, setProducts] = useState<any[]>([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [products, setProducts] = useState<any[]>(() => {
+    return getPosProductsLocalStorage(currentClientId);
+  });
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(() => {
+    const initial = getPosProductsLocalStorage(currentClientId);
+    return initial.length === 0;
+  });
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'RAZORPAY' | 'WHATSAPP'>('CASH');
   const [upiId, setUpiId] = useState('');
@@ -324,14 +335,23 @@ export function POSBilling() {
     }
   }, [loadHeldOrders, refreshPendingSyncCount]);
 
-  // Fetch product catalog for manual search & grid (Offline-First with Client-Scoped IndexedDB Caching)
+  // Fetch product catalog for manual search & grid (Offline-First Stale-While-Revalidate)
   const fetchProducts = useCallback(async (silent = false) => {
-    if (!silent) setIsLoadingProducts(true);
     const clientId = currentClientIdRef.current;
+    const hasCachedData = productsRef.current.length > 0;
+
+    // Show loading spinner ONLY on the very first visit when no cache exists at all
+    if (!silent && !hasCachedData) {
+      setIsLoadingProducts(true);
+    }
 
     try {
       if (navigator.onLine) {
-        const queryParams = new URLSearchParams({ limit: '250' });
+        const queryParams = new URLSearchParams({
+          limit: '250',
+          pos: 'true',
+          fields: '_id,name,sku,barcode,price,unitPrice,stock,stockLevel,quantity,currentStock,category,image,imageUrl,description,clientId,gst,gstRate'
+        });
         if (clientId) {
           queryParams.append('clientId', clientId);
         }
@@ -348,14 +368,18 @@ export function POSBilling() {
               })
             : list;
 
-          setProducts(scopedProducts);
-
-          // Overwrite/update the local cache specifically for this authenticated client
-          if (scopedProducts.length > 0) {
-            await cacheProducts(scopedProducts, clientId);
-          } else if (clientId) {
-            // Clear stale cache if client has 0 inventory
-            await clearCachedProducts(clientId);
+          // Stale-While-Revalidate: smoothly update state and cache ONLY if there are differences
+          const hasChanges = haveProductsChanged(productsRef.current, scopedProducts);
+          if (hasChanges) {
+            setProducts(scopedProducts);
+            // Overwrite/update the local cache specifically for this authenticated client
+            if (scopedProducts.length > 0) {
+              await cacheProducts(scopedProducts, clientId);
+              await savePosProductsCache(scopedProducts, clientId);
+            } else if (clientId) {
+              // Clear stale cache if client has 0 inventory
+              await clearCachedProducts(clientId);
+            }
           }
           return;
         }
@@ -364,8 +388,10 @@ export function POSBilling() {
       // Offline fallback: load cached products from IndexedDB strictly for this client
       const cached = await getCachedProducts(clientId);
       if (cached && cached.length > 0) {
-        setProducts(cached);
-      } else {
+        if (haveProductsChanged(productsRef.current, cached)) {
+          setProducts(cached);
+        }
+      } else if (!hasCachedData) {
         setProducts([]);
         if (!silent) {
           toast.info(
@@ -379,13 +405,15 @@ export function POSBilling() {
       // Network failure fallback: load cached products strictly for this client
       const cached = await getCachedProducts(clientId);
       if (cached && cached.length > 0) {
-        setProducts(cached);
-      } else {
+        if (haveProductsChanged(productsRef.current, cached)) {
+          setProducts(cached);
+        }
+      } else if (!hasCachedData) {
         setProducts([]);
       }
       if (!silent) console.error('Failed to load products:', err);
     } finally {
-      if (!silent) setIsLoadingProducts(false);
+      setIsLoadingProducts(false);
     }
   }, []);
 
@@ -419,10 +447,35 @@ export function POSBilling() {
     };
   }, [triggerBackgroundSync, fetchProducts]);
 
+  // Immediate IndexedDB cache hydration on mount to ensure zero waiting time even if localStorage was empty
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const idbProducts = await getCachedProducts(currentClientId);
+        if (active && Array.isArray(idbProducts) && idbProducts.length > 0) {
+          setProducts((prev) => {
+            if (prev.length === 0) {
+              setIsLoadingProducts(false);
+              return idbProducts;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        console.warn('[POSBilling] IndexedDB cache hydration error:', e);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [currentClientId]);
+
   // 1. Initial product catalog fetch, draft restore, and held orders load on mount / client change
   useEffect(() => {
     const clientId = currentClientId;
-    fetchProducts();
+    // Silent background revalidation: renders instant cache, updates silently if changes occur
+    fetchProducts(true);
     loadHeldOrders();
     refreshPendingSyncCount();
 
@@ -471,8 +524,8 @@ export function POSBilling() {
         currentStock: rawStock,
         category: newProduct.category || 'General',
         imageUrl: rawImg,
-        image: rawImg,
-        gstRate: Number(newProduct.gstRate || 0),
+        gst: Number(newProduct.gst !== undefined ? newProduct.gst : (newProduct.gstRate || 0)),
+        gstRate: Number(newProduct.gst !== undefined ? newProduct.gst : (newProduct.gstRate || 0)),
         clientId: incomingClientId || currentClientIdRef.current,
       };
 
@@ -492,14 +545,17 @@ export function POSBilling() {
           );
         });
 
+        let nextList: any[];
         if (existsIdx >= 0) {
-          const updated = [...prev];
-          updated[existsIdx] = { ...updated[existsIdx], ...normalizedProduct };
-          return updated;
+          nextList = [...prev];
+          nextList[existsIdx] = { ...nextList[existsIdx], ...normalizedProduct };
+        } else {
+          // Prepend new item directly so POS grid renders it instantly without refetching
+          nextList = [normalizedProduct, ...prev];
         }
-
-        // Prepend new item directly so POS grid renders it instantly without refetching
-        return [normalizedProduct, ...prev];
+        void cacheProducts(nextList, currentClientIdRef.current);
+        void savePosProductsCache(nextList, currentClientIdRef.current);
+        return nextList;
       });
 
       toast.success(`"${rawName}" added to POS catalog instantly`);
@@ -543,12 +599,18 @@ export function POSBilling() {
       id: holdId,
       clientId: currentClientIdRef.current,
       reference,
-      items: cart.map((item) => ({
-        ...item,
-        price: item.unitPrice,
-        tax: (item.unitPrice * item.quantity * item.gstRate) / 100,
-        gstAmount: (item.unitPrice * item.quantity * item.gstRate) / 100,
-      })),
+      items: cart.map((item) => {
+        const itemGst = Number(item.gst !== undefined ? item.gst : (item.gstRate || 0)) || 0;
+        const lineTax = (item.unitPrice * item.quantity * itemGst) / 100;
+        return {
+          ...item,
+          price: item.unitPrice,
+          gst: itemGst,
+          gstRate: itemGst,
+          tax: lineTax,
+          gstAmount: lineTax,
+        };
+      }),
       subtotal: calculations.subtotal,
       discountAmount: calculations.discount,
       totalGst: calculations.totalGst,
@@ -777,7 +839,7 @@ export function POSBilling() {
     const pId = String(product._id || product.id || product.productId);
     const availableStock = getProductAvailableStock(product);
     const unitPrice = Number(product.unitPrice !== undefined ? product.unitPrice : product.price) || 0;
-    const gstRate = Number(product.gstRate) || 0;
+    const itemGst = Number(product.gst !== undefined ? product.gst : (product.gstRate ?? (product as any).taxRate ?? 0)) || 0;
     const barcode = product.barcode || product.sku || '';
 
     if (availableStock <= 0) {
@@ -811,6 +873,8 @@ export function POSBilling() {
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: currentQty + 1,
+          gst: itemGst,
+          gstRate: itemGst,
           imageUrl: existingImage,
           image: existingImage,
           product_image: existingImage,
@@ -847,7 +911,8 @@ export function POSBilling() {
             name: product.name,
             unitPrice,
             quantity: 1,
-            gstRate,
+            gst: itemGst,
+            gstRate: itemGst,
             stockLevel: availableStock,
             imageUrl: resolvedImage,
             image: resolvedImage,
@@ -1028,10 +1093,12 @@ export function POSBilling() {
     let totalGst = 0;
 
     cart.forEach((item) => {
-      const lineSubtotal = item.unitPrice * item.quantity;
-      const lineGst = (lineSubtotal * (item.gstRate || 0)) / 100;
+      const price = Number(item.unitPrice !== undefined ? item.unitPrice : (item as any).price) || 0;
+      const lineSubtotal = price * item.quantity;
+      const itemGst = Number(item.gst !== undefined ? item.gst : (item.gstRate || 0)) || 0;
+      const itemTax = (price * item.quantity * itemGst) / 100;
       subtotal += lineSubtotal;
-      totalGst += lineGst;
+      totalGst += itemTax;
     });
 
     const subtotalFixed = Number(subtotal.toFixed(2));
@@ -1054,7 +1121,7 @@ export function POSBilling() {
       }
     }
 
-    const grandTotal = Math.max(0, Number((subtotalFixed - discount + gstFixed).toFixed(2)));
+    const grandTotal = Math.max(0, Number((subtotalFixed + gstFixed - discount).toFixed(2)));
 
     return {
       subtotal: subtotalFixed,
@@ -1260,12 +1327,18 @@ export function POSBilling() {
           clientId: currentClientId,
           invoiceNumber: offlineInvoiceNum,
           orderId: offlineInvoiceNum,
-          items: cart.map((item) => ({
-            ...item,
-            price: item.unitPrice,
-            tax: (item.unitPrice * item.quantity * item.gstRate) / 100,
-            gstAmount: (item.unitPrice * item.quantity * item.gstRate) / 100,
-          })),
+          items: cart.map((item) => {
+            const itemGst = Number(item.gst !== undefined ? item.gst : (item.gstRate || 0)) || 0;
+            const lineTax = (item.unitPrice * item.quantity * itemGst) / 100;
+            return {
+              ...item,
+              price: item.unitPrice,
+              gst: itemGst,
+              gstRate: itemGst,
+              tax: lineTax,
+              gstAmount: lineTax,
+            };
+          }),
           subtotal: calculations.subtotal,
           discountAmount: calculations.discount,
           totalGst: calculations.totalGst,
@@ -1434,14 +1507,27 @@ export function POSBilling() {
                 razorpayOrderId: response.razorpay_order_id,
                 razorpayPaymentId: response.razorpay_payment_id,
                 razorpaySignature: response.razorpay_signature,
-                items: cart.map((item) => ({
-                  productId: item.productId,
-                  barcode: item.barcode,
-                  name: item.name,
-                  unitPrice: item.unitPrice,
-                  quantity: item.quantity,
-                  gstRate: item.gstRate,
-                })),
+                subtotal: calculations.subtotal,
+                totalGst: calculations.totalGst,
+                taxPrice: calculations.totalGst,
+                grandTotal: calculations.grandTotal,
+                totalAmount: calculations.grandTotal,
+                items: cart.map((item) => {
+                  const itemGst = Number(item.gst !== undefined ? item.gst : (item.gstRate || 0)) || 0;
+                  const lineTax = (item.unitPrice * item.quantity * itemGst) / 100;
+                  return {
+                    productId: item.productId,
+                    barcode: item.barcode,
+                    name: item.name,
+                    unitPrice: item.unitPrice,
+                    price: item.unitPrice,
+                    quantity: item.quantity,
+                    gst: itemGst,
+                    gstRate: itemGst,
+                    tax: lineTax,
+                    gstAmount: lineTax,
+                  };
+                }),
               };
 
               const res = await api.post('/pos/checkout', payload);
@@ -1651,14 +1737,27 @@ export function POSBilling() {
         upiId: paymentMethod === 'UPI' ? upiId.trim() : undefined,
         paymentDetails: paymentMethod === 'UPI' ? { upiId: upiId.trim() } : undefined,
         couponCode: calculations.couponEligible && appliedCoupon ? appliedCoupon.code : undefined,
-        items: cart.map((item) => ({
-          productId: item.productId,
-          barcode: item.barcode,
-          name: item.name,
-          unitPrice: item.unitPrice,
-          quantity: item.quantity,
-          gstRate: item.gstRate,
-        })),
+        subtotal: calculations.subtotal,
+        totalGst: calculations.totalGst,
+        taxPrice: calculations.totalGst,
+        grandTotal: calculations.grandTotal,
+        totalAmount: calculations.grandTotal,
+        items: cart.map((item) => {
+          const itemGst = Number(item.gst !== undefined ? item.gst : (item.gstRate || 0)) || 0;
+          const lineTax = (item.unitPrice * item.quantity * itemGst) / 100;
+          return {
+            productId: item.productId,
+            barcode: item.barcode,
+            name: item.name,
+            unitPrice: item.unitPrice,
+            price: item.unitPrice,
+            quantity: item.quantity,
+            gst: itemGst,
+            gstRate: itemGst,
+            tax: lineTax,
+            gstAmount: lineTax,
+          };
+        }),
       };
 
       const res = await api.post('/pos/checkout', payload);

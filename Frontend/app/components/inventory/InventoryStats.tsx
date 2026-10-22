@@ -3,8 +3,16 @@ import { motion } from 'framer-motion';
 import { Package, CheckCircle, AlertTriangle, XCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { InventoryItem } from '../../types/inventory';
 
+export interface InventoryStatsValues {
+  totalProducts?: number;
+  inStock?: number;
+  lowStock?: number;
+  outOfStock?: number;
+}
+
 interface InventoryStatsProps {
   items: InventoryItem[];
+  stats?: InventoryStatsValues | null;
 }
 
 const container = {
@@ -58,16 +66,16 @@ function getTrend(trend: StatConfig['trend']) {
   );
 }
 
-export function InventoryStats({ items }: InventoryStatsProps) {
-  const totalProducts = items.length;
-  const inStock = items.filter((i) => i.stock >= 10).length;
-  const lowStock = items.filter((i) => {
+export function InventoryStats({ items, stats: cachedStats }: InventoryStatsProps) {
+  const totalProducts = cachedStats?.totalProducts !== undefined ? cachedStats.totalProducts : items.length;
+  const inStock = cachedStats?.inStock !== undefined ? cachedStats.inStock : items.filter((i) => i.stock >= 10).length;
+  const lowStock = cachedStats?.lowStock !== undefined ? cachedStats.lowStock : items.filter((i) => {
     const stock = Number(i.stock ?? 0);
     if (stock <= 0) return false;
     const threshold = Number(i.minStock ?? i.lowStockThreshold ?? 10);
     return stock < threshold;
   }).length;
-  const outOfStock = items.filter((i) => i.stock === 0).length;
+  const outOfStock = cachedStats?.outOfStock !== undefined ? cachedStats.outOfStock : items.filter((i) => i.stock === 0).length;
 
   const stats: StatConfig[] = [
     {

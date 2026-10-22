@@ -42,6 +42,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
   const [category, setCategory] = useState('General');
   const [price, setPrice] = useState<number | ''>('');
   const [stockLevel, setStockLevel] = useState<number | ''>(0);
+  const [gst, setGst] = useState<number | ''>(0);
   const [description, setDescription] = useState('');
   const [dimensions, setDimensions] = useState({
     length: '' as number | '',
@@ -95,6 +96,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       setCategory('General');
       setPrice('');
       setStockLevel(0);
+      setGst(0);
       setDescription('');
       setDimensions({ length: '', width: '', height: '' });
       setImagePreview(null);
@@ -359,6 +361,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
         barcode: barcode.trim(),
         price: Number(price),
         stockLevel: Number(stockLevel),
+        gst: gst === '' ? 0 : Math.max(0, Number(gst) || 0),
+        gstRate: gst === '' ? 0 : Math.max(0, Number(gst) || 0),
         image: imageBase64,
         category: category.trim() || 'General',
         dimensions: {
@@ -918,6 +922,51 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                     />
                   </div>
 
+                  {/* GST Rate (%) (Optional) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center justify-between">
+                      <span className="flex items-center gap-1">
+                        <Tag className="w-3.5 h-3.5 text-emerald-500" />
+                        GST Rate (%) (Optional)
+                      </span>
+                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-normal">Default: 0%</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={[0, 5, 12, 18, 28].includes(Number(gst)) && gst !== '' ? Number(gst) : 'custom'}
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') {
+                            setGst('');
+                          } else {
+                            setGst(Number(e.target.value));
+                          }
+                        }}
+                        className="w-1/2 px-3 py-2 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                      >
+                        <option value={0}>0% (Exempt)</option>
+                        <option value={5}>5% GST</option>
+                        <option value={12}>12% GST</option>
+                        <option value={18}>18% GST</option>
+                        <option value={28}>28% GST</option>
+                        <option value="custom">Custom / Other</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        placeholder="0"
+                        value={gst}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setGst(v === '' ? '' : Math.max(0, Number(v)));
+                        }}
+                        className="w-1/2 px-3 py-2 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:border-indigo-500 placeholder:text-zinc-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                   {/* Dimensions (Length × Width × Height) */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 flex items-center justify-between">
@@ -972,7 +1021,6 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                       />
                     </div>
                   </div>
-                </div>
 
                 {/* Description */}
                 <div className="space-y-1.5">

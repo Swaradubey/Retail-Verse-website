@@ -47,18 +47,24 @@ export function Footer({ variant: explicitVariant }: { variant?: 'platform' | 's
           <div className="pl-2 sm:pl-3 lg:pl-4 lg:pr-6">
             <Link to="/" className="flex items-center gap-3 flex-wrap">
               {logoUrl ? (
-                <img
-                  src={getFullImageUrl(logoUrl)}
-                  alt={`${brandName} logo`}
-                  className="h-11 max-w-[160px] object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).onerror = null;
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
+                <div className="h-12 w-12 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center shadow-lg shadow-[#2563EB]/10">
+                  <img
+                    src={getFullImageUrl(logoUrl)}
+                    alt={`${brandName} logo`}
+                    className="h-10 w-10 object-contain rounded-full"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).onerror = null;
+                      (e.target as HTMLImageElement).src = '/logo.png';
+                    }}
+                  />
+                </div>
               ) : (
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#2563EB] text-[#F8FAFC]">
-                  <ShoppingBag className="h-6 w-6" />
+                <div className="h-12 w-12 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center shadow-lg shadow-[#2563EB]/10">
+                  <img
+                    src="/logo.png"
+                    alt={`${brandName} logo`}
+                    className="h-10 w-10 object-contain rounded-full"
+                  />
                 </div>
               )}
 

@@ -34,6 +34,8 @@ function normalizeForCache(raw: Product): Product {
     status: raw.status,
     createdAt: raw.createdAt,
     updatedAt: raw.updatedAt,
+    gst: Number((raw as any).gst !== undefined ? (raw as any).gst : (raw.gstRate || 0)),
+    gstRate: Number(raw.gstRate !== undefined ? raw.gstRate : ((raw as any).gst || 0)),
   };
   if (barcode != null && String(barcode).length > 0) {
     (p as Product & { barcode?: string }).barcode = String(barcode);
@@ -104,6 +106,10 @@ function lsPut(products: Product[], clientId?: string): void {
   const keys = getEffectiveKeys(clientId);
   try {
     localStorage.setItem(keys.ls, JSON.stringify(products));
+    // Also save under general key if scoped key was used, as reliable fallback
+    if (clientId) {
+      localStorage.setItem(LS_KEY, JSON.stringify(products));
+    }
   } catch {
     /* quota or private mode */
   }
@@ -113,13 +119,51 @@ function lsGet(clientId?: string): Product[] | null {
   const keys = getEffectiveKeys(clientId);
   try {
     const raw = localStorage.getItem(keys.ls);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    return parsed as Product[];
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as Product[];
+    }
+    // Fallback to un-suffixed key if scoped key was empty
+    if (clientId) {
+      const fallbackRaw = localStorage.getItem(LS_KEY);
+      if (fallbackRaw) {
+        const parsedFallback = JSON.parse(fallbackRaw) as unknown;
+        if (Array.isArray(parsedFallback) && parsedFallback.length > 0) return parsedFallback as Product[];
+      }
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+/** Synchronous localStorage read for instantaneous zero-delay initial POS state. */
+export function getPosProductsLocalStorage(clientId?: string): Product[] {
+  return lsGet(clientId) || [];
+}
+
+/**
+ * Fast shallow comparison to detect whether the product catalog has actual differences.
+ * Prevents unnecessary re-renders in stale-while-revalidate background updates.
+ */
+export function haveProductsChanged(current: any[], incoming: any[]): boolean {
+  if (!Array.isArray(current) || !Array.isArray(incoming)) return true;
+  if (current.length !== incoming.length) return true;
+  for (let i = 0; i < current.length; i++) {
+    const c = current[i];
+    const n = incoming[i];
+    const cId = String(c._id || c.id || c.productId || '');
+    const nId = String(n._id || n.id || n.productId || '');
+    if (cId !== nId) return true;
+    if (Number(c.price ?? c.unitPrice) !== Number(n.price ?? n.unitPrice)) return true;
+    if (Number(c.stock ?? c.stockLevel ?? c.quantity ?? c.currentStock) !== Number(n.stock ?? n.stockLevel ?? n.quantity ?? n.currentStock)) return true;
+    if ((c.name || '') !== (n.name || '')) return true;
+    if ((c.barcode || '') !== (n.barcode || '')) return true;
+    if ((c.sku || '') !== (n.sku || '')) return true;
+    if ((c.category || '') !== (n.category || '')) return true;
+    if ((c.image || c.imageUrl || '') !== (n.image || n.imageUrl || '')) return true;
+  }
+  return false;
 }
 
 /** Persist POS product list after a successful online sync. */
@@ -138,10 +182,15 @@ export async function loadPosProductsCache(clientId?: string): Promise<Product[]
   try {
     const fromIdb = await idbGet(clientId);
     if (fromIdb && fromIdb.length > 0) return fromIdb;
+    if (clientId) {
+      const fallbackIdb = await idbGet(undefined);
+      if (fallbackIdb && fallbackIdb.length > 0) return fallbackIdb;
+    }
   } catch {
     /* fall through */
   }
-  return lsGet(clientId);
+  const fromLs = lsGet(clientId);
+  return fromLs && fromLs.length > 0 ? fromLs : null;
 }
 
 /** Instantly upsert a newly created or updated product into the client's local POS cache. */
@@ -176,3 +225,16 @@ export async function upsertPosProductCache(product: Product, clientId?: string)
   await savePosProductsCache(updatedList, clientId);
   return updatedList;
 }
+
+/** Instantly remove a deleted product from the client's local POS cache. */
+export async function removePosProductFromCache(productId: string, clientId?: string): Promise<Product[]> {
+  const existing = (await loadPosProductsCache(clientId)) || [];
+  const targetId = String(productId).trim();
+  const updatedList = existing.filter((p) => {
+    const pId = String(p._id || (p as any).id || (p as any).productId || '').trim();
+    return pId !== targetId;
+  });
+  await savePosProductsCache(updatedList, clientId);
+  return updatedList;
+}
+

@@ -8,7 +8,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { InventoryStats } from '../components/inventory/InventoryStats';
+import { InventoryStats, type InventoryStatsValues } from '../components/inventory/InventoryStats';
 import { InventoryFilters } from '../components/inventory/InventoryFilters';
 import { InventoryTable } from '../components/inventory/InventoryTable';
 import { DeleteConfirmModal } from '../components/inventory/DeleteConfirmModal';
@@ -42,6 +42,64 @@ import { isClientRole } from '../utils/staffRoles';
 
 const ITEMS_PER_PAGE = 8;
 const STAFF_LIST_ITEMS_PER_PAGE = 6;
+const INVENTORY_CACHE_PREFIX = 'retailverse_inventory_cache_';
+
+function computeInventoryStats(items: Array<{ stock?: number; minStock?: number; lowStockThreshold?: number }>): InventoryStatsValues {
+  const totalProducts = items.length;
+  const inStock = items.filter((i) => Number(i.stock ?? 0) >= 10).length;
+  const lowStock = items.filter((i) => {
+    const stock = Number(i.stock ?? 0);
+    if (stock <= 0) return false;
+    const threshold = Number(i.minStock ?? i.lowStockThreshold ?? 10);
+    return stock < threshold;
+  }).length;
+  const outOfStock = items.filter((i) => Number(i.stock ?? 0) === 0).length;
+  return { totalProducts, inStock, lowStock, outOfStock };
+}
+
+function getCachedInventoryProducts(clientId?: string | null): Product[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw =
+      localStorage.getItem('inventory_products_cache') ||
+      (clientId ? localStorage.getItem(`${INVENTORY_CACHE_PREFIX}${clientId}`) : null) ||
+      localStorage.getItem(`${INVENTORY_CACHE_PREFIX}global`) ||
+      localStorage.getItem('inventory_products_cache_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('[Inventory] Failed to read cached inventory:', err);
+  }
+  return [];
+}
+
+function saveCachedInventoryProducts(items: Product[], clientId?: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = JSON.stringify(items);
+    localStorage.setItem('inventory_products_cache', raw);
+    localStorage.setItem('inventory_products_cache_v1', raw);
+    if (clientId) {
+      localStorage.setItem(`${INVENTORY_CACHE_PREFIX}${clientId}`, raw);
+    }
+    localStorage.setItem(`${INVENTORY_CACHE_PREFIX}global`, raw);
+  } catch (err) {
+    console.warn('[Inventory] Failed to save cached inventory:', err);
+  }
+}
+
+function saveCachedInventoryStats(statsData: InventoryStatsValues) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('inventory_stats_cache', JSON.stringify(statsData));
+  } catch (err) {
+    console.warn('[Inventory] Failed to save cached inventory stats:', err);
+  }
+}
 
 function formatEmployeeRoleLabel(rawRole?: string): string {
   const normalized = String(rawRole || '')
@@ -61,8 +119,61 @@ export function Inventory() {
   const allowStockShortcut = canAdjustInventoryStock(role);
   const allowEditModal = canOpenProductEditModal(role);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [products, setProducts] = useState<Product[]>([]);
+  // 1. Synchronous Cache Initialization for products
+  const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const cached =
+        localStorage.getItem('inventory_products_cache') ||
+        localStorage.getItem('inventory_products_cache_v1') ||
+        localStorage.getItem('retailverse_inventory_cache_global');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Synchronous Cache Initialization for inventory summary / stats counters
+  const [stats, setStats] = useState<InventoryStatsValues | null>(() => {
+    try {
+      const cached = localStorage.getItem('inventory_stats_cache');
+      if (cached) return JSON.parse(cached);
+      const prodsRaw =
+        localStorage.getItem('inventory_products_cache') ||
+        localStorage.getItem('inventory_products_cache_v1');
+      if (prodsRaw) {
+        const parsed = JSON.parse(prodsRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return computeInventoryStats(parsed);
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  // 2. Eliminate Blocking Loading State:
+  // If cache is present, loading is false so zero skeleton placeholder is rendered
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    try {
+      const cached =
+        localStorage.getItem('inventory_products_cache') ||
+        localStorage.getItem('inventory_products_cache_v1');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const [search, setSearch] = useState('');
   const [stockStatus, setStockStatus] = useState<string | 'all'>('all');
   const [category, setCategory] = useState('All Categories');
@@ -93,37 +204,72 @@ export function Inventory() {
   const [staffEmployeesPage, setStaffEmployeesPage] = useState(1);
   const [employeesLoading, setEmployeesLoading] = useState(false);
 
-  const fetchAllProducts = async () => {
-    setIsLoading(true);
+  // 3. Background Stale-While-Revalidate Sync
+  const fetchAllProducts = async (isManual = false) => {
+    // Show full skeleton only if zero products are in state
+    if (!isManual && products.length === 0) {
+      setIsLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+
     try {
       const response = await inventoryApi.getManage();
       if (response.success && Array.isArray(response.data)) {
-        setProducts(response.data);
-      } else {
+        const freshData = response.data;
+        // Compare with previous products to avoid redundant re-renders
+        setProducts((prev) => {
+          try {
+            if (JSON.stringify(prev) === JSON.stringify(freshData)) {
+              return prev;
+            }
+          } catch {
+            // fallback
+          }
+          return freshData;
+        });
+
+        const newStats = computeInventoryStats(freshData);
+        setStats(newStats);
+
+        saveCachedInventoryProducts(freshData, user?.clientId);
+        saveCachedInventoryStats(newStats);
+      } else if (products.length === 0) {
         setProducts([]);
       }
     } catch (error: any) {
       console.error('Failed to fetch inventory products', error);
-      setProducts([]);
+      // Keep cached products if already present
+      if (products.length === 0) {
+        setProducts([]);
+      }
       toast.error(error.message || 'Failed to fetch dynamic products.');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
+
+  // Hydrate from cache when user/clientId loads if current state is empty
+  useEffect(() => {
+    if (products.length === 0) {
+      const cached = getCachedInventoryProducts(user?.clientId);
+      if (cached.length > 0) {
+        setProducts(cached);
+        setIsLoading(false);
+      }
+    }
+  }, [user?.clientId]);
 
   useEffect(() => {
     if (products.length > 0) {
       console.log("inventory products received:", products.length);
-      console.log("product client info:", products.map(p => ({
-        name: p.name,
-        clientId: p.clientId || (typeof p.client === 'string' ? p.client : p.client?._id),
-        clientName: p.client?.shopName || p.client?.companyName || 'Not assigned'
-      })));
     }
   }, [products]);
 
+  // Initial mount: load data in background silently if cache exists
   useEffect(() => {
-    fetchAllProducts();
+    void fetchAllProducts(false);
   }, []);
 
   const loadStaffEmployees = useCallback(async () => {
@@ -305,7 +451,14 @@ export function Inventory() {
         if (response.success) {
           const createdProduct = response.data || productData;
           broadcastProductSync(createdProduct, user?.clientId);
-          setProducts((prev) => [createdProduct as Product, ...prev.filter((p) => p._id !== createdProduct._id)]);
+          setProducts((prev) => {
+            const next = [createdProduct as Product, ...prev.filter((p) => p._id !== createdProduct._id)];
+            saveCachedInventoryProducts(next, user?.clientId);
+            const nextStats = computeInventoryStats(next);
+            setStats(nextStats);
+            saveCachedInventoryStats(nextStats);
+            return next;
+          });
           setIsProductModalOpen(false);
           toast.success('Product created & synced to POS!', { id: saveToastId });
           void fetchAllProducts();
@@ -326,9 +479,14 @@ export function Inventory() {
         if (response.success) {
           const updatedProduct = response.data || { ...selectedProduct, ...body };
           broadcastProductSync(updatedProduct, user?.clientId);
-          setProducts((prev) =>
-            prev.map((p) => (p._id === selectedProduct._id ? { ...p, ...updatedProduct } : p))
-          );
+          setProducts((prev) => {
+            const next = prev.map((p) => (p._id === selectedProduct._id ? { ...p, ...updatedProduct } : p));
+            saveCachedInventoryProducts(next, user?.clientId);
+            const nextStats = computeInventoryStats(next);
+            setStats(nextStats);
+            saveCachedInventoryStats(nextStats);
+            return next;
+          });
           setIsProductModalOpen(false);
           toast.success(response.message || 'Product updated successfully');
           void fetchAllProducts();
@@ -347,7 +505,14 @@ export function Inventory() {
     try {
       const response = await inventoryApi.delete(productToDelete._id);
       if (response.success) {
-        setProducts(prev => prev.filter(p => p._id !== productToDelete._id));
+        setProducts((prev) => {
+          const next = prev.filter((p) => p._id !== productToDelete._id);
+          saveCachedInventoryProducts(next, user?.clientId);
+          const nextStats = computeInventoryStats(next);
+          setStats(nextStats);
+          saveCachedInventoryStats(nextStats);
+          return next;
+        });
         toast.success('Product deleted successfully');
         setIsDeleteModalOpen(false);
         setProductToDelete(null);
@@ -428,12 +593,12 @@ export function Inventory() {
                 <div className="flex shrink-0 flex-wrap items-center gap-3 sm:justify-end">
                   <Button
                     variant="outline"
-                    onClick={fetchAllProducts}
-
-                    className="h-11 rounded-2xl border-violet-200/80 bg-white/80 px-4 text-sm font-semibold text-violet-900 shadow-[0_2px_8px_-2px_rgba(109,40,217,0.12)] backdrop-blur-sm transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:-translate-y-0.5 hover:border-violet-300 hover:bg-white hover:shadow-[0_8px_24px_-8px_rgba(109,40,217,0.2)] dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-950/55"
+                    onClick={() => void fetchAllProducts(true)}
+                    disabled={isRefreshing}
+                    className="h-11 rounded-2xl border-violet-200/80 bg-white/80 px-4 text-sm font-semibold text-violet-900 shadow-[0_2px_8px_-2px_rgba(109,40,217,0.12)] backdrop-blur-sm transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] hover:-translate-y-0.5 hover:border-violet-300 hover:bg-white hover:shadow-[0_8px_24px_-8px_rgba(109,40,217,0.2)] dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-100 dark:hover:bg-violet-950/55 disabled:opacity-60"
                   >
-                    <RefreshCw className="h-4 w-4" />
-                    <span className="ml-2 hidden text-sm font-semibold sm:inline">Refresh</span>
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+                    <span className="ml-2 hidden text-sm font-semibold sm:inline">{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
                   </Button>
                   {allowAdd && (
                     <Button
@@ -503,7 +668,7 @@ export function Inventory() {
               </AnimatePresence>
 
               {/* Stats */}
-              <InventoryStats items={inventoryItems} />
+              <InventoryStats items={inventoryItems} stats={stats} />
 
 
 
@@ -567,9 +732,14 @@ export function Inventory() {
         onClose={() => setIsAddProductModalOpen(false)}
         onProductCreated={(newProduct) => {
           if (newProduct) {
-            setProducts((prev) => [newProduct as Product, ...prev.filter((p) => p._id !== newProduct._id)]);
+            broadcastProductSync(newProduct, user?.clientId);
+            setProducts((prev) => {
+              const next = [newProduct as Product, ...prev.filter((p) => p._id !== newProduct._id)];
+              saveCachedInventoryProducts(next, user?.clientId);
+              return next;
+            });
           }
-          void fetchAllProducts();
+          void fetchAllProducts(true);
         }}
       />
 

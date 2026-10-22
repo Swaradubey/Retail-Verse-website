@@ -123,8 +123,8 @@ export function Login() {
 
         {/* Brand */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-            <ShoppingBag className="w-5 h-5 text-white" />
+          <div className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 overflow-hidden shadow-lg">
+            <img src="/logo.png" alt="Retail Verse logo" className="w-9 h-9 object-contain rounded-full" />
           </div>
           <span className="text-white font-bold text-xl tracking-tight">{brandName}</span>
         </div>
@@ -163,8 +163,8 @@ export function Login() {
         <div className="w-full max-w-md">
           {/* Mobile brand */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
-            <div className="w-9 h-9 rounded-xl bg-violet-600 flex items-center justify-center">
-              <ShoppingBag className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-full bg-violet-600/20 border-2 border-violet-400/50 flex items-center justify-center overflow-hidden">
+              <img src="/logo.png" alt="Retail Verse logo" className="w-8 h-8 object-contain rounded-full" />
             </div>
             <span className="font-bold text-xl text-gray-900 tracking-tight">{brandName.toLowerCase()}</span>
           </div>

@@ -226,9 +226,9 @@ const checkoutPOS = async (req, res) => {
           : productDoc.unitPrice || productDoc.price
       ) || 0;
 
-      const gstRate = Number(
-        item.gstRate !== undefined ? item.gstRate : productDoc.gstRate
-      ) || 0;
+      const rawItemGst = item.gst !== undefined ? item.gst : item.gstRate;
+      const rawDocGst = productDoc.gst !== undefined ? productDoc.gst : productDoc.gstRate;
+      const gstRate = Number(rawItemGst !== undefined ? rawItemGst : rawDocGst) || 0;
 
       const lineSubtotal = unitPrice * quantity;
       const lineGst = (lineSubtotal * gstRate) / 100;
@@ -245,8 +245,10 @@ const checkoutPOS = async (req, res) => {
         unitPrice,
         price: unitPrice,
         quantity,
+        gst: gstRate,
         gstRate,
         gstAmount: lineGst,
+        tax: lineGst,
         itemTotal,
       });
     }
@@ -347,8 +349,10 @@ const checkoutPOS = async (req, res) => {
         unitPrice: item.unitPrice,
         price: item.unitPrice,
         quantity: item.quantity,
+        gst: item.gstRate,
         gstRate: item.gstRate,
         gstAmount: item.gstAmount,
+        tax: item.gstAmount,
         itemTotal: item.itemTotal,
       })),
       subtotal,

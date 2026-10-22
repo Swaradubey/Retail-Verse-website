@@ -94,6 +94,12 @@ const productSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    gst: {
+      type: Number,
+      default: 0,
+      required: false,
+      min: [0, "GST cannot be negative"],
+    },
     gstRate: {
       type: Number,
       default: 0,
@@ -303,6 +309,13 @@ productSchema.pre("save", function (next) {
     this.createdBy = this.merchantId;
   }
 
+  // Sync gst and gstRate
+  if (this.gst !== undefined && (this.gstRate === undefined || this.gstRate === 0)) {
+    this.gstRate = this.gst;
+  } else if (this.gstRate !== undefined && (this.gst === undefined || this.gst === 0)) {
+    this.gst = this.gstRate;
+  }
+
   next();
 });
 
@@ -442,8 +455,14 @@ productSchema.post("findOneAndDelete", function (doc) {
   });
 });
 
+productSchema.index({ sku: 1 });
 productSchema.index({ barcode: 1 }, { unique: true, sparse: true });
+productSchema.index({ category: 1 });
 productSchema.index({ clientId: 1, barcode: 1 });
+productSchema.index({ clientId: 1, sku: 1 });
+productSchema.index({ clientId: 1, category: 1 });
 productSchema.index({ clientId: 1, createdAt: -1 });
+productSchema.index({ clientId: 1, updatedAt: -1 });
+productSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

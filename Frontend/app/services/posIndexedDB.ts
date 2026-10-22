@@ -13,6 +13,7 @@ export interface POSCartItem {
   name: string;
   unitPrice: number;
   quantity: number;
+  gst?: number;
   gstRate: number;
   stockLevel: number;
   imageUrl?: string;
@@ -445,7 +446,16 @@ export async function cacheProducts(products: any[], clientScopeId?: string): Pr
         });
       }
 
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => {
+        try {
+          const lsKey = targetClientId ? `pos_products_cache_v1_${targetClientId}` : 'pos_products_cache_v1';
+          localStorage.setItem(lsKey, JSON.stringify(products));
+          if (targetClientId) {
+            localStorage.setItem('pos_products_cache_v1', JSON.stringify(products));
+          }
+        } catch {}
+        resolve();
+      };
       tx.onerror = () => reject(tx.error);
     });
   } catch (err) {

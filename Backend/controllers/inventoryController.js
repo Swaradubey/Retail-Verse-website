@@ -101,6 +101,7 @@ const getInventoryManage = async (req, res) => {
     }
 
     const rows = await Product.find(query)
+      .select("name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl dimensions description isActive isFeatured isOnSale salePercentage clientId clientName gst gstRate createdAt updatedAt")
       .sort("-updatedAt")
       .populate({ path: "clientId", select: "companyName shopName storeName email" })
       .lean();
@@ -239,6 +240,12 @@ const createInventoryItem = async (req, res) => {
     // Ensure new items are saved with isActive: true
     payload.isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : true;
 
+    // Optional GST support (default 0 if blank/empty)
+    const rawGst = req.body.gst !== undefined ? req.body.gst : req.body.gstRate;
+    const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
+    payload.gst = parsedGst;
+    payload.gstRate = parsedGst;
+
     // Fetch clientName if possible to persist it
     if (targetClientId) {
       const Client = require("../models/Client");
@@ -342,8 +349,10 @@ const getInventory = async (req, res) => {
 
 
     const inventory = await Product.find(query)
+      .select("name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl dimensions description isActive isFeatured isOnSale salePercentage clientId clientName gst gstRate createdAt updatedAt")
       .populate("clientId", "storeName companyName shopName")
-      .sort("-createdAt");
+      .sort("-createdAt")
+      .lean();
     const productsFound = inventory.length;
 
     // Populate marketplace listings
@@ -641,6 +650,13 @@ const updateInventoryItem = async (req, res) => {
       oldUpdatedAt = item.updatedAt;
     }
 
+    if (updatePayload.gst !== undefined || updatePayload.gstRate !== undefined) {
+      const rawGst = updatePayload.gst !== undefined ? updatePayload.gst : updatePayload.gstRate;
+      const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
+      updatePayload.gst = parsedGst;
+      updatePayload.gstRate = parsedGst;
+    }
+
     Object.assign(item, updatePayload);
     const updatedItem = await item.save();
     console.log("[Backend Debug] Inventory Item After Update:", {
@@ -876,6 +892,10 @@ const createInventoryProduct = async (req, res) => {
 
     const processedImage = processBase64ImageAsync(finalImage);
 
+    // Optional GST support (default 0 if blank/empty)
+    const rawGst = req.body.gst !== undefined ? req.body.gst : req.body.gstRate;
+    const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
+
     const newProduct = new Product({
       name: name.trim(),
       sku: cleanSku,
@@ -886,6 +906,8 @@ const createInventoryProduct = async (req, res) => {
       stockLevel: numStock,
       stock: numStock,
       quantity: numStock,
+      gst: parsedGst,
+      gstRate: parsedGst,
       image: processedImage,
       imageUrl: processedImage,
       images: processedImage ? [processedImage] : [],

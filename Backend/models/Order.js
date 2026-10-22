@@ -76,6 +76,7 @@ const orderSchema = new mongoose.Schema(
         itemTotal: { type: Number, required: false },
         image: { type: String, required: false },
         category: { type: String, required: false },
+        gst: { type: Number, default: 0 },
         gstRate: { type: Number, default: 0 },
         gstAmount: { type: Number, default: 0 },
         tax: { type: Number, default: 0 },
