@@ -105,6 +105,7 @@ async function idbGet(clientId?: string): Promise<Product[] | null> {
 function lsPut(products: Product[], clientId?: string): void {
   const keys = getEffectiveKeys(clientId);
   try {
+    localStorage.setItem('pos_products_cache', JSON.stringify(products));
     localStorage.setItem(keys.ls, JSON.stringify(products));
     // Also save under general key if scoped key was used, as reliable fallback
     if (clientId) {
@@ -118,6 +119,12 @@ function lsPut(products: Product[], clientId?: string): void {
 function lsGet(clientId?: string): Product[] | null {
   const keys = getEffectiveKeys(clientId);
   try {
+    // 1. Try standard pos_products_cache first
+    const simpleRaw = localStorage.getItem('pos_products_cache');
+    if (simpleRaw) {
+      const parsedSimple = JSON.parse(simpleRaw) as unknown;
+      if (Array.isArray(parsedSimple) && parsedSimple.length > 0) return parsedSimple as Product[];
+    }
     const raw = localStorage.getItem(keys.ls);
     if (raw) {
       const parsed = JSON.parse(raw) as unknown;

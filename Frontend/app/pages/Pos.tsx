@@ -187,15 +187,26 @@ export function Pos() {
 
   const showSaleOnly = searchParams.get('sale') === 'true';
   const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const cached = localStorage.getItem('pos_products_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
     return getPosProductsLocalStorage(
       localStorage.getItem('retail_verse_client_id') || undefined
     );
   });
   const [isLoading, setIsLoading] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('pos_products_cache');
+      if (cached && JSON.parse(cached).length > 0) return false;
+    } catch {}
     const initial = getPosProductsLocalStorage(
       localStorage.getItem('retail_verse_client_id') || undefined
     );
-    return initial.length === 0;
+    return !initial || initial.length === 0;
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -431,6 +442,9 @@ export function Pos() {
           const response = await productApi.getManage();
           if (response.success && Array.isArray(response.data)) {
             dbProducts = response.data as Product[];
+            try {
+              localStorage.setItem('pos_products_cache', JSON.stringify(dbProducts));
+            } catch {}
             const changed = haveProductsChanged(products, dbProducts);
             if (changed) {
               setProducts(dbProducts);

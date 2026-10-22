@@ -283,6 +283,18 @@ const getProducts = async (req, res) => {
     });
   } catch (error) {
     console.error("GET PRODUCTS ERROR", error);
+    const isPosRequest = req.query?.pos === "true" || req.query?.source === "pos";
+    if (isPosRequest) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+        products: [],
+        totalProducts: 0,
+        page: 1,
+        totalPages: 1
+      });
+    }
     res.status(500).json({
       success: false,
       message: "Server Error: " + error.message,

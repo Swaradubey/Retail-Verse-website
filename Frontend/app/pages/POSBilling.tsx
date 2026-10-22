@@ -186,12 +186,29 @@ export function POSBilling() {
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [cart, setCart] = useState<POSCartItem[]>([]);
   const [products, setProducts] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('pos_products_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // Fallback
+    }
     return getPosProductsLocalStorage(currentClientId);
   });
   const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(() => {
+    try {
+      const cached = localStorage.getItem('pos_products_cache');
+      if (cached && JSON.parse(cached).length > 0) return false;
+    } catch {
+      // Fallback
+    }
     const initial = getPosProductsLocalStorage(currentClientId);
-    return initial.length === 0;
+    return !initial || initial.length === 0;
   });
+  const loading = isLoadingProducts;
+  const setLoading = setIsLoadingProducts;
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'RAZORPAY' | 'WHATSAPP'>('CASH');
   const [upiId, setUpiId] = useState('');
@@ -262,7 +279,7 @@ export function POSBilling() {
   const couponInputRef = useRef<HTMLInputElement | null>(null);
 
   // Keep fresh ref to products and cart for synchronous global scanner listener
-  const productsRef = useRef<any[]>([]);
+  const productsRef = useRef<any[]>(products);
   useEffect(() => {
     productsRef.current = products;
   }, [products]);
@@ -368,9 +385,16 @@ export function POSBilling() {
               })
             : list;
 
+          // Always sync with localStorage pos_products_cache immediately
+          try {
+            localStorage.setItem('pos_products_cache', JSON.stringify(scopedProducts));
+          } catch {
+            // ignore storage quota errors
+          }
+
           // Stale-While-Revalidate: smoothly update state and cache ONLY if there are differences
           const hasChanges = haveProductsChanged(productsRef.current, scopedProducts);
-          if (hasChanges) {
+          if (hasChanges || productsRef.current.length === 0) {
             setProducts(scopedProducts);
             // Overwrite/update the local cache specifically for this authenticated client
             if (scopedProducts.length > 0) {
@@ -390,26 +414,58 @@ export function POSBilling() {
       if (cached && cached.length > 0) {
         if (haveProductsChanged(productsRef.current, cached)) {
           setProducts(cached);
+          try {
+            localStorage.setItem('pos_products_cache', JSON.stringify(cached));
+          } catch {}
         }
-      } else if (!hasCachedData) {
-        setProducts([]);
-        if (!silent) {
-          toast.info(
-            clientId
-              ? 'No offline products cached for your store yet. Please connect online once to sync inventory.'
-              : 'POS is in offline mode. No local products found.'
-          );
+      } else {
+        // Fallback to localStorage pos_products_cache if IndexedDB is empty
+        try {
+          const lsRaw = localStorage.getItem('pos_products_cache');
+          if (lsRaw) {
+            const parsed = JSON.parse(lsRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setProducts(parsed);
+              return;
+            }
+          }
+        } catch {}
+
+        if (!hasCachedData) {
+          setProducts([]);
+          if (!silent) {
+            toast.info(
+              clientId
+                ? 'No offline products cached for your store yet. Please connect online once to sync inventory.'
+                : 'POS is in offline mode. No local products found.'
+            );
+          }
         }
       }
     } catch (err) {
-      // Network failure fallback: load cached products strictly for this client
-      const cached = await getCachedProducts(clientId);
-      if (cached && cached.length > 0) {
-        if (haveProductsChanged(productsRef.current, cached)) {
-          setProducts(cached);
+      // Network failure fallback: load cached products strictly for this client or localStorage
+      try {
+        const cached = await getCachedProducts(clientId);
+        if (cached && cached.length > 0) {
+          if (haveProductsChanged(productsRef.current, cached)) {
+            setProducts(cached);
+            localStorage.setItem('pos_products_cache', JSON.stringify(cached));
+          }
+        } else {
+          const lsRaw = localStorage.getItem('pos_products_cache');
+          if (lsRaw) {
+            const parsed = JSON.parse(lsRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setProducts(parsed);
+            }
+          } else if (!hasCachedData) {
+            setProducts([]);
+          }
         }
-      } else if (!hasCachedData) {
-        setProducts([]);
+      } catch {
+        if (!hasCachedData) {
+          setProducts([]);
+        }
       }
       if (!silent) console.error('Failed to load products:', err);
     } finally {

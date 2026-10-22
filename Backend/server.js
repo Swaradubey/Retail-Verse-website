@@ -134,8 +134,15 @@ app.use(cors({
       const originUrl = new URL(origin);
       const hostname = originUrl.hostname;
 
-      // Allow any subdomain of storesetgo.online and any .vercel.app domain
-      if (hostname.endsWith('.storesetgo.online') || hostname.endsWith('.vercel.app')) {
+      // Allow any production cloud domains (storesetgo, vercel, onrender, cartvio, daizyhome, retailverse)
+      if (
+        hostname.endsWith('.storesetgo.online') ||
+        hostname.endsWith('.vercel.app') ||
+        hostname.endsWith('.onrender.com') ||
+        hostname.endsWith('.cartvio.biz') ||
+        hostname.endsWith('.daizyhome.com') ||
+        hostname.endsWith('.retailverse.in')
+      ) {
         return callback(null, true);
       }
 

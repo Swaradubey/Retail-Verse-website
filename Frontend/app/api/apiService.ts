@@ -2,18 +2,45 @@
 
 const TOKEN_KEY = "eco_shop_token";
 
+const getApiBaseUrl = (): string => {
+  const envUrl = (
+    String(import.meta.env.VITE_API_BASE_URL ?? "").trim() ||
+    String((typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ?? "").trim() ||
+    ""
+  ).replace(/\/+$/, "");
 
-const _RAW_API_BASE: string = (
-  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
-).replace(/\/+$/, "");
+  // If running in a browser environment on a live production domain (not localhost)
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+  ) {
+    // If the baked-in env URL points to localhost or is empty, use relative path in production
+    if (!envUrl || envUrl.includes("localhost") || envUrl.includes("127.0.0.1")) {
+      return "";
+    }
+    return envUrl;
+  }
 
-console.log(`[ApiService] API Base URL: ${_RAW_API_BASE}`);
+  return envUrl || "http://localhost:5000";
+};
+
+const _RAW_API_BASE: string = getApiBaseUrl();
+
+console.log(`[ApiService] API Base URL: ${_RAW_API_BASE || '(relative /api)'}`);
 
 /** Resolves final request URL whether env base includes `/api` or not. */
 function buildApiUrl(endpoint: string): string {
   const base = _RAW_API_BASE;
   let path = endpoint.trim();
   if (!path.startsWith("/")) path = `/${path}`;
+
+  if (!base) {
+    if (path.startsWith("/api/") || path === "/api") {
+      return path;
+    }
+    return `/api${path}`;
+  }
 
   const baseEndsWithApi = /\/api$/i.test(base);
 
@@ -53,7 +80,10 @@ class ApiService {
     const pageName = options.pageName || "Unknown Page";
 
     // Auto-inject Authorization header if token exists
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token =
+      localStorage.getItem(TOKEN_KEY) ||
+      localStorage.getItem("token") ||
+      localStorage.getItem("authToken");
 
     // Get user from storage to check role and clientId
     let userRole = "";
@@ -117,7 +147,11 @@ class ApiService {
       // Requirement 16: Log Request URL, Method, Page Name
       console.log(`[ApiService] [${pageName}] ${options.method || 'GET'} ${url}`);
 
-      const response = await fetch(url, { ...options, headers });
+      const response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: options.credentials || "include",
+      });
 
       // Requirement 16: Log Status
       console.log(`[ApiService] [${pageName}] Status: ${response.status}`);
