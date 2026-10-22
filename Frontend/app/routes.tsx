@@ -59,7 +59,11 @@ const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Con
 const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
 const BlogPostDetail = lazy(() => import('./pages/BlogPostDetail').then(m => ({ default: m.BlogPostDetail })));
 const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
-const Inventory = lazy(() => import('./pages/Inventory').then(m => ({ default: m.Inventory })));
+const loadInventory = () => import('./pages/Inventory').then(m => ({ default: m.Inventory }));
+const Inventory = lazy(loadInventory);
+if (typeof window !== 'undefined') {
+  void loadInventory();
+}
 const Pos = lazy(() => import('./pages/Pos').then(m => ({ default: m.Pos || m.default })));
 const POSBilling = lazy(() => import('./pages/POSBilling').then(m => ({ default: m.POSBilling || m.default })));
 const DashboardProducts = lazy(() => import('./pages/dashboard/DashboardProducts').then(m => ({ default: m.DashboardProducts })));

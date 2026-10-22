@@ -12,7 +12,7 @@ export function AdminRoute({ children, blockedRoles }: AdminRouteProps) {
   const { user, isLoading } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading && !user) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />

@@ -60,15 +60,40 @@ function computeInventoryStats(items: Array<{ stock?: number; minStock?: number;
 function getCachedInventoryProducts(clientId?: string | null): Product[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw =
-      localStorage.getItem('inventory_products_cache') ||
-      (clientId ? localStorage.getItem(`${INVENTORY_CACHE_PREFIX}${clientId}`) : null) ||
-      localStorage.getItem(`${INVENTORY_CACHE_PREFIX}global`) ||
-      localStorage.getItem('inventory_products_cache_v1');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+    const directKeys = [
+      'inventory_products_cache',
+      'inventory_products_cache_v1',
+      clientId ? `${INVENTORY_CACHE_PREFIX}${clientId}` : null,
+      `${INVENTORY_CACHE_PREFIX}global`,
+      clientId ? `pos_products_cache_v1_${clientId}` : null,
+      'pos_products_cache_v1',
+      'retailverse_pos_products_cache',
+    ].filter(Boolean) as string[];
+
+    for (const key of directKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        } catch {}
+      }
+    }
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('inventory_products') || key.includes('pos_products'))) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return parsed;
+            }
+          } catch {}
+        }
       }
     }
   } catch (err) {
@@ -78,15 +103,17 @@ function getCachedInventoryProducts(clientId?: string | null): Product[] {
 }
 
 function saveCachedInventoryProducts(items: Product[], clientId?: string | null) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || !Array.isArray(items)) return;
   try {
     const raw = JSON.stringify(items);
     localStorage.setItem('inventory_products_cache', raw);
     localStorage.setItem('inventory_products_cache_v1', raw);
     if (clientId) {
       localStorage.setItem(`${INVENTORY_CACHE_PREFIX}${clientId}`, raw);
+      localStorage.setItem(`pos_products_cache_v1_${clientId}`, raw);
     }
     localStorage.setItem(`${INVENTORY_CACHE_PREFIX}global`, raw);
+    localStorage.setItem('pos_products_cache_v1', raw);
   } catch (err) {
     console.warn('[Inventory] Failed to save cached inventory:', err);
   }
@@ -121,19 +148,7 @@ export function Inventory() {
 
   // 1. Synchronous Cache Initialization for products
   const [products, setProducts] = useState<Product[]>(() => {
-    try {
-      const cached =
-        localStorage.getItem('inventory_products_cache') ||
-        localStorage.getItem('inventory_products_cache_v1') ||
-        localStorage.getItem('retailverse_inventory_cache_global');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      return [];
-    } catch {
-      return [];
-    }
+    return getCachedInventoryProducts(user?.clientId);
   });
 
   // Synchronous Cache Initialization for inventory summary / stats counters
@@ -141,36 +156,19 @@ export function Inventory() {
     try {
       const cached = localStorage.getItem('inventory_stats_cache');
       if (cached) return JSON.parse(cached);
-      const prodsRaw =
-        localStorage.getItem('inventory_products_cache') ||
-        localStorage.getItem('inventory_products_cache_v1');
-      if (prodsRaw) {
-        const parsed = JSON.parse(prodsRaw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return computeInventoryStats(parsed);
-        }
-      }
-      return null;
-    } catch {
-      return null;
+    } catch {}
+    const initialProds = getCachedInventoryProducts(user?.clientId);
+    if (initialProds.length > 0) {
+      return computeInventoryStats(initialProds);
     }
+    return null;
   });
 
   // 2. Eliminate Blocking Loading State:
   // If cache is present, loading is false so zero skeleton placeholder is rendered
   const [isLoading, setIsLoading] = useState<boolean>(() => {
-    try {
-      const cached =
-        localStorage.getItem('inventory_products_cache') ||
-        localStorage.getItem('inventory_products_cache_v1');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return false;
-      }
-      return true;
-    } catch {
-      return true;
-    }
+    const initialProds = getCachedInventoryProducts(user?.clientId);
+    return initialProds.length === 0;
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -206,8 +204,10 @@ export function Inventory() {
 
   // 3. Background Stale-While-Revalidate Sync
   const fetchAllProducts = async (isManual = false) => {
-    // Show full skeleton only if zero products are in state
-    if (!isManual && products.length === 0) {
+    const cachedProds = getCachedInventoryProducts(user?.clientId);
+    const hasAnyProducts = products.length > 0 || cachedProds.length > 0;
+    // Show full skeleton ONLY if zero products exist anywhere in state or cache
+    if (!isManual && !hasAnyProducts) {
       setIsLoading(true);
     } else {
       setIsRefreshing(true);
@@ -540,7 +540,7 @@ export function Inventory() {
     }
   };
  
-  if (authLoading) {
+  if (authLoading && !user) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center bg-[linear-gradient(165deg,#faf9f7_0%,#f7f5ff_45%,#f0f7ff_100%)] dark:bg-[linear-gradient(165deg,#09090b_0%,#0c0a12_50%,#09090b_100%)]">
         <div className="h-10 w-10 border-[3px] border-indigo-400/30 border-t-indigo-600 rounded-full animate-spin" />

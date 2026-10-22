@@ -110,17 +110,21 @@ const getInventoryManage = async (req, res) => {
     console.log("Inventory filter:", JSON.stringify(query));
     console.log("Inventory products count:", rows.length);
 
-    // Populate marketplace status
+    // Populate marketplace status only when explicitly requested
     let formattedRows = formatProductsWithClient(rows);
-    try {
-      const merchantId = getMerchantId(req);
-      const rowsWithStatus = await attachMarketplaceStatusToProducts({
-        products: rows,
-        merchantId
-      });
-      formattedRows = formatProductsWithClient(rowsWithStatus);
-    } catch (err) {
-      console.error("[inventoryController] Error loading marketplace status in manage:", err.message);
+    if (req.query.includeMarketplaces === "true") {
+      try {
+        const merchantId = getMerchantId(req);
+        if (merchantId && rows.length > 0) {
+          const rowsWithStatus = await attachMarketplaceStatusToProducts({
+            products: rows,
+            merchantId
+          });
+          formattedRows = formatProductsWithClient(rowsWithStatus);
+        }
+      } catch (err) {
+        console.error("[inventoryController] Error loading marketplace status in manage:", err.message);
+      }
     }
 
     return res.json({

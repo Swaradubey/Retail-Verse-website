@@ -123,9 +123,30 @@ function mergeProfileIntoUser(
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+      return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [token, setToken] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(TOKEN_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    try {
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+      return !storedToken || !storedUser;
+    } catch {
+      return false;
+    }
+  });
 
   // Rehydrate from localStorage, then refresh role/profile from API so stale admin-shaped data cannot linger
   useEffect(() => {
@@ -149,6 +170,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.removeItem(USER_STORAGE_KEY);
           }
         }
+
+        // Unblock UI immediately so routes/components render instantly with cached credentials
+        setIsLoading(false);
 
         const res = await userApi.getMe();
         if (cancelled || !res.success || !res.data) {
