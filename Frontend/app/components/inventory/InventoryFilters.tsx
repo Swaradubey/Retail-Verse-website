@@ -19,6 +19,7 @@ interface InventoryFiltersProps {
   onStockStatusChange: (value: StockStatus | 'all') => void;
   category: string;
   onCategoryChange: (value: string) => void;
+  categories?: string[];
   minPrice?: number;
   onMinPriceChange?: (value: number) => void;
   maxPrice?: number;
@@ -38,6 +39,7 @@ export function InventoryFilters({
   onStockStatusChange,
   category,
   onCategoryChange,
+  categories,
   minPrice,
   onMinPriceChange,
   maxPrice,
@@ -148,7 +150,7 @@ export function InventoryFilters({
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl border-slate-200/80 shadow-[0_16px_48px_-12px_rgba(15,23,42,0.18)] dark:border-white/10">
-                {inventoryCategories.map((cat) => (
+                {(categories && categories.length > 0 ? ['All Categories', ...categories] : inventoryCategories).map((cat) => (
                   <SelectItem key={cat} value={cat} className="rounded-xl">
                     {cat}
                   </SelectItem>

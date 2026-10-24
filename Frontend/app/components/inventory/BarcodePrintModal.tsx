@@ -126,8 +126,8 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             text-align: center !important;
           }
           @page {
-            size: auto;
-            margin: 5mm;
+            size: A4 portrait;
+            margin: 10mm;
           }
         }
       `}</style>

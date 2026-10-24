@@ -16,9 +16,6 @@ import { RootRoute } from './components/RootRoute';
 import { useAuth } from './context/AuthContext';
 import { isSuperAdminRole } from './utils/staffRoles';
 
-function PricingRedirect() {
-  return <Navigate to="/subscription" replace />;
-}
 
 function BlockSuperAdminRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -77,7 +74,6 @@ const DashboardHelpCenter = lazy(() => import('./pages/dashboard/DashboardHelpCe
 const DashboardWishlistActivity = lazy(() => import('./pages/dashboard/DashboardWishlistActivity').then(m => ({ default: m.DashboardWishlistActivity })));
 const DashboardContactMessages = lazy(() => import('./pages/dashboard/DashboardContactMessages').then(m => ({ default: m.DashboardContactMessages })));
 const DashboardUsers = lazy(() => import('./pages/dashboard/DashboardUsers').then(m => ({ default: m.DashboardUsers })));
-const DashboardSubscription = lazy(() => import('./pages/dashboard/DashboardSubscription').then(m => ({ default: m.DashboardSubscription })));
 const DashboardSeo = lazy(() => import('./pages/dashboard/DashboardSeo').then(m => ({ default: m.DashboardSeo })));
 const DashboardAdminLogs = lazy(() => import('./pages/dashboard/DashboardAdminLogs').then(m => ({ default: m.DashboardAdminLogs })));
 const DashboardSupport = lazy(() => import('./pages/dashboard/DashboardSupport').then(m => ({ default: m.DashboardSupport })));
@@ -149,22 +145,6 @@ export const router = createBrowserRouter([
       { path: 'blogs', element: withSuspense(<Blog />) },
       { path: 'blog/:id', element: withSuspense(<BlogPostDetail />) },
       { path: 'blogs/:id', element: withSuspense(<BlogPostDetail />) },
-      {
-        path: 'pricing',
-        element: withSuspense(
-          <ProtectedRoute>
-            <PricingRedirect />
-          </ProtectedRoute>
-        ),
-      },
-      {
-        path: 'subscription',
-        element: withSuspense(
-          <ProtectedRoute>
-            <DashboardSubscription />
-          </ProtectedRoute>
-        ),
-      },
       { path: 'about', element: withSuspense(<About />) },
       { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
       { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
@@ -250,10 +230,6 @@ export const router = createBrowserRouter([
                 <DashboardCustomersContactForm />
               </FullAdminOnlyRoute>
             ),
-          },
-          {
-            path: 'dashboard/subscription',
-            element: withSuspense(<DashboardSubscription />),
           },
           {
             path: 'dashboard/users',

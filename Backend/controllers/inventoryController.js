@@ -551,10 +551,15 @@ const updateInventoryItem = async (req, res) => {
       return res.status(resolved.status).json({ success: false, message: resolved.message });
     }
     const updatePayload = { ...resolved.update };
-    if (req.body.imageUrl !== undefined || req.body.image !== undefined || req.body.image_url !== undefined) {
-      const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+    const rawImg = req.body.photoUrl !== undefined
+      ? req.body.photoUrl
+      : (req.body.imageUrl !== undefined
+        ? req.body.imageUrl
+        : (req.body.image !== undefined ? req.body.image : (req.body.photo !== undefined ? req.body.photo : req.body.image_url)));
+    if (rawImg !== undefined) {
       const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
       updatePayload.image = exactImageUrl;
+      updatePayload.imageUrl = exactImageUrl;
       updatePayload.images = exactImageUrl ? [exactImageUrl] : [];
     }
     if (isClientScopedRole(role)) {
@@ -601,7 +606,7 @@ const updateInventoryItem = async (req, res) => {
         } else {
           skuQuery.clientId = null;
         }
-        const existingProduct = await Product.findOne(skuQuery);
+        const existingProduct = await Product.findOne(skuQuery).lean();
         if (existingProduct) {
           return res.status(400).json({
             success: false,
@@ -617,7 +622,7 @@ const updateInventoryItem = async (req, res) => {
         } else {
           barcodeQuery.clientId = null;
         }
-        const existingBarcode = await Product.findOne(barcodeQuery);
+        const existingBarcode = await Product.findOne(barcodeQuery).lean();
         if (existingBarcode) {
           return res.status(409).json({
             success: false,
@@ -644,6 +649,23 @@ const updateInventoryItem = async (req, res) => {
       }
     }
 
+    if (updatePayload.unitPrice !== undefined || updatePayload.price !== undefined) {
+      const rawPrice = updatePayload.unitPrice !== undefined ? updatePayload.unitPrice : updatePayload.price;
+      const parsedPrice = Math.max(0, Number(rawPrice) || 0);
+      updatePayload.price = parsedPrice;
+      updatePayload.unitPrice = parsedPrice;
+    }
+
+    if (updatePayload.stockLevel !== undefined || updatePayload.stock !== undefined || updatePayload.quantity !== undefined) {
+      const rawStock = updatePayload.stockLevel !== undefined
+        ? updatePayload.stockLevel
+        : (updatePayload.stock !== undefined ? updatePayload.stock : updatePayload.quantity);
+      const parsedStock = Math.max(0, parseInt(rawStock, 10) || Number(rawStock) || 0);
+      updatePayload.stockLevel = parsedStock;
+      updatePayload.stock = parsedStock;
+      updatePayload.quantity = parsedStock;
+    }
+
     // Track low-stock transition when stock is being updated
     let wasLowStock = false;
     let oldUpdatedAt = null;
@@ -661,8 +683,20 @@ const updateInventoryItem = async (req, res) => {
       updatePayload.gstRate = parsedGst;
     }
 
-    Object.assign(item, updatePayload);
-    const updatedItem = await item.save();
+    if (updatePayload.name && !updatePayload.title) {
+      updatePayload.title = updatePayload.name;
+    }
+
+    const updatedItem = await Product.findByIdAndUpdate(
+      item._id,
+      { $set: updatePayload },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedItem) {
+      return res.status(404).json({ success: false, message: "Failed to update inventory item" });
+    }
+
     console.log("[Backend Debug] Inventory Item After Update:", {
       _id: updatedItem._id,
       name: updatedItem.name,
@@ -673,15 +707,17 @@ const updateInventoryItem = async (req, res) => {
     if (updatePayload.stock !== undefined) {
       try {
         const { updateInventory } = require('../services/inventoryService');
-        await updateInventory({
+        updateInventory({
           tenantId: resolvedClientId || updatedItem.clientId || updatedItem.merchantId,
           productId: updatedItem._id,
           quantity: updatedItem.stock,
           source: 'inventory_item_update',
           referenceId: req.user?._id
+        }).catch((syncErr) => {
+          console.warn(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
         });
       } catch (syncErr) {
-        console.error(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
+        console.warn(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
       }
     }
 
@@ -704,9 +740,16 @@ const updateInventoryItem = async (req, res) => {
       data: updatedItem,
     };
     console.log("[Backend Debug] PUT /api/inventory/:id - Response:", responsePayload);
-    res.json(responsePayload);
+    return res.json(responsePayload);
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(409).json({
+        success: false,
+        message: `A product with this ${field} already exists.`,
+      });
+    }
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 

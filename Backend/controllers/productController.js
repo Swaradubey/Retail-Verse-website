@@ -74,10 +74,14 @@ async function loadProductFormatted(id, req) {
   const formatted = formatProductWithClient(doc);
   try {
     const merchantId = getMerchantId(req);
-    const [enriched] = await attachMarketplaceStatusToProducts({
+    // Non-blocking timeout to ensure instantaneous response in production
+    const marketplacePromise = attachMarketplaceStatusToProducts({
       products: [doc],
       merchantId
     });
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve([]), 500));
+    const enrichedList = (await Promise.race([marketplacePromise, timeoutPromise])) || [];
+    const enriched = enrichedList[0] || {};
     formatted.marketplaces = enriched.marketplaces || [];
     const MarketplaceProduct = require("../models/MarketplaceProduct");
     const listings = await MarketplaceProduct.find({ productId: id }).lean();
@@ -127,8 +131,17 @@ const getProducts = async (req, res) => {
     // Use shared visibility filter
     let query = await buildProductVisibilityFilter(req);
 
-    if (category && category !== "All Categories" && category !== "undefined" && category !== "null") {
-      query.category = category;
+    if (
+      category &&
+      category !== "All Categories" &&
+      category !== "All Products" &&
+      category !== "All" &&
+      category !== "undefined" &&
+      category !== "null" &&
+      String(category).trim() !== ""
+    ) {
+      const escaped = String(category).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.category = { $regex: new RegExp(`^${escaped}$`, "i") };
     }
     
     if (search && search !== "undefined" && search !== "null") {
@@ -737,10 +750,15 @@ const updateProduct = async (req, res) => {
     }
     delete payload.title;
     const normalizedPayload = normalizeSaleFields(payload);
-    if (req.body.imageUrl !== undefined || req.body.image !== undefined || req.body.image_url !== undefined) {
-      const rawImg = req.body.imageUrl !== undefined ? req.body.imageUrl : (req.body.image !== undefined ? req.body.image : req.body.image_url);
+    const rawImg = req.body.photoUrl !== undefined
+      ? req.body.photoUrl
+      : (req.body.imageUrl !== undefined
+        ? req.body.imageUrl
+        : (req.body.image !== undefined ? req.body.image : (req.body.photo !== undefined ? req.body.photo : req.body.image_url)));
+    if (rawImg !== undefined) {
       const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
       normalizedPayload.image = exactImageUrl;
+      normalizedPayload.imageUrl = exactImageUrl;
       normalizedPayload.images = exactImageUrl ? [exactImageUrl] : [];
     }
     console.log("[Backend Debug] PUT /api/products/:id - Allowed Fields Extracted:", normalizedPayload);
@@ -780,7 +798,7 @@ const updateProduct = async (req, res) => {
         } else {
           skuQuery.clientId = null;
         }
-        const existingProduct = await Product.findOne(skuQuery);
+        const existingProduct = await Product.findOne(skuQuery).lean();
         if (existingProduct) {
           return res.status(400).json({
             success: false,
@@ -796,7 +814,7 @@ const updateProduct = async (req, res) => {
         } else {
           barcodeQuery.clientId = null;
         }
-        const existingBarcode = await Product.findOne(barcodeQuery);
+        const existingBarcode = await Product.findOne(barcodeQuery).lean();
         if (existingBarcode) {
           return res.status(409).json({
             success: false,
@@ -823,6 +841,13 @@ const updateProduct = async (req, res) => {
       }
     }
 
+    if (normalizedPayload.unitPrice !== undefined || normalizedPayload.price !== undefined) {
+      const rawPrice = normalizedPayload.unitPrice !== undefined ? normalizedPayload.unitPrice : normalizedPayload.price;
+      const parsedPrice = Math.max(0, Number(rawPrice) || 0);
+      normalizedPayload.price = parsedPrice;
+      normalizedPayload.unitPrice = parsedPrice;
+    }
+
     if (normalizedPayload.stockLevel !== undefined || normalizedPayload.stock !== undefined || normalizedPayload.quantity !== undefined) {
       const rawStock = normalizedPayload.stockLevel !== undefined
         ? normalizedPayload.stockLevel
@@ -840,8 +865,24 @@ const updateProduct = async (req, res) => {
       normalizedPayload.gstRate = parsedGst;
     }
 
-    Object.assign(product, normalizedPayload);
-    const updated = await product.save();
+    if (normalizedPayload.name && !normalizedPayload.title) {
+      normalizedPayload.title = normalizedPayload.name;
+    }
+
+    // High performance MongoDB persistence with findByIdAndUpdate and runValidators
+    const updated = await Product.findByIdAndUpdate(
+      product._id,
+      { $set: normalizedPayload },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: "Failed to update product (not found)",
+      });
+    }
+
     console.log("[Backend Debug] Product After Update:", {
       _id: updated._id,
       name: updated.name,
@@ -849,33 +890,67 @@ const updateProduct = async (req, res) => {
       updatedAt: updated.updatedAt,
     });
 
+    // Central inventory service sync (async non-blocking)
     if (normalizedPayload.stockLevel !== undefined || normalizedPayload.stock !== undefined) {
       try {
         const { updateInventory } = require('../services/inventoryService');
-        await updateInventory({
+        updateInventory({
           tenantId: resolvedClientId || updated.clientId || updated.merchantId,
           productId: updated._id,
           quantity: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
           source: 'product_update',
           referenceId: req.user?._id
+        }).catch((syncErr) => {
+          console.warn(`[productController] Central inventory sync warning: ${syncErr.message}`);
         });
       } catch (syncErr) {
-        console.error(`[productController] Central inventory sync warning: ${syncErr.message}`);
+        console.warn(`[productController] Central inventory sync error: ${syncErr.message}`);
       }
     }
 
+    // Sync to inventories collection
+    try {
+      Inventory.findOneAndUpdate(
+        { sku: updated.sku },
+        {
+          $set: {
+            name: updated.name,
+            sku: updated.sku,
+            description: updated.description || "",
+            category: updated.category || "Uncategorized",
+            price: updated.price || 0,
+            stock: updated.stock || 0,
+            image: updated.image || "",
+          }
+        },
+        { upsert: false }
+      ).catch((invErr) => {
+        console.warn("[Backend Debug] Failed to sync with inventories collection:", invErr.message);
+      });
+    } catch (invErr) {
+      console.warn("[Backend Debug] Failed to sync with inventories collection:", invErr.message);
+    }
+
     const formatted = await loadProductFormatted(updated._id, req);
+    const finalProduct = formatted || updated;
     const responsePayload = {
       success: true,
       message: "Product updated successfully",
-      product: formatted,
-      data: formatted,
+      product: finalProduct,
+      data: finalProduct,
     };
     console.log("[Backend Debug] PUT /api/products/:id - Response:", responsePayload);
 
-    res.status(200).json(responsePayload);
+    return res.status(200).json(responsePayload);
   } catch (error) {
-    res.status(500).json({
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(409).json({
+        success: false,
+        message: `A product with this ${field} already exists.`,
+      });
+    }
+    return res.status(500).json({
       success: false,
       message: "Server Error: " + error.message,
     });

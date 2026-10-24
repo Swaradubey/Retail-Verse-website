@@ -365,6 +365,16 @@ export function Inventory() {
     return inventoryItems.filter((i) => (i.stock || 0) === 0).length;
   }, [inventoryItems]);
 
+  const inventoryCategoryList = useMemo(() => {
+    return Array.from(
+      new Set(
+        products
+          .map((p) => (p.category ? String(p.category).trim() : ''))
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
   // Filter and sort
   const filteredItems = useMemo(() => {
     let result = [...inventoryItems];
@@ -477,7 +487,7 @@ export function Inventory() {
         }
         const response = await inventoryApi.update(selectedProduct._id, body);
         if (response.success) {
-          const updatedProduct = response.data || { ...selectedProduct, ...body };
+          const updatedProduct = response.data || (response as any).product || { ...selectedProduct, ...body };
           broadcastProductSync(updatedProduct, user?.clientId);
           setProducts((prev) => {
             const next = prev.map((p) => (p._id === selectedProduct._id ? { ...p, ...updatedProduct } : p));
@@ -680,6 +690,7 @@ export function Inventory() {
                 onStockStatusChange={setStockStatus as any}
                 category={category}
                 onCategoryChange={setCategory}
+                categories={inventoryCategoryList}
                 minPrice={minPrice}
                 onMinPriceChange={setMinPrice}
                 maxPrice={maxPrice}

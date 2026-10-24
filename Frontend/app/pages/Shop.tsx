@@ -73,8 +73,21 @@ export function Shop() {
     refreshWishlistKeys();
   }, [refreshWishlistKeys]);
 
-  const selectedCategory = searchParams.get('category') || 'All Products';
+  const rawCategoryParam = searchParams.get('category');
+  const selectedCategory =
+    !rawCategoryParam ||
+    rawCategoryParam === 'All Products' ||
+    rawCategoryParam === 'All Categories' ||
+    rawCategoryParam === 'All'
+      ? 'All Products'
+      : rawCategoryParam;
   const showSaleOnly = searchParams.get('sale') === 'true';
+
+  // Synchronize searchQuery with ?q= or ?search= in URL
+  useEffect(() => {
+    const q = searchParams.get('q') || searchParams.get('search') || '';
+    setSearchQuery(q);
+  }, [searchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,7 +165,9 @@ export function Shop() {
   const categories = useMemo(() => {
     const cats = new Set(['All Products']);
     allProducts.forEach(p => {
-      if (p.category) cats.add(p.category);
+      if (p.category && String(p.category).trim()) {
+        cats.add(String(p.category).trim());
+      }
     });
     return Array.from(cats);
   }, [allProducts]);
@@ -161,7 +176,8 @@ export function Shop() {
     let result = [...allProducts];
 
     if (selectedCategory !== 'All Products') {
-      result = result.filter((p) => p.category === selectedCategory);
+      const target = selectedCategory.trim().toLowerCase();
+      result = result.filter((p) => (p.category || '').trim().toLowerCase() === target);
     }
 
     if (showSaleOnly) {
@@ -325,7 +341,7 @@ export function Shop() {
                   <div className="space-y-1.5">
                     {categories.map((category) => {
                       const Icon = categoryIcons[category];
-                      const isActive = selectedCategory === category;
+                      const isActive = selectedCategory.trim().toLowerCase() === category.trim().toLowerCase();
                       
                       return (
                         <button

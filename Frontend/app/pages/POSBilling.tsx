@@ -37,6 +37,8 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
+  Camera,
+  ScanBarcode,
 } from 'lucide-react';
 import api from '../api/apiService';
 import { useAuth } from '../context/AuthContext';
@@ -44,6 +46,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { formatINR } from '../utils/formatINR';
 import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../utils/imageUrl';
+import { POSCameraScannerModal } from '../components/pos/POSCameraScannerModal';
 import {
   HeldOrder,
   OfflineOrder,
@@ -144,6 +147,59 @@ function loadRazorpaySDK(): Promise<boolean> {
   });
 }
 
+// Luhn Algorithm validation for credit/debit card numbers
+function luhnCheck(numStr: string): boolean {
+  const digits = numStr.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits.charAt(i), 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
+// Auto-detect card brand / network from digits
+function detectCardBrand(digits: string): string {
+  const clean = digits.replace(/\D/g, '');
+  if (/^4/.test(clean)) return 'Visa';
+  if (/^(5[1-5]|2[2-7])/.test(clean)) return 'Mastercard';
+  if (/^3[47]/.test(clean)) return 'Amex';
+  if (/^(60|65|81|82|508)/.test(clean)) return 'RuPay';
+  if (/^(30[0-5]|36|38)/.test(clean)) return 'Diners Club';
+  if (/^(6011|65)/.test(clean)) return 'Discover';
+  return 'Card';
+}
+
+// Validate card expiry date (MM/YY)
+function validateCardExpiryDate(expiry: string): { valid: boolean; error?: string } {
+  const clean = expiry.replace(/\D/g, '');
+  if (clean.length !== 4) {
+    return { valid: false, error: 'Enter expiry as MM/YY' };
+  }
+  const month = parseInt(clean.substring(0, 2), 10);
+  const year = parseInt('20' + clean.substring(2, 4), 10);
+  if (month < 1 || month > 12) {
+    return { valid: false, error: 'Expiry month must be between 01 and 12' };
+  }
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  if (year < curYear || (year === curYear && month < curMonth)) {
+    return { valid: false, error: 'Card has expired' };
+  }
+  if (year > curYear + 25) {
+    return { valid: false, error: 'Invalid expiry year' };
+  }
+  return { valid: true };
+}
+
 export interface POSCartItem {
   productId: string;
   barcode: string;
@@ -210,11 +266,26 @@ export function POSBilling() {
   const loading = isLoadingProducts;
   const setLoading = setIsLoadingProducts;
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'RAZORPAY' | 'WHATSAPP'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'UPI' | 'CARD' | 'RAZORPAY' | 'WHATSAPP'>('CASH');
   const [upiId, setUpiId] = useState('');
   const [upiError, setUpiError] = useState<string | null>(null);
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [whatsappError, setWhatsappError] = useState<string | null>(null);
+
+  // Dedicated Card Payment Details State
+  const [cardHolderName, setCardHolderName] = useState('');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvv, setCardCvv] = useState('');
+  const [cardErrors, setCardErrors] = useState<{
+    cardHolderName?: string;
+    cardNumber?: string;
+    cardExpiry?: string;
+    cardCvv?: string;
+  }>({});
+
+  // Camera Barcode Scanner Modal State
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState(false);
 
   // Customer Details Form State (Optional for Walk-in, Bound to Checkout & Orders)
   const [customerName, setCustomerName] = useState('');
@@ -709,6 +780,9 @@ export function POSBilling() {
     setAppliedCoupon(null);
     setCouponInput('');
     setCouponError(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
     setHoldReferenceInput('');
     setShowHoldModal(false);
     await clearActiveCartDraft(currentClientIdRef.current);
@@ -741,13 +815,20 @@ export function POSBilling() {
     // Restore customer details if present in held order
     if (heldOrder.customerName && heldOrder.customerName !== 'Walk-in Customer') {
       setCustomerName(heldOrder.customerName);
+    } else {
+      setCustomerName('');
     }
     if (heldOrder.customerPhone) {
       setCustomerPhone(heldOrder.customerPhone);
       setWhatsappPhone(heldOrder.customerPhone);
+    } else {
+      setCustomerPhone('');
+      setWhatsappPhone('');
     }
     if ((heldOrder as any).customerAddress) {
       setCustomerAddress((heldOrder as any).customerAddress);
+    } else {
+      setCustomerAddress('');
     }
 
     // Remove from IndexedDB store 'held_orders'
@@ -982,6 +1063,69 @@ export function POSBilling() {
     return success;
   }, []);
 
+  // Dedicated Barcode / QR Resolver for both Hardware Scanners & Camera Scanner
+  const handleBarcodeScanned = useCallback(
+    async (scannedCode: string): Promise<{ success: boolean; productName?: string } | boolean> => {
+      const rawCode = scannedCode.trim();
+      if (!rawCode) return false;
+
+      const normalizedCode = rawCode.toLowerCase();
+      const catalog = productsRef.current;
+
+      // 1. Immediately find product matching scanned barcode or SKU in loaded catalog
+      const matchedProduct = catalog.find(
+        (p) =>
+          (p.barcode && String(p.barcode).trim().toLowerCase() === normalizedCode) ||
+          (p.sku && String(p.sku).trim().toLowerCase() === normalizedCode) ||
+          (p._id && String(p._id).trim().toLowerCase() === normalizedCode) ||
+          (p.id && String(p.id).trim().toLowerCase() === normalizedCode)
+      );
+
+      if (matchedProduct) {
+        const added = addToCart(matchedProduct);
+        if (added) {
+          return { success: true, productName: matchedProduct.name };
+        }
+        return false;
+      }
+
+      // 2. Offline IndexedDB Cached Product Lookup strictly within current client catalog
+      try {
+        const cachedMatch = await findCachedProductByBarcode(rawCode, currentClientIdRef.current);
+        if (cachedMatch) {
+          const added = addToCart(cachedMatch);
+          if (added) {
+            return { success: true, productName: cachedMatch.name };
+          }
+          return false;
+        }
+      } catch (e) {}
+
+      // 3. Fallback: Query server lookup API GET /api/products/lookup?code=... (if online)
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        try {
+          const query = currentClientIdRef.current
+            ? `&clientId=${encodeURIComponent(currentClientIdRef.current)}`
+            : '';
+          const res = await api.get(`/products/lookup?code=${encodeURIComponent(rawCode)}${query}`);
+          const fallbackProd = res.product || res.data;
+          if (fallbackProd) {
+            const added = addToCart(fallbackProd);
+            if (added) {
+              return { success: true, productName: fallbackProd.name };
+            }
+            return false;
+          }
+        } catch (err) {}
+      }
+
+      playScanSound('error');
+      toast.error('Product not found for scanned barcode');
+      return false;
+    },
+    [addToCart]
+  );
+
   // 3. Global Barcode Scanner Listener:
   // Detects rapid input (< 50ms per keystroke terminated by 'Enter') typical of USB/Bluetooth handheld scanners.
   // Directly triggers addToCart without just dumping barcode into search bar.
@@ -1026,46 +1170,7 @@ export function POSBilling() {
             setCouponInput('');
           }
 
-          // 1. Immediately find product matching scanned barcode or SKU in loaded catalog
-          const normalizedCode = scannedCode.toLowerCase();
-          const catalog = productsRef.current;
-          const matchedProduct = catalog.find(
-            (p) =>
-              (p.barcode && String(p.barcode).trim().toLowerCase() === normalizedCode) ||
-              (p.sku && String(p.sku).trim().toLowerCase() === normalizedCode) ||
-              (p._id && String(p._id).trim().toLowerCase() === normalizedCode) ||
-              (p.id && String(p.id).trim().toLowerCase() === normalizedCode)
-          );
-
-          if (matchedProduct) {
-            addToCart(matchedProduct);
-            return;
-          }
-
-          // 2. Offline IndexedDB Cached Product Lookup strictly within current client catalog
-          try {
-            const cachedMatch = await findCachedProductByBarcode(scannedCode, currentClientIdRef.current);
-            if (cachedMatch) {
-              addToCart(cachedMatch);
-              return;
-            }
-          } catch (e) {}
-
-          // 3. Fallback: Query server lookup API GET /api/products/lookup?code=... (if online)
-          if (navigator.onLine) {
-            try {
-              const query = currentClientIdRef.current ? `&clientId=${encodeURIComponent(currentClientIdRef.current)}` : '';
-              const res = await api.get(`/products/lookup?code=${encodeURIComponent(scannedCode)}${query}`);
-              const fallbackProd = res.product || res.data;
-              if (fallbackProd) {
-                addToCart(fallbackProd);
-                return;
-              }
-            } catch (err) {}
-          }
-
-          playScanSound('error');
-          toast.error(`Product not found for barcode: "${scannedCode}"`);
+          await handleBarcodeScanned(scannedCode);
           return;
         }
 
@@ -1091,7 +1196,7 @@ export function POSBilling() {
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
-  }, [completedOrder, addToCart]);
+  }, [completedOrder, handleBarcodeScanned]);
 
   // Cart quantity actions
   const updateItemQuantity = (productId: string, newQty: number) => {
@@ -1135,6 +1240,11 @@ export function POSBilling() {
     setWhatsappPhone('');
     setUpiError(null);
     setWhatsappError(null);
+    setCardHolderName('');
+    setCardNumber('');
+    setCardExpiry('');
+    setCardCvv('');
+    setCardErrors({});
     clearActiveCartDraft(currentClientId);
     toast.info('Cart cleared');
   };
@@ -1338,7 +1448,10 @@ export function POSBilling() {
 
   // 5. Complete Order / Pay -> POST /api/pos/checkout
   // Sends order payload to Node.js backend which executes atomic $inc: { stock: -quantity } in MongoDB
-  const handleCheckout = async () => {
+  const handleCheckout = async (forcedPaymentMethod?: 'CASH' | 'UPI' | 'CARD' | 'RAZORPAY' | 'WHATSAPP' | React.MouseEvent) => {
+    const activePaymentMethod =
+      typeof forcedPaymentMethod === 'string' ? forcedPaymentMethod : paymentMethod;
+
     if (cart.length === 0) {
       toast.error('Cart is empty. Please scan or add items before checkout.');
       return;
@@ -1358,10 +1471,10 @@ export function POSBilling() {
 
     // ── Offline Network Validation & Cash Offline Billing ──────────────────
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      if (paymentMethod !== 'CASH') {
+      if (activePaymentMethod !== 'CASH') {
         playScanSound('error');
         toast.error(
-          `Internet connection required for ${paymentMethod} payment. Please switch to "CASH" or reconnect.`
+          `Internet connection required for ${activePaymentMethod} payment. Please switch to "CASH" or reconnect.`
         );
         return;
       }
@@ -1462,7 +1575,7 @@ export function POSBilling() {
     }
 
     // ── Razorpay Payment Execution ──────────────────────────────────────────
-    if (paymentMethod === 'RAZORPAY') {
+    if (activePaymentMethod === 'RAZORPAY') {
       setIsProcessingCheckout(true);
       const toastId = toast.loading('Initializing Razorpay Checkout...');
 
@@ -1640,7 +1753,7 @@ export function POSBilling() {
     }
 
     // ── WhatsApp Payment Execution (Razorpay Payment Link) ───────────────────
-    if (paymentMethod === 'WHATSAPP') {
+    if (activePaymentMethod === 'WHATSAPP') {
       const cleanPhone = (whatsappPhone || customerPhone).replace(/\D/g, '');
       if (!cleanPhone || cleanPhone.length < 10) {
         setWhatsappError('Please enter a valid 10-digit mobile number for WhatsApp');
@@ -1757,7 +1870,7 @@ export function POSBilling() {
     }
 
     // ── UPI Validation ───────────────────────────────────────────────────────
-    if (paymentMethod === 'UPI') {
+    if (activePaymentMethod === 'UPI') {
       const trimmedUpi = upiId.trim();
       if (!trimmedUpi) {
         setUpiError('UPI ID is required to process UPI payment');
@@ -1772,13 +1885,63 @@ export function POSBilling() {
       setUpiError(null);
     }
 
+    // ── Card Validation ───────────────────────────────────────────────────────
+    if (activePaymentMethod === 'CARD') {
+      const cleanDigits = cardNumber.replace(/\D/g, '');
+      const newCardErrors: {
+        cardHolderName?: string;
+        cardNumber?: string;
+        cardExpiry?: string;
+        cardCvv?: string;
+      } = {};
+
+      const trimmedName = cardHolderName.trim();
+      if (!trimmedName || trimmedName.length < 2) {
+        newCardErrors.cardHolderName = 'Cardholder name is required (min 2 characters)';
+      } else if (!/^[a-zA-Z\s.'-]+$/.test(trimmedName)) {
+        newCardErrors.cardHolderName = 'Cardholder name can only contain letters and spaces';
+      }
+
+      if (!cleanDigits) {
+        newCardErrors.cardNumber = '16-digit card number is required';
+      } else if (cleanDigits.length < 13 || cleanDigits.length > 19) {
+        newCardErrors.cardNumber = 'Card number must be 16 digits';
+      } else if (!luhnCheck(cleanDigits)) {
+        newCardErrors.cardNumber = 'Invalid card number (checksum failed)';
+      }
+
+      const expiryCheck = validateCardExpiryDate(cardExpiry);
+      if (!expiryCheck.valid) {
+        newCardErrors.cardExpiry = expiryCheck.error || 'Invalid expiry date';
+      }
+
+      const cleanCvv = cardCvv.trim();
+      if (!cleanCvv) {
+        newCardErrors.cardCvv = 'CVV is required';
+      } else if (!/^\d{3,4}$/.test(cleanCvv)) {
+        newCardErrors.cardCvv = 'CVV must be 3 or 4 digits';
+      }
+
+      if (Object.keys(newCardErrors).length > 0) {
+        setCardErrors(newCardErrors);
+        playScanSound('error');
+        const firstErr = Object.values(newCardErrors)[0];
+        toast.error(firstErr || 'Please check card details');
+        return;
+      }
+      setCardErrors({});
+    }
+
     // ── Standard Cash/Card/UPI Checkout ──────────────────────────────────────
     setIsProcessingCheckout(true);
     const toastId = toast.loading('Processing order payment...');
 
     try {
+      const cleanCardDigits = cardNumber.replace(/\D/g, '');
+      const detectedBrand = detectCardBrand(cleanCardDigits);
+
       const payload = {
-        paymentMethod,
+        paymentMethod: activePaymentMethod,
         paymentStatus: 'PAID',
         customerName: effectiveCustomerName,
         customerPhone: effectiveCustomerPhone || undefined,
@@ -1790,8 +1953,19 @@ export function POSBilling() {
           email: '',
           address: effectiveCustomerAddress,
         },
-        upiId: paymentMethod === 'UPI' ? upiId.trim() : undefined,
-        paymentDetails: paymentMethod === 'UPI' ? { upiId: upiId.trim() } : undefined,
+        upiId: activePaymentMethod === 'UPI' ? upiId.trim() : undefined,
+        paymentDetails:
+          activePaymentMethod === 'UPI'
+            ? { upiId: upiId.trim() }
+            : activePaymentMethod === 'CARD'
+            ? {
+                cardName: cardHolderName.trim(),
+                cardLast4: cleanCardDigits.slice(-4),
+                expiryDate: cardExpiry.trim(),
+                cardNetwork: detectedBrand,
+                cardBrand: detectedBrand,
+              }
+            : undefined,
         couponCode: calculations.couponEligible && appliedCoupon ? appliedCoupon.code : undefined,
         subtotal: calculations.subtotal,
         totalGst: calculations.totalGst,
@@ -1843,6 +2017,11 @@ export function POSBilling() {
         setWhatsappPhone('');
         setUpiError(null);
         setWhatsappError(null);
+        setCardHolderName('');
+        setCardNumber('');
+        setCardExpiry('');
+        setCardCvv('');
+        setCardErrors({});
         clearActiveCartDraft(currentClientId);
         refreshPendingSyncCount();
         // Refresh products stock immediately in background
@@ -1857,6 +2036,11 @@ export function POSBilling() {
     } finally {
       setIsProcessingCheckout(false);
     }
+  };
+
+  // Dedicated trigger for sending Razorpay Payment Link via WhatsApp
+  const handleSendWhatsAppLink = () => {
+    handleCheckout('WHATSAPP');
   };
 
   // Filter products for the manual picker grid
@@ -1998,6 +2182,7 @@ export function POSBilling() {
             ${order.customerName && order.customerName !== 'Walk-in Customer' ? `<div class="meta">Customer: ${order.customerName}</div>` : ''}
             ${order.customerPhone ? `<div class="meta">Phone: ${order.customerPhone}</div>` : ''}
             ${order.customerAddress ? `<div class="meta">Address: ${order.customerAddress}</div>` : ''}
+            ${order.paymentDetails?.cardLast4 ? `<div class="meta">Card: **** **** **** ${order.paymentDetails.cardLast4} (${order.paymentDetails.cardNetwork || order.paymentDetails.cardBrand || 'Card'})</div>` : ''}
             ${order.upiId || order.paymentDetails?.upiId ? `<div class="meta">UPI ID: ${order.upiId || order.paymentDetails?.upiId}</div>` : ''}
             ${order.whatsappPhone || order.paymentDetails?.whatsappPhone ? `<div class="meta">WhatsApp: +${order.whatsappPhone || order.paymentDetails?.whatsappPhone}</div>` : ''}
             ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl ? `<div class="meta" style="word-break: break-all;">Link: ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl}</div>` : ''}
@@ -2168,7 +2353,18 @@ export function POSBilling() {
                 Products Catalog{' '}
                 <span className="text-zinc-400 font-normal">({filteredProducts.length})</span>
               </h3>
-              <span className="text-xs text-zinc-400">Click card or scan to add</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-400 hidden sm:inline">Click card or scan to add</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCameraScannerOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800/60 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition shadow-2xs group cursor-pointer"
+                  title="Open Camera Barcode & QR Scanner"
+                >
+                  <Camera className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 group-hover:scale-110 transition-transform" />
+                  <span>Scan</span>
+                </button>
+              </div>
             </div>
 
             {isLoadingProducts ? (
@@ -2298,7 +2494,9 @@ export function POSBilling() {
                   <button
                     type="button"
                     onClick={() => {
-                      setHoldReferenceInput(`HOLD-#${Date.now().toString().slice(-4)}`);
+                      const timestampSlice = Date.now().toString().slice(-4);
+                      const defaultRef = customerName.trim() ? `${customerName.trim()} (#${timestampSlice})` : `HOLD-#${timestampSlice}`;
+                      setHoldReferenceInput(defaultRef);
                       setShowHoldModal(true);
                     }}
                     className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 hover:bg-amber-500/20 transition active:scale-95"
@@ -2600,15 +2798,16 @@ export function POSBilling() {
 
               {/* Payment Method Selector (Compact Segmented Switcher) */}
               <div>
-                <div className="grid grid-cols-4 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-xl gap-0.5">
+                <div className="grid grid-cols-3 bg-zinc-100 dark:bg-zinc-800 p-0.5 rounded-xl gap-0.5">
                   <button
                     type="button"
                     onClick={() => {
                       setPaymentMethod('CASH');
                       setUpiError(null);
                       setWhatsappError(null);
+                      setCardErrors({});
                     }}
-                    className={`py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition ${
                       paymentMethod === 'CASH'
                         ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-2xs'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -2623,8 +2822,9 @@ export function POSBilling() {
                       setPaymentMethod('UPI');
                       setUpiError(null);
                       setWhatsappError(null);
+                      setCardErrors({});
                     }}
-                    className={`py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition ${
                       paymentMethod === 'UPI'
                         ? 'bg-white dark:bg-zinc-900 text-violet-600 dark:text-violet-400 shadow-2xs'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
@@ -2636,36 +2836,169 @@ export function POSBilling() {
                   <button
                     type="button"
                     onClick={() => {
-                      setPaymentMethod('RAZORPAY');
+                      setPaymentMethod('CARD');
                       setUpiError(null);
                       setWhatsappError(null);
+                      setCardErrors({});
                     }}
-                    className={`py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
-                      paymentMethod === 'RAZORPAY'
+                    className={`py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition ${
+                      paymentMethod === 'CARD'
                         ? 'bg-white dark:bg-zinc-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                         : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
                     }`}
                   >
-                    <Zap className="w-3.5 h-3.5" />
-                    RAZORPAY
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod('WHATSAPP');
-                      setUpiError(null);
-                      setWhatsappError(null);
-                    }}
-                    className={`py-1.5 rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition ${
-                      paymentMethod === 'WHATSAPP'
-                        ? 'bg-white dark:bg-zinc-900 text-teal-600 dark:text-teal-400 shadow-2xs'
-                        : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                    }`}
-                  >
-                    <MessageSquareCode className="w-3.5 h-3.5 text-teal-500" />
-                    WHATSAPP
+                    <CreditCard className="w-3.5 h-3.5" />
+                    CARD
                   </button>
                 </div>
+
+                {/* Conditionally rendered Card Details Form */}
+                {paymentMethod === 'CARD' && (
+                  <div className="mt-2 p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/60 animate-in fade-in slide-in-from-top-1 duration-150 text-left space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        Card Details <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="flex items-center gap-1">
+                        {cardNumber && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                            {detectCardBrand(cardNumber)}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-blue-600/80 dark:text-blue-400/80 font-medium">
+                          Debit / Credit
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Cardholder Name */}
+                    <div>
+                      <div className="relative">
+                        <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={cardHolderName}
+                          onChange={(e) => {
+                            setCardHolderName(e.target.value);
+                            if (cardErrors.cardHolderName) {
+                              setCardErrors((prev) => ({ ...prev, cardHolderName: undefined }));
+                            }
+                          }}
+                          placeholder="Cardholder Name (e.g. John Doe)"
+                          className={`w-full h-8 pl-8 pr-2.5 text-xs rounded-lg border bg-white dark:bg-zinc-900 font-medium focus:outline-none transition ${
+                            cardErrors.cardHolderName
+                              ? 'border-rose-400 focus:ring-2 focus:ring-rose-500/20 text-rose-900 dark:text-rose-100'
+                              : 'border-blue-200 dark:border-zinc-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-zinc-900 dark:text-zinc-100'
+                          }`}
+                        />
+                      </div>
+                      {cardErrors.cardHolderName && (
+                        <p className="mt-1 text-[10px] text-rose-500 font-medium flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                          {cardErrors.cardHolderName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 16-Digit Card Number with Auto-formatting */}
+                    <div>
+                      <div className="relative">
+                        <CreditCard className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={cardNumber}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 16);
+                            // Auto format as groups of 4: "4532 1234 5678 9012"
+                            const formatted = raw.match(/.{1,4}/g)?.join(' ') || raw;
+                            setCardNumber(formatted);
+                            if (cardErrors.cardNumber) {
+                              setCardErrors((prev) => ({ ...prev, cardNumber: undefined }));
+                            }
+                          }}
+                          placeholder="Card Number (#### #### #### ####)"
+                          maxLength={19}
+                          className={`w-full h-8 pl-8 pr-2.5 text-xs font-mono rounded-lg border bg-white dark:bg-zinc-900 tracking-wider focus:outline-none transition ${
+                            cardErrors.cardNumber
+                              ? 'border-rose-400 focus:ring-2 focus:ring-rose-500/20 text-rose-900 dark:text-rose-100'
+                              : 'border-blue-200 dark:border-zinc-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-zinc-900 dark:text-zinc-100'
+                          }`}
+                        />
+                      </div>
+                      {cardErrors.cardNumber && (
+                        <p className="mt-1 text-[10px] text-rose-500 font-medium flex items-center gap-1">
+                          <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                          {cardErrors.cardNumber}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Expiry Date & CVV Row */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="relative">
+                          <Clock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={cardExpiry}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/\D/g, '').slice(0, 4);
+                              let formatted = raw;
+                              if (raw.length >= 3) {
+                                formatted = `${raw.slice(0, 2)}/${raw.slice(2, 4)}`;
+                              }
+                              setCardExpiry(formatted);
+                              if (cardErrors.cardExpiry) {
+                                setCardErrors((prev) => ({ ...prev, cardExpiry: undefined }));
+                              }
+                            }}
+                            placeholder="MM / YY"
+                            maxLength={5}
+                            className={`w-full h-8 pl-8 pr-2 text-xs font-mono rounded-lg border bg-white dark:bg-zinc-900 focus:outline-none transition ${
+                              cardErrors.cardExpiry
+                                ? 'border-rose-400 focus:ring-2 focus:ring-rose-500/20 text-rose-900 dark:text-rose-100'
+                                : 'border-blue-200 dark:border-zinc-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-zinc-900 dark:text-zinc-100'
+                            }`}
+                          />
+                        </div>
+                        {cardErrors.cardExpiry && (
+                          <p className="mt-1 text-[10px] text-rose-500 font-medium flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                            {cardErrors.cardExpiry}
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <input
+                          type="password"
+                          value={cardCvv}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '').slice(0, 4);
+                            setCardCvv(raw);
+                            if (cardErrors.cardCvv) {
+                              setCardErrors((prev) => ({ ...prev, cardCvv: undefined }));
+                            }
+                          }}
+                          placeholder="CVV / CVC"
+                          maxLength={4}
+                          className={`w-full h-8 px-2.5 text-xs font-mono rounded-lg border bg-white dark:bg-zinc-900 focus:outline-none transition ${
+                            cardErrors.cardCvv
+                              ? 'border-rose-400 focus:ring-2 focus:ring-rose-500/20 text-rose-900 dark:text-rose-100'
+                              : 'border-blue-200 dark:border-zinc-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-zinc-900 dark:text-zinc-100'
+                          }`}
+                        />
+                        {cardErrors.cardCvv && (
+                          <p className="mt-1 text-[10px] text-rose-500 font-medium flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                            {cardErrors.cardCvv}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Conditionally rendered UPI ID Input */}
                 {paymentMethod === 'UPI' && (
@@ -2814,21 +3147,42 @@ export function POSBilling() {
                 </div>
               </div>
 
-              {/* Complete Order / Pay Button & Hold Cart Button */}
+              {/* Complete Order / Pay Button, Hold Cart Button & Send WhatsApp Link */}
               <div className="flex gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   disabled={isProcessingCheckout || cart.length === 0}
                   onClick={() => {
-                    setHoldReferenceInput(`HOLD-#${Date.now().toString().slice(-4)}`);
+                    const timestampSlice = Date.now().toString().slice(-4);
+                    const defaultRef = customerName.trim() ? `${customerName.trim()} (#${timestampSlice})` : `HOLD-#${timestampSlice}`;
+                    setHoldReferenceInput(defaultRef);
                     setShowHoldModal(true);
                   }}
-                  className="h-11 px-3.5 rounded-xl font-bold text-xs border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 flex items-center justify-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                  className="h-11 px-3 sm:px-3.5 rounded-xl font-bold text-xs border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 flex items-center justify-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
                   title="Park this cart to serve next customer"
                 >
-                  <PauseCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <PauseCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   <span className="hidden sm:inline">Hold Cart</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isProcessingCheckout || cart.length === 0}
+                  onClick={handleSendWhatsAppLink}
+                  className="h-11 px-3 sm:px-3.5 rounded-xl font-bold text-xs border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 dark:hover:bg-emerald-500/30 flex items-center justify-center gap-1.5 transition disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-2xs"
+                  title="Generate Razorpay link & send to customer via WhatsApp"
+                >
+                  <svg
+                    className="w-4 h-4 fill-emerald-600 dark:fill-emerald-400 shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z" />
+                  </svg>
+                  <span className="hidden sm:inline">Send WhatsApp Link</span>
+                  <span className="sm:hidden">WhatsApp</span>
                 </Button>
 
                 <Button
@@ -2840,6 +3194,8 @@ export function POSBilling() {
                       ? 'bg-gradient-to-r from-teal-600 via-emerald-600 to-green-600 hover:from-teal-700 hover:to-emerald-700 shadow-teal-500/20'
                       : paymentMethod === 'UPI'
                       ? 'bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-700 hover:to-purple-700 shadow-violet-500/20'
+                      : paymentMethod === 'CARD'
+                      ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/20'
                       : 'bg-gradient-to-r from-violet-600 via-indigo-600 to-purple-600 hover:from-violet-700 hover:to-indigo-700 shadow-violet-500/20'
                   }`}
                 >
@@ -2857,6 +3213,11 @@ export function POSBilling() {
                   <span className="flex items-center justify-center gap-1.5">
                     <Smartphone className="w-4 h-4" />
                     Charge UPI &bull; ₹{calculations.grandTotal.toFixed(2)}
+                  </span>
+                ) : paymentMethod === 'CARD' ? (
+                  <span className="flex items-center justify-center gap-1.5">
+                    <CreditCard className="w-4 h-4" />
+                    Charge Card &bull; ₹{calculations.grandTotal.toFixed(2)}
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
@@ -3165,6 +3526,14 @@ export function POSBilling() {
                   <span>Customer UPI ID:</span>
                   <span className="font-mono font-medium text-violet-600 dark:text-violet-400">
                     {completedOrder.upiId || completedOrder.paymentDetails?.upiId}
+                  </span>
+                </div>
+              )}
+              {(completedOrder.paymentMethod === 'CARD' || completedOrder.paymentDetails?.cardLast4) && (
+                <div className="flex justify-between text-[11px] text-zinc-400 pt-0.5">
+                  <span>Card Used:</span>
+                  <span className="font-mono font-medium text-blue-600 dark:text-blue-400">
+                    •••• {completedOrder.paymentDetails?.cardLast4 || 'Card'} {completedOrder.paymentDetails?.cardNetwork ? `(${completedOrder.paymentDetails.cardNetwork})` : ''}
                   </span>
                 </div>
               )}
@@ -3497,7 +3866,7 @@ export function POSBilling() {
       {/* ── 2. Held Orders / Recall Modal ─────────────────────────────────── */}
       {showHeldListModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-2xl w-full border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-3xl w-full border border-zinc-200 dark:border-zinc-800 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/80 dark:bg-zinc-800/40 shrink-0">
               <div className="flex items-center gap-3">
@@ -3529,7 +3898,7 @@ export function POSBilling() {
             </div>
 
             {/* Held Orders List */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1 min-h-[220px]">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3.5 flex-1 min-h-[220px]">
               {isLoadingHeldOrders ? (
                 <div className="h-44 flex flex-col items-center justify-center gap-2 text-zinc-400">
                   <div className="w-7 h-7 border-3 border-violet-600 border-t-transparent rounded-full animate-spin" />
@@ -3549,7 +3918,8 @@ export function POSBilling() {
                 </div>
               ) : (
                 heldOrders.map((held) => {
-                  const itemsCount = (held.items || []).reduce((acc, it) => acc + (it.quantity || 1), 0);
+                  const itemsList = held.items || [];
+                  const itemsCount = itemsList.reduce((acc, it) => acc + (it?.quantity || 1), 0);
                   const formattedTime = new Date(held.createdAt).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -3558,78 +3928,192 @@ export function POSBilling() {
                   return (
                     <div
                       key={held.id}
-                      className="p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-800/30 hover:border-violet-300 dark:hover:border-violet-700/60 transition space-y-2.5"
+                      className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/90 hover:border-violet-300 dark:hover:border-violet-700/60 shadow-xs transition space-y-3"
                     >
-                      <div className="flex items-start justify-between gap-2">
+                      {/* Card Header */}
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-1 rounded-lg bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 font-mono text-xs font-bold">
+                          <span className="px-2.5 py-1 rounded-lg bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 font-mono text-xs font-bold tracking-tight">
                             {held.reference}
                           </span>
                           <span className="text-[11px] text-zinc-400 font-medium flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
+                            <Clock className="w-3 h-3 text-zinc-400" />
                             {formattedTime}
                           </span>
                           {held.isSynced ? (
-                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                              Synced to Cloud
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Synced to Cloud
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                              Local Offline
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Local Offline
+                            </span>
+                          )}
+                          {held.customerName && held.customerName !== 'Walk-in Customer' && (
+                            <span className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
+                              <User className="w-3 h-3 text-zinc-400" />
+                              {held.customerName}
+                              {held.customerPhone ? ` • ${held.customerPhone}` : ''}
                             </span>
                           )}
                         </div>
 
-                        <div className="text-right">
-                          <span className="text-sm font-black text-zinc-900 dark:text-white">
-                            ₹{held.grandTotal.toFixed(2)}
+                        <div className="text-right shrink-0">
+                          <span className="text-base font-black text-zinc-900 dark:text-white">
+                            ₹{Number(held.grandTotal !== undefined ? held.grandTotal : held.totalAmount || 0).toFixed(2)}
                           </span>
-                          <p className="text-[10px] text-zinc-400">
-                            {itemsCount} item{itemsCount !== 1 ? 's' : ''}
+                          <p className="text-[10px] font-medium text-zinc-400">
+                            {itemsCount} item{itemsCount !== 1 ? 's' : ''} ({itemsList.length} unique)
                           </p>
                         </div>
                       </div>
 
-                      {/* Items Preview Chips */}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {(held.items || []).slice(0, 4).map((it, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 text-[11px] rounded-md bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 font-medium"
-                          >
-                            {it.name} <span className="text-zinc-400 font-bold">x{it.quantity}</span>
-                          </span>
-                        ))}
-                        {(held.items || []).length > 4 && (
-                          <span className="px-2 py-0.5 text-[11px] rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-400 font-medium">
-                            +{(held.items || []).length - 4} more
-                          </span>
-                        )}
+                      {/* Structured Products List / Compact Table Layout */}
+                      <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 overflow-hidden shadow-2xs">
+                        {/* Table Header */}
+                        <div className="grid grid-cols-12 gap-2 px-3 py-1.5 bg-zinc-100/80 dark:bg-zinc-800/60 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 select-none">
+                          <div className="col-span-6 sm:col-span-6">Item & Details</div>
+                          <div className="col-span-2 text-center">Qty</div>
+                          <div className="col-span-2 text-right">Unit Price</div>
+                          <div className="col-span-2 text-right">Item Total</div>
+                        </div>
+
+                        {/* Scrollable Items Container (max-h-48 overflow-y-auto for >3 items) */}
+                        <div className="divide-y divide-zinc-200/60 dark:divide-zinc-800/60 max-h-48 overflow-y-auto">
+                          {itemsList.length === 0 ? (
+                            <div className="py-4 text-center text-xs text-zinc-400">
+                              No items recorded in this held cart.
+                            </div>
+                          ) : (
+                            itemsList.map((it, idx) => {
+                              const unitPrice = Number(it.unitPrice !== undefined ? it.unitPrice : ((it as any).price || 0));
+                              const qty = Number(it.quantity || 1);
+                              const lineTotal = unitPrice * qty;
+                              const sku = it.barcode || (it as any).sku || '';
+                              const variant = (it as any).variant || (it as any).variantName || (it as any).size || '';
+                              const category = it.category || '';
+                              const itemDiscount = Number((it as any).discount || 0);
+
+                              return (
+                                <div
+                                  key={it.productId || it.barcode || idx}
+                                  className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-zinc-100/60 dark:hover:bg-zinc-800/40 transition-colors text-xs"
+                                >
+                                  {/* Item Name & SKU / Variant info */}
+                                  <div className="col-span-6 sm:col-span-6 min-w-0 pr-1">
+                                    <p
+                                      className="font-semibold text-zinc-800 dark:text-zinc-200 truncate leading-tight"
+                                      title={it.name || 'Product'}
+                                    >
+                                      {it.name || 'Unnamed Product'}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                      {sku && (
+                                        <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500">
+                                          SKU: {sku}
+                                        </span>
+                                      )}
+                                      {variant && (
+                                        <span className="px-1.5 py-0.5 rounded bg-zinc-200/70 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-medium leading-none">
+                                          {variant}
+                                        </span>
+                                      )}
+                                      {category && (
+                                        <span className="px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 text-[10px] font-medium leading-none">
+                                          {category}
+                                        </span>
+                                      )}
+                                      {itemDiscount > 0 && (
+                                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold leading-none">
+                                          -₹{itemDiscount.toFixed(2)} off
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Quantity */}
+                                  <div className="col-span-2 text-center">
+                                    <span className="inline-block px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold text-xs">
+                                      Qty: {qty}
+                                    </span>
+                                  </div>
+
+                                  {/* Unit Price */}
+                                  <div className="col-span-2 text-right font-medium text-zinc-600 dark:text-zinc-400 text-xs">
+                                    ₹{unitPrice.toFixed(2)}
+                                  </div>
+
+                                  {/* Item Total Price */}
+                                  <div className="col-span-2 text-right font-bold text-zinc-900 dark:text-zinc-100 text-xs">
+                                    ₹{lineTotal.toFixed(2)}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* Applied Coupon / Item Discount Tag (Clearly Aligned) */}
                         {held.appliedCoupon && (
-                          <span className="px-2 py-0.5 text-[10px] rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold">
-                            Coupon: {held.appliedCoupon.code} (-₹{held.discountAmount})
-                          </span>
+                          <div className="flex items-center justify-between px-3 py-1.5 bg-emerald-50/80 dark:bg-emerald-950/30 border-t border-emerald-100 dark:border-emerald-900/50 text-xs font-medium">
+                            <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                              <Tag className="w-3.5 h-3.5 shrink-0" />
+                              <span>Applied Coupon:</span>
+                              <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-emerald-100 dark:bg-emerald-900/60 text-[11px]">
+                                {held.appliedCoupon.code}
+                              </span>
+                            </span>
+                            <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                              -₹{Number(held.discountAmount || held.appliedCoupon.discount || 0).toFixed(2)}
+                            </span>
+                          </div>
                         )}
+
+                        {/* Financial Sub-summary (Subtotal, GST, Net Total) */}
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-100/60 dark:bg-zinc-800/40 border-t border-zinc-200/80 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400">
+                          <span>
+                            Subtotal: ₹{Number(held.subtotal || 0).toFixed(2)}
+                            {Number(held.totalGst || 0) > 0 ? ` • GST: ₹${Number(held.totalGst).toFixed(2)}` : ''}
+                          </span>
+                          <span className="font-extrabold text-zinc-900 dark:text-white text-xs">
+                            Total: ₹{Number(held.grandTotal !== undefined ? held.grandTotal : held.totalAmount || 0).toFixed(2)}
+                          </span>
+                        </div>
                       </div>
 
                       {/* Action Buttons */}
-                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteHeldOrder(held)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Discard
-                        </button>
-                        <Button
-                          type="button"
-                          onClick={() => handleResumeHeldOrder(held)}
-                          className="h-8 px-3.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-2xs flex items-center gap-1.5"
-                        >
-                          <PlayCircle className="w-3.5 h-3.5" />
-                          Resume / Recall
-                        </Button>
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-zinc-200/60 dark:border-zinc-800">
+                        <div className="text-[11px] text-zinc-400">
+                          {held.customerAddress ? (
+                            <span className="flex items-center gap-1 truncate max-w-[220px]" title={held.customerAddress}>
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{held.customerAddress}</span>
+                            </span>
+                          ) : (
+                            <span className="font-mono text-[10px] text-zinc-400">ID: {held.id}</span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteHeldOrder(held)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition flex items-center gap-1 active:scale-95"
+                            title="Discard this parked cart"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Discard
+                          </button>
+                          <Button
+                            type="button"
+                            onClick={() => handleResumeHeldOrder(held)}
+                            className="h-8 px-3.5 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white shadow-2xs flex items-center gap-1.5 transition active:scale-95"
+                            title="Recall this parked cart into active register"
+                          >
+                            <PlayCircle className="w-3.5 h-3.5" />
+                            Resume / Recall
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -3713,6 +4197,12 @@ export function POSBilling() {
           </div>
         </div>
       )}
+      {/* Live Camera Barcode/QR Scanner Modal */}
+      <POSCameraScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        onScanBarcode={handleBarcodeScanned}
+      />
     </div>
   );
 }

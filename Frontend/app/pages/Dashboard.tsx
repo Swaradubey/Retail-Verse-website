@@ -93,7 +93,6 @@ const sidebarItems = [
   { title: "POS", icon: ShoppingCart, href: "/pos", hideForSuperAdmin: true, hideForUser: true },
   { title: "Wishlist", icon: Heart, href: "/dashboard/wishlist", hideForSuperAdmin: true },
   { title: "Track Order", icon: Truck, href: "/track-order", hideForInventoryManager: true, hideForSuperAdmin: true },
-  { title: "Subscription / Upgrade Plan", icon: Crown, href: "/dashboard/subscription", hideForSuperAdmin: true },
   { title: "Wishlist Activity", icon: Activity, href: "/dashboard/wishlist-activity", adminOnly: true, hideForSuperAdmin: true },
   { title: "Super Admin", icon: Shield, href: "/super-admin", superAdminOnly: true, hideForSuperAdmin: true },
   { title: "Orders", icon: ShoppingCart, href: "/dashboard/orders", hideForUser: false, hideForSuperAdmin: true },
@@ -659,21 +658,17 @@ export function Dashboard() {
                         <TrendingUp className="w-4 h-4 shrink-0 text-[#2563EB]" />
                         <span className="text-xs sm:text-sm font-bold uppercase tracking-[0.2em] text-[#2563EB]">
                           {location.pathname === '/dashboard' ? 'Performance Live' :
-                            location.pathname === '/dashboard/subscription' ? 'Subscription' :
                             location.pathname.split('/').pop()?.replace('-', ' ')}
                         </span>
                       </div>
                       <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#0B1F3A] capitalize leading-tight">
                         {location.pathname === '/dashboard' ? 'Dashboard Overview' :
-                          location.pathname === '/dashboard/subscription' ? 'Subscription & Upgrade Plan' :
                           location.pathname.split('/').pop()?.replace('-', ' ')}
                       </h1>
                       <p className="text-[#0B1F3A]/80 mt-2 text-base max-w-xl leading-relaxed">
                         {location.pathname === '/dashboard'
                           ? <>Welcome back, <span className="text-[#0B1F3A] font-semibold">{user?.name || 'Admin'}</span>. Here&apos;s what&apos;s happening today.</>
-                          : location.pathname === '/dashboard/subscription'
-                            ? 'Manage your subscription plan and upgrade to unlock premium features.'
-                            : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
+                          : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
                       </p>
                     </div>
 

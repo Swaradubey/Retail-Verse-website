@@ -25,7 +25,6 @@ import api from '../../api/apiService';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { CameraScannerModal } from './CameraScannerModal';
-import { BarcodePrintModal, BarcodePrintProduct } from './BarcodePrintModal';
 import { broadcastProductSync } from '../../utils/posProductSync';
 
 interface AddProductModalProps {
@@ -58,14 +57,11 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-
-  // Post-submission prompt & print modal states
-  const [showPrintPrompt, setShowPrintPrompt] = useState(false);
-  const [createdProductForPrint, setCreatedProductForPrint] = useState<BarcodePrintProduct | null>(null);
-  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [printCopies, setPrintCopies] = useState<number>(1);
 
   // Refs
   const barcodeSvgRef = useRef<SVGSVGElement | null>(null);
+  const printBarcodeSvgRef = useRef<SVGSVGElement | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement | null>(null);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -102,9 +98,6 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       setImagePreview(null);
       setImageBase64('');
       setValidationErrors({});
-      setShowPrintPrompt(false);
-      setCreatedProductForPrint(null);
-      setIsPrintModalOpen(false);
 
       // Auto-focus barcode input so handheld hardware scanners immediately write into it
       const focusTimer = setTimeout(() => {
@@ -127,7 +120,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
 
   // Hardware Scanner Global Wedge Buffer Listener (handles rapid keystrokes from USB/Bluetooth scanners)
   useEffect(() => {
-    if (!isOpen || isScannerOpen || isPrintModalOpen || showPrintPrompt) return;
+    if (!isOpen || isScannerOpen) return;
 
     let scanBuffer = '';
     let lastKeyTime = 0;
@@ -176,29 +169,103 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     return () => {
       window.removeEventListener('keydown', handleHardwareScan, true);
     };
-  }, [isOpen, isScannerOpen, isPrintModalOpen, showPrintPrompt]);
+  }, [isOpen, isScannerOpen]);
 
-  // Live Barcode SVG Rendering
-  useEffect(() => {
-    if (barcode.trim() && barcodeSvgRef.current) {
+  // Render exact barcode to all printable SVG elements in #print-label-area
+  const renderPrintBarcode = useCallback((codeToRender: string) => {
+    const trimmedCode = codeToRender ? codeToRender.trim() : '';
+    if (!trimmedCode) return false;
+
+    const svgs = document.querySelectorAll<SVGSVGElement>(
+      '#print-label-area .barcode-print-svg, #barcode-print'
+    );
+    if (!svgs || svgs.length === 0) return false;
+
+    let successCount = 0;
+    svgs.forEach((svgElem) => {
       try {
-        (JsBarcode as any)(barcodeSvgRef.current, barcode.trim(), {
+        (JsBarcode as any)(svgElem, trimmedCode, {
           format: 'CODE128',
-          lineColor: '#1e1b4b',
+          lineColor: '#000000',
           width: 1.8,
-          height: 44,
+          height: 48,
           displayValue: true,
-          fontSize: 13,
+          fontSize: 12,
           font: 'monospace',
-          textMargin: 3,
-          margin: 6,
+          textMargin: 2,
+          margin: 4,
           background: '#ffffff',
         });
+        successCount++;
       } catch (err) {
-        console.warn('[AddProductModal] Live barcode preview render warning:', err);
+        console.error('[AddProductModal] Print barcode SVG render error:', err);
       }
+    });
+
+    return successCount > 0;
+  }, []);
+
+  // Sync print copies with stockLevel when stockLevel changes and is valid
+  useEffect(() => {
+    if (stockLevel !== '' && !isNaN(Number(stockLevel)) && Number(stockLevel) > 0) {
+      setPrintCopies(Number(stockLevel));
     }
-  }, [barcode]);
+  }, [stockLevel]);
+
+  // Live Barcode SVG Rendering & Print Barcode Sync (updates on barcode OR printCopies change)
+  useEffect(() => {
+    if (barcode.trim()) {
+      if (barcodeSvgRef.current) {
+        try {
+          (JsBarcode as any)(barcodeSvgRef.current, barcode.trim(), {
+            format: 'CODE128',
+            lineColor: '#1e1b4b',
+            width: 1.8,
+            height: 44,
+            displayValue: true,
+            fontSize: 13,
+            font: 'monospace',
+            textMargin: 3,
+            margin: 6,
+            background: '#ffffff',
+          });
+        } catch (err) {
+          console.warn('[AddProductModal] Live barcode preview render warning:', err);
+        }
+      }
+
+      // Synchronize all printable SVG barcodes across all requested copies
+      const timer = setTimeout(() => {
+        renderPrintBarcode(barcode.trim());
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [barcode, printCopies, renderPrintBarcode]);
+
+  // Print Label Handler for #print-label-area
+  const handlePrintLabel = () => {
+    const exactBarcode = barcode.trim();
+    if (!exactBarcode) {
+      toast.error('Please enter or generate a barcode first to print labels.');
+      barcodeInputRef.current?.focus();
+      return;
+    }
+
+    // Ensure all requested barcode label SVGs are rendered before calling window.print()
+    const rendered = renderPrintBarcode(exactBarcode);
+    if (!rendered) {
+      setTimeout(() => {
+        renderPrintBarcode(exactBarcode);
+      }, 30);
+    }
+
+    // Add requestAnimationFrame + delay to guarantee SVGs are drawn before window.print()
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        window.print();
+      }, 100);
+    });
+  };
 
   // Regenerate SKU on demand
   const handleRefreshSku = () => {
@@ -387,30 +454,21 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
           onProductCreated(savedProduct);
         }
 
-        // Prepare print product data
-        setCreatedProductForPrint({
-          name: savedProduct.name || name.trim(),
-          sku: savedProduct.sku || sku.trim(),
-          barcode: savedProduct.barcode || barcode.trim(),
-          price: savedProduct.price !== undefined ? savedProduct.price : Number(price),
-          stockLevel: savedProduct.stockLevel !== undefined ? savedProduct.stockLevel : Number(stockLevel),
-          category: savedProduct.category || category,
-        });
-
         // Reset form inputs cleanly
         setName('');
         setSku(generateAutoSku());
         setBarcode('');
         setPrice('');
         setStockLevel(0);
+        setPrintCopies(1);
         setDescription('');
         setDimensions({ length: '', width: '', height: '' });
         setImagePreview(null);
         setImageBase64('');
         setValidationErrors({});
 
-        // Trigger confirmation prompt
-        setShowPrintPrompt(true);
+        // Directly submit and save the item without prompting for label print
+        onClose();
       } else {
         throw new Error(res.message || 'Failed to save product');
       }
@@ -424,40 +482,160 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     }
   };
 
-  // Post-submission prompt actions
-  const handlePrintPromptNo = () => {
-    setShowPrintPrompt(false);
-    setCreatedProductForPrint(null);
-    onClose();
-  };
-
-  const handlePrintPromptYes = () => {
-    setShowPrintPrompt(false);
-    setIsPrintModalOpen(true);
-  };
-
-  const handlePrintModalClose = () => {
-    setIsPrintModalOpen(false);
-    setCreatedProductForPrint(null);
-    onClose();
-  };
-
   if (!isOpen) return null;
 
   const modalContent = (
     <>
+      {/* Print-specific CSS styles */}
+      <style>{`
+        #print-label-area {
+          display: none;
+        }
+
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+
+          html, body {
+            background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+          }
+
+          /* Hide all application and modal elements so they do NOT take up height */
+          body > *:not(#print-label-area) {
+            display: none !important;
+          }
+
+          body * {
+            visibility: hidden !important;
+          }
+
+          #print-label-area,
+          #print-label-area * {
+            visibility: visible !important;
+          }
+
+          #print-label-area {
+            position: relative !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+
+          #print-label-area.single-label {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: flex-start !important;
+          }
+
+          #print-label-area.single-label .print-label-card {
+            width: fit-content !important;
+            max-width: 80mm !important;
+          }
+
+          #print-label-area.multi-label {
+            display: grid !important;
+            grid-template-columns: repeat(3, 1fr) !important;
+            gap: 3.5mm 4mm !important;
+          }
+
+          .print-label-card {
+            box-sizing: border-box !important;
+            padding: 3mm 4mm !important;
+            border: 0.5px dashed #666666 !important;
+            border-radius: 4px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            width: 100% !important;
+            min-height: 28mm !important;
+            max-height: 33mm !important;
+            overflow: hidden !important;
+          }
+
+          .print-label-name {
+            font-size: 11px !important;
+            font-weight: 700 !important;
+            color: #000000 !important;
+            line-height: 1.15 !important;
+            margin-bottom: 1.5mm !important;
+            text-align: center !important;
+            word-break: break-word !important;
+            max-height: 2.3em !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            width: 100% !important;
+          }
+
+          .print-label-barcode-container {
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            width: 100% !important;
+            background: #ffffff !important;
+            overflow: hidden !important;
+          }
+
+          .barcode-print-svg {
+            max-width: 100% !important;
+            height: auto !important;
+            display: block !important;
+          }
+        }
+      `}</style>
+
+      {/* Print Section strictly visible during print via #print-label-area */}
+      <div
+        id="print-label-area"
+        className={printCopies === 1 ? 'single-label' : 'multi-label'}
+      >
+        {Array.from({ length: Math.max(1, printCopies) }).map((_, idx) => (
+          <div key={idx} className="print-label-card">
+            {/* Conditional Product Name Display:
+                If Product Name is entered, display it clearly above the barcode on the label.
+                If Product Name is empty, do NOT show any empty space, "undefined", "null", or placeholder text—render only the barcode label. */}
+            {name && name.trim() ? (
+              <div className="print-label-name">
+                {name.trim()}
+              </div>
+            ) : null}
+
+            <div className="print-label-barcode-container">
+              <svg
+                id={idx === 0 ? 'barcode-print' : undefined}
+                ref={idx === 0 ? printBarcodeSvgRef : undefined}
+                className="barcode-print-svg"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Camera Barcode Scanner Modal */}
       <CameraScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleScanSuccess}
-      />
-
-      {/* Barcode Print Modal */}
-      <BarcodePrintModal
-        isOpen={isPrintModalOpen}
-        onClose={handlePrintModalClose}
-        product={createdProductForPrint}
       />
 
       {/* Main Modal Backdrop */}
@@ -489,60 +667,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
             </button>
           </div>
 
-          {/* Post-submission Confirmation Card Prompt */}
-          {showPrintPrompt ? (
-            <div className="p-8 flex flex-col items-center justify-center text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-
-              <div className="space-y-1.5 max-w-md">
-                <h3 className="text-xl font-bold text-zinc-900 dark:text-white">
-                  Product Saved Successfully!
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Do you want to print the barcode labels now for{' '}
-                  <strong className="text-zinc-800 dark:text-zinc-200 font-semibold">
-                    {createdProductForPrint?.name}
-                  </strong>
-                  ?
-                </p>
-              </div>
-
-              {/* Barcode snippet preview */}
-              {createdProductForPrint?.barcode && (
-                <div className="bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 w-full max-w-sm flex flex-col items-center">
-                  <div className="text-xs font-mono text-zinc-600 dark:text-zinc-300 mb-1">
-                    Barcode: <span className="font-bold">{createdProductForPrint.barcode}</span>
-                  </div>
-                  <div className="text-xs text-zinc-500">
-                    Default copies: <strong>{createdProductForPrint.stockLevel || 1}</strong>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-center gap-3 pt-2 w-full max-w-sm">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handlePrintPromptNo}
-                  className="flex-1 py-2.5 rounded-xl border-zinc-300 dark:border-zinc-700 font-medium"
-                >
-                  No, Close
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handlePrintPromptYes}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
-                >
-                  <Printer className="w-4 h-4" />
-                  Yes, Print
-                </Button>
-              </div>
-            </div>
-          ) : (
-            /* Main Add Product Form */
-            <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+          {/* Main Add Product Form */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
               {/* TOP BARCODE CONTROLS */}
               <div className="bg-indigo-50/70 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl p-4.5 space-y-3">
                 <div className="flex items-center justify-between">
@@ -588,7 +714,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                     />
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -606,6 +732,40 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                     >
                       <Sparkles className="w-4 h-4 text-amber-500" />
                       Generate
+                    </Button>
+
+                    {/* Quantity / Copies Input */}
+                    <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl px-2.5 py-1.5 shadow-sm gap-1.5">
+                      <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 select-none">
+                        Qty:
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={printCopies}
+                        onChange={(e) => {
+                          const val = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1));
+                          setPrintCopies(val);
+                        }}
+                        className="w-12 text-center text-xs font-bold bg-transparent text-zinc-900 dark:text-white focus:outline-none"
+                        title="Enter number of barcode labels to print"
+                      />
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePrintLabel}
+                      title={!barcode.trim() ? 'Enter or generate a barcode to print labels' : `Print ${printCopies} Barcode Labels`}
+                      className={`flex-1 sm:flex-none rounded-xl gap-1.5 text-xs font-semibold transition-all ${
+                        barcode.trim()
+                          ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shadow-sm'
+                          : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <Printer className={`w-4 h-4 ${barcode.trim() ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500'}`} />
+                      Print {printCopies} {printCopies === 1 ? 'Label' : 'Labels'}
                     </Button>
                   </div>
                 </div>
@@ -1068,7 +1228,6 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                 </Button>
               </div>
             </form>
-          )}
         </div>
       </div>
     </>
