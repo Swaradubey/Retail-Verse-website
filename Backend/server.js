@@ -267,6 +267,7 @@ const marketplaceRoutes = require("./routes/marketplace.routes");
 const marketplaceSyncJobRoutes = require("./routes/marketplaceSyncJobRoutes");
 const flipkartRoutes = require("./routes/flipkartRoutes");
 const posRoutes = require("./routes/posRoutes");
+const bannerRoutes = require("./routes/bannerRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -306,6 +307,7 @@ app.use("/api/voice-orders", voiceOrderRoutes);
 app.use("/api/marketplaces", marketplaceRoutes);
 app.use("/api/marketplace-sync/jobs", marketplaceSyncJobRoutes);
 app.use("/api/integrations/flipkart", flipkartRoutes);
+app.use("/api/banners", bannerRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {

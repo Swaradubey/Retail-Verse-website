@@ -39,6 +39,7 @@ import {
 import { getFullImageUrl } from '../../utils/imageUrl';
 import { SuperAdminThemeManagement } from './SuperAdminThemeManagement';
 import { ClientThemeManagement } from './ClientThemeManagement';
+import { BannerSettings } from '../../components/admin/BannerSettings';
 
 const COUNTRY_OPTIONS = [
   'United States',
@@ -903,6 +904,7 @@ export function DashboardSettings() {
     { id: 'notifications', title: 'Notifications', icon: Bell },
     { id: 'security', title: 'Security & Access', icon: ShieldCheck },
     { id: 'billing', title: 'Billing & Plans', icon: CreditCard },
+    { id: 'banners', title: 'Promotional Banners', icon: Image },
     ...(showThemeManagement ? [{ id: 'theme', title: 'Theme Management', icon: Palette }] : []),
     ...(showRazorpay ? [{ id: 'razorpay', title: 'Razorpay Integration', icon: CreditCard }] : []),
   ];
@@ -1710,6 +1712,12 @@ export function DashboardSettings() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {activeTab === 'banners' && (
+            <div>
+              <BannerSettings />
+            </div>
           )}
 
           {activeTab === 'theme' && showThemeManagement && (

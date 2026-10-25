@@ -55,7 +55,7 @@ const ResetPassword = lazy(() => import('./pages/auth/ResetPassword').then(m => 
 const Contact = lazy(() => import('./pages/Contact').then(m => ({ default: m.Contact })));
 const Blog = lazy(() => import('./pages/Blog').then(m => ({ default: m.Blog })));
 const BlogPostDetail = lazy(() => import('./pages/BlogPostDetail').then(m => ({ default: m.BlogPostDetail })));
-const About = lazy(() => import('./pages/About').then(m => ({ default: m.About })));
+
 const loadInventory = () => import('./pages/Inventory').then(m => ({ default: m.Inventory }));
 const Inventory = lazy(loadInventory);
 if (typeof window !== 'undefined') {
@@ -145,7 +145,7 @@ export const router = createBrowserRouter([
       { path: 'blogs', element: withSuspense(<Blog />) },
       { path: 'blog/:id', element: withSuspense(<BlogPostDetail />) },
       { path: 'blogs/:id', element: withSuspense(<BlogPostDetail />) },
-      { path: 'about', element: withSuspense(<About />) },
+
       { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
       { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
       { path: 'delete-account', element: withSuspense(<DeleteAccount />) },

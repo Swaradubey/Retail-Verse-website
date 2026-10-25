@@ -75,11 +75,29 @@ export function isValidImageUrlFormat(url?: string | null): boolean {
 /**
  * Resolve the backend root (strip /api suffix if present) so image paths
  * can be appended directly: e.g. base + "/uploads/image.jpg"
- * Uses VITE_API_BASE_URL — same env variable as apiService.ts.
+ * Uses VITE_API_BASE_URL — same smart logic as apiService.ts for production domains.
  */
-const _IMAGE_API_BASE: string = (
-  String(import.meta.env.VITE_API_BASE_URL ?? "").trim() || "http://localhost:5000"
-).replace(/\/+$/, "").replace(/\/api$/, "");
+function getImageApiBase(): string {
+  const envUrl = (
+    String(import.meta.env.VITE_API_BASE_URL ?? "").trim() ||
+    String((typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ?? "").trim() ||
+    ""
+  ).replace(/\/+$/, "").replace(/\/api$/, "");
+
+  // If running in browser on a production domain (not localhost)
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1"
+  ) {
+    if (!envUrl || envUrl.includes("localhost") || envUrl.includes("127.0.0.1")) {
+      return ""; // Use relative path in production
+    }
+    return envUrl;
+  }
+
+  return envUrl || "http://localhost:5000";
+}
 
 export function getFullImageUrl(url?: string | null): string {
   if (!url) return '';
@@ -95,7 +113,8 @@ export function getFullImageUrl(url?: string | null): string {
   }
   if (isWindowsAbsolutePath(url)) return '';
   const path = cleanUrl.startsWith('/') ? cleanUrl : `/${cleanUrl}`;
-  return `${_IMAGE_API_BASE}${path}`;
+  const base = getImageApiBase();
+  return `${base}${path}`;
 }
 
 /** Extract the best available image URL from a product-like object, checking all common field locations. */
