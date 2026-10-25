@@ -9,8 +9,9 @@ import { SuperAdminOrClientRoute } from './components/SuperAdminOrClientRoute';
 import { FullAdminOnlyRoute } from './components/FullAdminOnlyRoute';
 import { HelpCenterRoute } from './components/HelpCenterRoute';
 import { SupportRoute } from './components/SupportRoute';
-// Home page is eagerly loaded — it is the first visible screen
+// Home and Login are eagerly loaded — they are the most navigated-to screens
 import { Home } from './pages/Home';
+import { Login } from './pages/auth/Login';
 import { RootRoute } from './components/RootRoute';
 
 import { useAuth } from './context/AuthContext';
@@ -45,7 +46,6 @@ const Checkout = lazy(() => import('./pages/Checkout').then(m => ({ default: m.C
 const OrderConfirmation = lazy(() => import('./pages/OrderConfirmation').then(m => ({ default: m.OrderConfirmation })));
 const NotFound = lazy(() => import('./pages/NotFound').then(m => ({ default: m.NotFound })));
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Login = lazy(() => import('./pages/auth/Login').then(m => ({ default: m.Login })));
 const SuperAdminLogin = lazy(() => import('./pages/auth/SuperAdminLogin').then(m => ({ default: m.SuperAdminLogin })));
 const SuperAdminDashboard = lazy(() => import('./pages/super-admin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
 const Register = lazy(() => import('./pages/auth/Register').then(m => ({ default: m.Register })));
@@ -124,7 +124,7 @@ export const router = createBrowserRouter([
       { path: 'checkout', element: withSuspense(<Checkout />) },
       { path: 'order-confirmation/:orderId', element: withSuspense(<OrderConfirmation />) },
       { path: 'track-order', element: withSuspense(<TrackOrder />) },
-      { path: 'login', element: withSuspense(<Login />) },
+      { path: 'login', element: <Login /> },
       { path: 'super-admin/login', element: withSuspense(<SuperAdminLogin />) },
       {
         path: 'super-admin',

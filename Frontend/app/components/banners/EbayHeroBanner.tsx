@@ -19,6 +19,8 @@ export function EbayHeroBanner({
 }: EbayHeroBannerProps) {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // Keep isLoading only to suppress rendering until we know if banners exist.
+  // We do NOT show any skeleton — the rest of the page renders immediately.
   const [isLoading, setIsLoading] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,35 +87,11 @@ export function EbayHeroBanner({
     }
   };
 
-  // ── Zero Cumulative Layout Shift (CLS 0) Skeleton Loader ──────────────────
+  // While fetching, render nothing — no skeleton blocks the page.
+  // The rest of the homepage (SmartDigitalBusinessSection, TrustMarquee, etc.)
+  // is visible immediately below the fold.
   if (isLoading) {
-    return (
-      <div className={`w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 ${className}`}>
-        <div
-          role="status"
-          aria-label="Loading hero banner"
-          className="relative w-full rounded-3xl overflow-hidden bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 dark:from-gray-800 dark:via-gray-750 dark:to-gray-800 animate-pulse border border-gray-200/50 dark:border-gray-700/50 min-h-[380px] sm:min-h-[420px] md:min-h-[460px] lg:min-h-[480px] p-6 sm:p-10 md:p-14 flex flex-col md:flex-row items-center justify-between gap-8"
-        >
-          {/* Left copy skeleton */}
-          <div className="w-full md:w-1/2 space-y-4 sm:space-y-6">
-            {/* Pill tag skeleton */}
-            <div className="h-6 w-28 bg-gray-300 dark:bg-gray-700 rounded-full" />
-            {/* Headline skeleton lines */}
-            <div className="space-y-3">
-              <div className="h-10 sm:h-12 w-11/12 bg-gray-300 dark:bg-gray-700 rounded-2xl" />
-              <div className="h-10 sm:h-12 w-3/4 bg-gray-300 dark:bg-gray-700 rounded-2xl" />
-            </div>
-            {/* Subtext skeleton line */}
-            <div className="h-4 sm:h-5 w-4/5 bg-gray-300 dark:bg-gray-700 rounded-lg" />
-          </div>
-
-          {/* Right artwork image skeleton */}
-          <div className="w-full md:w-1/2 flex items-center justify-center">
-            <div className="w-56 h-56 sm:w-72 sm:h-72 md:w-80 md:h-80 rounded-3xl bg-gray-300/80 dark:bg-gray-700/80" />
-          </div>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   // Gracefully hide if no active banners found
