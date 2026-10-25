@@ -44,9 +44,40 @@ export function Shop() {
   const [showFilters, setShowFilters] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const [dynamicProducts, setDynamicProducts] = useState<ShopProduct[]>([]);
-  const [backendTotal, setBackendTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedProducts = useMemo(() => {
+    try {
+      const clientId = user?.clientId || user?.linkedClientId || (typeof window !== 'undefined' ? localStorage.getItem("retail_verse_client_id") : null) || undefined;
+      const cached = productApi.getCachedProducts(clientId);
+      if (cached && cached.success && Array.isArray(cached.data)) {
+        return cached.data
+          .map((p: DynamicProduct) => ({
+            id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
+            _id: p._id,
+            name: p.name,
+            slug: slugifyProductName(p.name),
+            price: p.price,
+            originalPrice: p.originalPrice,
+            description: p.description || '',
+            category: p.category,
+            image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop',
+            images: [getProductImageUrl(p)].filter(Boolean),
+            stock: p.stock,
+            rating: p.rating || 0,
+            reviews: 0,
+            featured: p.isFeatured || false,
+            sku: p.sku
+          } as ShopProduct))
+          .filter((p: any) => Boolean(p._id || p.id) && typeof p.name === 'string' && p.name.trim().length > 0 && typeof p.price === 'number' && p.price > 0);
+      }
+    } catch {
+      // safe fallback
+    }
+    return [];
+  }, [user]);
+
+  const [dynamicProducts, setDynamicProducts] = useState<ShopProduct[]>(() => initialCachedProducts);
+  const [backendTotal, setBackendTotal] = useState(() => initialCachedProducts.length);
+  const [isLoading, setIsLoading] = useState(() => initialCachedProducts.length === 0);
   const [error, setError] = useState<string | null>(null);
   const [wishlistKeySet, setWishlistKeySet] = useState<Set<string>>(() => new Set());
 
@@ -451,9 +482,22 @@ export function Shop() {
 
             {/* Products Grid */}
             {isLoading ? (
-              <div className="flex flex-col items-center justify-center py-24 rounded-[20px] border border-[#2563EB]/20 bg-white shadow-lg shadow-[#2563EB]/5">
-                <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-4" />
-                <p className="text-[#0B1F3A]/70 font-semibold">Loading your products...</p>
+              <div
+                className="grid gap-6"
+                style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}
+              >
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-3xl border border-[#2563EB]/20 bg-white p-4 animate-pulse flex flex-col gap-3 shadow-md shadow-[#2563EB]/5 overflow-hidden"
+                  >
+                    <div className="aspect-[4/4.2] w-full rounded-2xl bg-slate-200 dark:bg-zinc-800" />
+                    <div className="h-3 w-20 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                    <div className="h-4 w-3/4 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                    <div className="h-5 w-1/3 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                    <div className="h-10 w-full bg-slate-200 dark:bg-zinc-800 rounded-full mt-2" />
+                  </div>
+                ))}
               </div>
             ) : filteredProducts.length > 0 ? (
               <div

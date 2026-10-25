@@ -147,47 +147,6 @@ async function salesThisMonthForWindow(start, end, scopeQuery) {
   return agg?.sales ?? 0;
 }
 
-/** Refunds recorded in the window (by refundedAt). */
-async function lossFromRefundsForWindow(start, end, scopeQuery) {
-  const match = {
-    refundAmount: { $gt: 0 },
-    refundedAt: { $gte: start, $lt: end },
-  };
-  applyScope(match, scopeQuery);
-  const [agg] = await Order.aggregate([
-    {
-      $match: match,
-    },
-    { $group: { _id: null, t: { $sum: "$refundAmount" } } },
-  ]);
-  return agg?.t ?? 0;
-}
-
-/**
- * Cancellations in the window: sum(totalPrice) when no refund amount is stored (avoids double-count with refund loss).
- */
-async function lossFromCancellationsForWindow(start, end, scopeQuery) {
-  const match = {
-    cancelledAt: { $gte: start, $lt: end },
-    $or: [{ refundAmount: { $exists: false } }, { refundAmount: null }, { refundAmount: 0 }],
-  };
-  applyScope(match, scopeQuery);
-  const [agg] = await Order.aggregate([
-    {
-      $match: match,
-    },
-    { $group: { _id: null, t: { $sum: { $ifNull: ["$totalPrice", 0] } } } },
-  ]);
-  return agg?.t ?? 0;
-}
-
-async function lossThisMonthForWindow(start, end, scopeQuery) {
-  const [a, b] = await Promise.all([
-    lossFromRefundsForWindow(start, end, scopeQuery),
-    lossFromCancellationsForWindow(start, end, scopeQuery),
-  ]);
-  return a + b;
-}
 
 /**
  * Distinct "active ordering customers" in [start, end): same identity keys as conversion/CLV
@@ -634,6 +593,31 @@ async function topProductsForWindow(start, end, scopeQuery, limit = 3) {
   });
 }
 
+// Lightweight in-memory TTL cache for admin analytics summary metrics (60-second TTL)
+const adminAnalyticsCache = new Map();
+const ADMIN_ANALYTICS_CACHE_TTL = 60 * 1000;
+
+function getCachedAdminAnalytics(key) {
+  const item = adminAnalyticsCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiry) {
+    adminAnalyticsCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function setCachedAdminAnalytics(key, data) {
+  if (adminAnalyticsCache.size > 200) {
+    const oldestKey = adminAnalyticsCache.keys().next().value;
+    adminAnalyticsCache.delete(oldestKey);
+  }
+  adminAnalyticsCache.set(key, {
+    data,
+    expiry: Date.now() + ADMIN_ANALYTICS_CACHE_TTL,
+  });
+}
+
 // @desc    Admin dashboard analytics (summary, revenue flow, categories, top products)
 // @route   GET /api/admin/analytics
 // @access  Private / admin
@@ -693,6 +677,15 @@ const getAdminAnalytics = async (req, res) => {
       }
     }
 
+
+    const forceRefresh = req.query?.refresh === "true" || req.headers["x-force-refresh"] === "true";
+    const cacheKey = `${userId || "anon"}_${normalizedRole}_${JSON.stringify(scopeFilter)}`;
+    if (!forceRefresh) {
+      const cached = getCachedAdminAnalytics(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+    }
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -811,45 +804,6 @@ const getAdminAnalytics = async (req, res) => {
       const avgOrderValue = validOrdersCount > 0 ? revenue / validOrdersCount : 0;
 
       return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet, paidOrderIds };
-    };
-
-    const calculateLossThisMonth = (start, end, allOrders) => {
-      const LOSS_STATUSES = ["cancelled", "refunded", "failed"];
-      let loss = 0;
-      let cancelledCount = 0;
-
-      for (const order of allOrders) {
-        const orderStatusStr = String(order.status || order.orderStatus || "").toLowerCase().trim();
-        const isCancelledStatus = LOSS_STATUSES.includes(orderStatusStr);
-
-        // Refunds first — avoid double-counting with cancellation block
-        if (order.refundAmount > 0 && order.refundedAt) {
-          const refDate = new Date(order.refundedAt);
-          if (refDate >= start && refDate < end) {
-            loss += order.refundAmount;
-            cancelledCount++;
-            continue;
-          }
-        }
-
-        // Cancelled / failed — use cancelledAt if set, fall back to createdAt.
-        // Fallback covers orders cancelled via admin status PATCH without explicit cancelledAt.
-        if (isCancelledStatus) {
-          const cancelDate = order.cancelledAt
-            ? new Date(order.cancelledAt)
-            : order.createdAt
-            ? new Date(order.createdAt)
-            : null;
-          if (cancelDate && cancelDate >= start && cancelDate < end) {
-            const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
-            loss += amt;
-            cancelledCount++;
-          }
-        }
-      }
-
-      console.log(`[AdminAnalytics Loss] role=${userRole} cancelledOrdersCounted=${cancelledCount} lossAmount=${Math.round(loss * 100) / 100} window=[${start.toISOString().slice(0, 10)} – ${end.toISOString().slice(0, 10)}]`);
-      return Math.round(loss * 100) / 100;
     };
 
     const calculateTopProducts = (startCur, endCur, startPrev, endPrev, allOrders, allInvoices, limit = 3) => {
@@ -1022,13 +976,76 @@ const getAdminAnalytics = async (req, res) => {
       return days;
     };
 
-    // Include cancelled/refunded/failed orders so calculateLossThisMonth sees them.
-    // isRevenueOrder() handles revenue exclusion for cancelled/refunded orders.
-    // No date filter — same approach as getOrders() so dashboard counts the same orders.
-    const allOrders = await Order.find({
-      ...scopeFilter,
-      isDeleted: { $ne: true },
-    }).lean();
+    // Parallel Execution of all metric queries with Promise.all and restricted projections (.select + .lean)
+    const userQuery = { role: { $in: CUSTOMER_ROLES } };
+    applyScope(userQuery, scopeFilter);
+
+    const curOrderQuery = {
+      createdAt: { $gte: cur.start, $lt: cur.end },
+      user: { $exists: true, $ne: null },
+    };
+    applyScope(curOrderQuery, scopeFilter);
+
+    const prevOrderQuery = {
+      createdAt: { $gte: prev.start, $lt: prev.end },
+      user: { $exists: true, $ne: null },
+    };
+    applyScope(prevOrderQuery, scopeFilter);
+
+    const [
+      allOrders,
+      allInvoices,
+      registeredCustomersCount,
+      curPurchasersWithUser,
+      prevPurchasersWithUser,
+      activeCustCur,
+      activeCustPrev,
+      newCustCur,
+      newCustPrev,
+      clv,
+      [mrpCur, mrpPrev],
+      [mauCur, mauPrev],
+    ] = await Promise.all([
+      Order.find({
+        ...scopeFilter,
+        isDeleted: { $ne: true },
+      })
+        .select(
+          "totalPrice totalAmount grandTotal finalAmount payableAmount total amount pricing payment items orderItems products cartItems productItems status orderStatus paymentStatus payment_status paymentMethod orderSource createdAt orderDate isPaid paidAt orderId user customerEmail _id"
+        )
+        .lean(),
+      Invoice.find({
+        ...scopeFilter,
+      })
+        .select(
+          "totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items"
+        )
+        .lean(),
+      User.countDocuments(userQuery),
+      Order.distinct("user", curOrderQuery),
+      Order.distinct("user", prevOrderQuery),
+      activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeFilter),
+      activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeFilter),
+      User.countDocuments({
+        role: { $in: CUSTOMER_ROLES },
+        createdAt: { $gte: cur.start, $lt: cur.end },
+        ...scopeFilter,
+      }),
+      User.countDocuments({
+        role: { $in: CUSTOMER_ROLES },
+        createdAt: { $gte: prev.start, $lt: prev.end },
+        ...scopeFilter,
+      }),
+      customerLifetimeValueAllTime(scopeFilter),
+      Promise.all([
+        monthlyRevenuePerPayer(cur.start, cur.end, scopeFilter),
+        monthlyRevenuePerPayer(prev.start, prev.end, scopeFilter),
+      ]),
+      Promise.all([
+        monthlyActiveCustomers(cur.start, cur.end, scopeFilter),
+        monthlyActiveCustomers(prev.start, prev.end, scopeFilter),
+      ]),
+    ]);
 
     // Debug: inspect actual field names/values from database for first 3 orders
     if (allOrders.length > 0) {
@@ -1041,16 +1058,9 @@ const getAdminAnalytics = async (req, res) => {
       console.log("[AdminAnalytics] No orders found in query.");
     }
 
-    const allInvoices = await Invoice.find({
-      ...scopeFilter,
-    }).lean();
-
     const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders);
     const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders);
-
     const salesThisMonth = curStats.revenue;
-    const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
-    const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
 
     // Safe backend logs
     const ordersInCurrentMonth = allOrders.filter(o => isDateInWindow(o, cur.start, cur.end)).length;
@@ -1065,52 +1075,16 @@ const getAdminAnalytics = async (req, res) => {
     console.log("[AdminDashboard] topProductFound:", (calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, [], 1)[0]?.name || "None"));
     console.log("[AdminDashboard] Order IDs counted:", curStats.paidOrderIds);
 
-    const calculateConversionRate = async (start, end, filter) => {
-      const userQuery = { role: { $in: CUSTOMER_ROLES } };
-      applyScope(userQuery, filter);
-      const registered = await User.countDocuments(userQuery);
-      if (registered === 0) return { rate: 0, registered };
-
-      const orderQuery = {
-        createdAt: { $gte: start, $lt: end },
-        user: { $exists: true, $ne: null },
-      };
-      applyScope(orderQuery, filter);
-
-      const withUser = await Order.distinct("user", orderQuery);
-      const purchasers = withUser.filter((id) => id != null).length;
-      const rate = Math.min(100, (purchasers / registered) * 100);
-      return { rate, registered };
+    const curPurchasers = curPurchasersWithUser.filter((id) => id != null).length;
+    const prevPurchasers = prevPurchasersWithUser.filter((id) => id != null).length;
+    const conversionRateCur = {
+      rate: registeredCustomersCount > 0 ? Math.min(100, (curPurchasers / registeredCustomersCount) * 100) : 0,
+      registered: registeredCustomersCount,
     };
-
-    const conversionRateCur = await calculateConversionRate(cur.start, cur.end, scopeFilter);
-    const conversionRatePrev = await calculateConversionRate(prev.start, prev.end, scopeFilter);
-
-    const activeCustCur = await activeOrderingCustomersCountForWindow(cur.start, cur.end, scopeFilter);
-    const activeCustPrev = await activeOrderingCustomersCountForWindow(prev.start, prev.end, scopeFilter);
-
-    const newCustCur = await User.countDocuments({
-      role: { $in: CUSTOMER_ROLES },
-      createdAt: { $gte: cur.start, $lt: cur.end },
-      ...scopeFilter
-    });
-    const newCustPrev = await User.countDocuments({
-      role: { $in: CUSTOMER_ROLES },
-      createdAt: { $gte: prev.start, $lt: prev.end },
-      ...scopeFilter
-    });
-
-    const clv = await customerLifetimeValueAllTime(scopeFilter);
-
-    const [mrpCur, mrpPrev] = await Promise.all([
-      monthlyRevenuePerPayer(cur.start, cur.end, scopeFilter),
-      monthlyRevenuePerPayer(prev.start, prev.end, scopeFilter),
-    ]);
-
-    const [mauCur, mauPrev] = await Promise.all([
-      monthlyActiveCustomers(cur.start, cur.end, scopeFilter),
-      monthlyActiveCustomers(prev.start, prev.end, scopeFilter),
-    ]);
+    const conversionRatePrev = {
+      rate: registeredCustomersCount > 0 ? Math.min(100, (prevPurchasers / registeredCustomersCount) * 100) : 0,
+      registered: registeredCustomersCount,
+    };
 
     const revenueFlow = calculateRevenueFlow(allOrders, allInvoices);
     const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, []);
@@ -1133,8 +1107,6 @@ const getAdminAnalytics = async (req, res) => {
       paidNonDeletedOrdersFound,
       deletedOrCancelledOrdersExcluded,
       recalculatedRevenue: totalRevenueCalculated,
-      lossThisMonth,
-      profitThisMonth,
       topProductFound
     });
 
@@ -1144,10 +1116,8 @@ const getAdminAnalytics = async (req, res) => {
       totalNonDeletedOrdersFound,
       paidNonDeletedOrdersFound,
       deletedOrCancelledOrdersExcluded,
-      recalculatedRevenue: totalRevenueCalculated,
-      lossThisMonth
+      recalculatedRevenue: totalRevenueCalculated
     });
-
 
     const conversionRateChange = pctChange(conversionRateCur.rate, conversionRatePrev.rate);
     const avgOrderValueChange = pctChange(curStats.avgOrderValue, prevStats.avgOrderValue);
@@ -1184,8 +1154,6 @@ const getAdminAnalytics = async (req, res) => {
       sessionsChange: Math.round(sessionsChange * 10) / 10,
       sessionsTrend: trendFromChange(sessionsChange),
       salesThisMonth,
-      lossThisMonth,
-      profitThisMonth,
       meta: {
         conversionNote:
           "Registered-customer conversion: share of storefront accounts (user/customer role) that placed at least one order this month with a linked User id. Guest and unlinked POS sales are excluded from the numerator.",
@@ -1199,10 +1167,6 @@ const getAdminAnalytics = async (req, res) => {
           "Sum of totalPrice for orders placed in the current calendar month (website + POS).",
         salesThisMonthNote:
           "Subset of this month’s orders: not cancelled, and at least one of isPaid, POS (orderSource=pos), delivered, currentStage≥2, or fulfilled orderStatus (confirmed→delivered).",
-        lossThisMonthNote:
-          "Sum of refundAmount where refundedAt falls in this month, plus totalPrice for orders with cancelledAt in this month when refundAmount is absent or zero (no double-count).",
-        profitThisMonthNote:
-          "salesThisMonth − lossThisMonth (no product cost field in schema; COGS not applied).",
         orderCountNote:
           "Count of orders created in the current calendar month (same scope as total revenue).",
         activeCustomersNote:
@@ -1227,7 +1191,9 @@ const getAdminAnalytics = async (req, res) => {
     };
 
     if (isSuperAdmin) {
-      return res.json({ success: true, data: fullPayload });
+      const response = { success: true, data: fullPayload };
+      setCachedAdminAnalytics(cacheKey, response);
+      return res.json(response);
     }
 
     const operationalSummary = {
@@ -1241,15 +1207,13 @@ const getAdminAnalytics = async (req, res) => {
       avgOrderValueChange: fullSummary.avgOrderValueChange,
       avgOrderValueTrend: fullSummary.avgOrderValueTrend,
       salesThisMonth: fullSummary.salesThisMonth,
-      lossThisMonth: fullSummary.lossThisMonth,
-      profitThisMonth: fullSummary.profitThisMonth,
       meta: {
         operationalNote:
           "Conversion, sessions, new signups, and CLV are available to Super Admin only. This view is limited to revenue and order operations.",
       },
     };
 
-    return res.json({
+    const operationalPayload = {
       success: true,
       data: {
         analyticsScope: "operational",
@@ -1259,7 +1223,9 @@ const getAdminAnalytics = async (req, res) => {
         topProducts,
         periods,
       },
-    });
+    };
+    setCachedAdminAnalytics(cacheKey, operationalPayload);
+    return res.json(operationalPayload);
   } catch (error) {
     console.error("[adminAnalytics] getAdminAnalytics:", error.message);
     res.status(500).json({ success: false, message: error.message || "Server error" });

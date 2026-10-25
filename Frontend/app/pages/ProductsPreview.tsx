@@ -11,10 +11,43 @@ import { getProductImageUrl } from '../utils/imageUrl';
 
 const FEATURED_COUNT = 8;
 
+function getInitialCachedFeatured(clientId?: string): { products: ShopProduct[]; hasCached: boolean } {
+  try {
+    const cached = productApi.getCachedFeatured(clientId);
+    if (cached && cached.success && Array.isArray(cached.data) && cached.data.length > 0) {
+      const normalized = cached.data
+        .slice(0, FEATURED_COUNT)
+        .map((p: DynamicProduct) => ({
+          id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
+          _id: p._id,
+          name: p.name,
+          slug: slugifyProductName(p.name),
+          price: p.price,
+          originalPrice: p.originalPrice,
+          description: p.description || '',
+          category: p.category,
+          image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop',
+          images: [getProductImageUrl(p)].filter(Boolean),
+          stock: p.stock,
+          rating: p.rating || 0,
+          reviews: 0,
+          featured: true,
+          sku: p.sku,
+        } as ShopProduct));
+      return { products: normalized, hasCached: true };
+    }
+  } catch {
+    // fallback
+  }
+  return { products: [], hasCached: false };
+}
+
 export function ProductsPreview() {
   const { user } = useAuth();
-  const [dynamicFeatured, setDynamicFeatured] = useState<ShopProduct[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const clientId = user?.clientId || user?.linkedClientId || (typeof window !== 'undefined' ? localStorage.getItem("retail_verse_client_id") : null) || undefined;
+  const initial = useMemo(() => getInitialCachedFeatured(clientId), [clientId]);
+  const [dynamicFeatured, setDynamicFeatured] = useState<ShopProduct[]>(() => initial.products);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initial.hasCached);
   const [wishlistKeySet, setWishlistKeySet] = useState<Set<string>>(() => new Set());
 
   const refreshWishlistKeys = useCallback(async () => {
@@ -45,12 +78,13 @@ export function ProductsPreview() {
 
     const fetchFeatured = async () => {
       try {
-        setIsLoading(true);
-        const clientId = user?.clientId || user?.linkedClientId || localStorage.getItem("retail_verse_client_id");
-        const response = await productApi.getFeatured(clientId || undefined);
+        if (dynamicFeatured.length === 0) {
+          setIsLoading(true);
+        }
+        const response = await productApi.getFeatured(clientId, dynamicFeatured.length > 0);
         if (cancelled) return;
 
-        if (response.success && Array.isArray(response.data)) {
+        if (response && response.success && Array.isArray(response.data)) {
           const normalized = response.data
             .slice(0, FEATURED_COUNT)
             .map((p: DynamicProduct) => ({
@@ -62,7 +96,7 @@ export function ProductsPreview() {
               originalPrice: p.originalPrice,
               description: p.description || '',
               category: p.category,
-              image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
+              image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop',
               images: [getProductImageUrl(p)].filter(Boolean),
               stock: p.stock,
               rating: p.rating || 0,
@@ -70,12 +104,12 @@ export function ProductsPreview() {
               featured: true,
               sku: p.sku,
             } as ShopProduct));
-          if (!cancelled) setDynamicFeatured(normalized);
-        } else {
-          if (!cancelled) setDynamicFeatured([]);
+          if (!cancelled && (normalized.length > 0 || dynamicFeatured.length === 0)) {
+            setDynamicFeatured(normalized);
+          }
         }
       } catch {
-        if (!cancelled) setDynamicFeatured([]);
+        // preserve cached items if error
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -83,7 +117,7 @@ export function ProductsPreview() {
 
     fetchFeatured();
     return () => { cancelled = true; };
-  }, []);
+  }, [clientId]);
 
   return (
     <div className="min-h-screen relative overflow-x-hidden bg-[#F8FAFC]">
@@ -111,9 +145,22 @@ export function ProductsPreview() {
 
         {/* Products Grid */}
         {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-24">
-            <Loader2 className="w-10 h-10 text-[#2563EB] animate-spin mb-4" />
-            <p className="text-[#0B1F3A]/70 font-semibold">Loading products...</p>
+          <div
+            className="grid gap-6"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}
+          >
+            {Array.from({ length: FEATURED_COUNT }).map((_, idx) => (
+              <div
+                key={idx}
+                className="rounded-3xl border border-[#2563EB]/20 bg-white shadow-md p-4 animate-pulse flex flex-col gap-3 overflow-hidden"
+              >
+                <div className="aspect-square w-full rounded-2xl bg-slate-200 dark:bg-zinc-800" />
+                <div className="h-3 w-20 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                <div className="h-4 w-3/4 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                <div className="h-5 w-1/3 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                <div className="h-10 w-full bg-slate-200 dark:bg-zinc-800 rounded-full mt-2" />
+              </div>
+            ))}
           </div>
         ) : dynamicFeatured.length > 0 ? (
           <>

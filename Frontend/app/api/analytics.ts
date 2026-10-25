@@ -31,8 +31,6 @@ export interface AnalyticsSummary {
   sessionsTrend: 'up' | 'down' | 'neutral';
   /** Super Admin month KPIs (orders collection; see API meta notes). */
   salesThisMonth?: number;
-  lossThisMonth?: number;
-  profitThisMonth?: number;
   meta?: Record<string, string>;
 }
 
@@ -144,8 +142,6 @@ export async function fetchSuperAdminOverview(options?: any): Promise<AdminAnaly
       sessionsChange: 0,
       sessionsTrend: 'neutral',
       salesThisMonth: d.salesThisMonth,
-      lossThisMonth: d.lossThisMonth,
-      profitThisMonth: d.profitThisMonth,
     },
     revenueFlow: (d.salesAnalytics || []).map((s: any) => ({
       name: new Date(s.date).toLocaleDateString('en-US', { weekday: 'short' }),

@@ -464,11 +464,46 @@ const getClientCustomers = async (req, res) => {
   }
 };
 
+// Lightweight in-memory TTL cache for Super Admin overview (60 seconds)
+const superAdminOverviewCache = new Map();
+const SUPERADMIN_CACHE_TTL = 60 * 1000;
+
+function getCachedSuperAdminOverview(key) {
+  const item = superAdminOverviewCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiry) {
+    superAdminOverviewCache.delete(key);
+    return null;
+  }
+  return item.data;
+}
+
+function setCachedSuperAdminOverview(key, data) {
+  if (superAdminOverviewCache.size > 200) {
+    const oldestKey = superAdminOverviewCache.keys().next().value;
+    superAdminOverviewCache.delete(oldestKey);
+  }
+  superAdminOverviewCache.set(key, {
+    data,
+    expiry: Date.now() + SUPERADMIN_CACHE_TTL,
+  });
+}
+
 // @desc    Get Super Admin Overview (Combined data from all clients)
 // @route   GET /api/superadmin/overview
 // @access  Super Admin only
 const getOverview = async (req, res) => {
   try {
+    const explicitClientId = req.query?.clientId || req.body?.clientId || req.headers["x-client-id"];
+    const forceRefresh = req.query?.refresh === "true" || req.headers["x-force-refresh"] === "true";
+    const cacheKey = `sa_overview_${String(explicitClientId || "all")}`;
+    if (!forceRefresh) {
+      const cached = getCachedSuperAdminOverview(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+    }
+
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -614,49 +649,7 @@ const getOverview = async (req, res) => {
       return { revenue, paidOrdersCount, orderCount, avgOrderValue, paidOrderIdsSet };
     };
 
-    // Calculate total loss (cancelled / refunded / failed orders) for the given window.
-    // allOrders must include cancelled/refunded/failed orders (do not pre-filter them out).
-    const calculateLossThisMonth = (start, end, allOrders) => {
-      const LOSS_STATUSES = ["cancelled", "refunded", "failed"];
-      let loss = 0;
-      let cancelledCount = 0;
-
-      for (const order of allOrders) {
-        const orderStatusStr = String(order.status || order.orderStatus || "").toLowerCase().trim();
-        const isCancelledStatus = LOSS_STATUSES.includes(orderStatusStr);
-
-        // Refunds first — use explicit refundAmount + refundedAt (avoid double-counting)
-        if (order.refundAmount > 0 && order.refundedAt) {
-          const refDate = new Date(order.refundedAt);
-          if (refDate >= start && refDate < end) {
-            loss += order.refundAmount;
-            cancelledCount++;
-            continue;
-          }
-        }
-
-        // Cancelled / failed — use cancelledAt if set, fall back to createdAt.
-        // Fallback covers orders cancelled via admin status PATCH without explicit cancelledAt.
-        if (isCancelledStatus) {
-          const cancelDate = order.cancelledAt
-            ? new Date(order.cancelledAt)
-            : order.createdAt
-            ? new Date(order.createdAt)
-            : null;
-          if (cancelDate && cancelDate >= start && cancelDate < end) {
-            const amt = order.totalPrice || order.totalAmount || order.grandTotal || order.amount || 0;
-            loss += amt;
-            cancelledCount++;
-          }
-        }
-      }
-
-      console.log(`[SuperAdmin Loss] role=super_admin cancelledOrdersCounted=${cancelledCount} lossAmount=${Math.round(loss * 100) / 100} window=[${start.toISOString().slice(0, 10)} – ${end.toISOString().slice(0, 10)}]`);
-      return Math.round(loss * 100) / 100;
-    };
-
     // Determine target client scope for administrative queries
-    const explicitClientId = req.query?.clientId || req.body?.clientId || req.headers["x-client-id"];
     let scopeQuery = {};
     if (isValidObjectId(explicitClientId)) {
       scopeQuery = { clientId: new mongoose.Types.ObjectId(String(explicitClientId)) };
@@ -664,42 +657,42 @@ const getOverview = async (req, res) => {
       scopeQuery = {}; // Global across ALL clients — match adminAnalyticsController behavior
     }
 
-    // Load active registered customers and storefront users
-    const registeredClientCustomers = await User.find({
-      role: { $in: ["user", "customer"] },
-      ...scopeQuery
-    }).lean();
-
-    // Fetch all non-deleted orders — same approach as getOrders() so dashboard
-    // overview counts the same orders visible in the orders page.
-    // isCancelledOrFailed / isValidSalesOrder handle in-memory filtering.
-    const allOrders = await Order.find({
-      ...scopeQuery,
-      isDeleted: { $ne: true },
-    }).populate("user").lean();
-
-    // Log sample order so we can see actual field names from DB
-    if (allOrders.length > 0) {
-      console.log("SAMPLE ORDER:", JSON.stringify(allOrders[0], null, 2));
-      for (let i = 0; i < Math.min(3, allOrders.length); i++) {
-        const o = allOrders[i];
-        console.log(`[SuperAdmin Order #${i}] _id=${o._id} status="${o.status}" orderStatus="${o.orderStatus}" paymentStatus="${String(o.paymentStatus || o.payment_status)}" isPaid=${o.isPaid} paidAt=${o.paidAt} paymentMethod="${o.paymentMethod}" orderSource="${o.orderSource}" totalPrice=${o.totalPrice} totalAmount=${o.totalAmount} grandTotal=${o.grandTotal} amount=${o.amount} isCancelled=${isCancelledOrFailed(o)} isValid=${isValidSalesOrder(o)} resolvedAmount=${getOrderAmount(o)} createdAt=${o.createdAt}`);
-      }
-    } else {
-      console.log("[SuperAdmin] No orders found in query.");
+    let trialQuery = {};
+    if (isValidObjectId(explicitClientId)) {
+      trialQuery = { _id: new mongoose.Types.ObjectId(String(explicitClientId)) };
     }
 
-    const allInvoices = await Invoice.find({
-      ...scopeQuery,
-    }).lean();
+    // Parallel Execution of all database queries concurrently using Promise.all + lean + projection
+    const [registeredClientCustomers, allOrders, allInvoices, trialClients] = await Promise.all([
+      User.find({
+        role: { $in: ["user", "customer"] },
+        ...scopeQuery
+      }).select("_id email name phone role createdAt lastActiveAt lastLoginAt").lean(),
+      Order.find({
+        ...scopeQuery,
+        isDeleted: { $ne: true },
+      }).select("totalPrice totalAmount grandTotal finalAmount payableAmount total amount pricing payment items orderItems products cartItems productItems status orderStatus paymentStatus payment_status paymentMethod orderSource createdAt orderDate invoiceDate customerEmail customerName customerPhone shippingAddress user orderId _id").lean(),
+      Invoice.find({
+        ...scopeQuery,
+      }).select("totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items").lean(),
+      Client.find(trialQuery).select("isTrialExpired trialEndDate").lean(),
+    ]);
+
+    const registeredUserMap = new Map();
+    for (const u of registeredClientCustomers) {
+      registeredUserMap.set(String(u._id), u);
+    }
+    const resolveOrderUser = (order) => {
+      if (!order.user) return null;
+      if (typeof order.user === "object" && (order.user._id || order.user.role)) return order.user;
+      return registeredUserMap.get(String(order.user)) || null;
+    };
 
     // Compute month-over-month statistics
     const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders, allInvoices);
     const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders, allInvoices);
 
     const salesThisMonth = curStats.revenue;
-    const lossThisMonth = calculateLossThisMonth(cur.start, cur.end, allOrders);
-    const profitThisMonth = Math.round((salesThisMonth - lossThisMonth) * 100) / 100;
 
     // Active customer metrics for trends (in-memory, highly performant and accurate)
     const countActiveCustomersForWindow = (start, end, ordersList) => {
@@ -710,13 +703,14 @@ const getOverview = async (req, res) => {
         const docDate = getDocDate(o);
         if (!docDate || docDate < start || docDate >= end) continue;
 
-        if (o.user && EXCLUDED_ROLES.includes(o.user.role)) {
+        const orderUser = resolveOrderUser(o);
+        if (orderUser && EXCLUDED_ROLES.includes(orderUser.role)) {
           continue;
         }
 
         let key = "";
-        if (o.user) {
-          key = `uid:${o.user._id || o.user}`;
+        if (orderUser) {
+          key = `uid:${orderUser._id}`;
         } else {
           let email = o.customerEmail ? o.customerEmail.toLowerCase().trim() : "";
           if (!email && o.shippingAddress?.email) {
@@ -779,7 +773,8 @@ const getOverview = async (req, res) => {
       const docDate = getDocDate(o);
       if (!docDate || docDate < cur.start || docDate >= cur.end) continue;
 
-      if (o.user && EXCLUDED_ROLES.includes(o.user.role)) {
+      const orderUser = resolveOrderUser(o);
+      if (orderUser && EXCLUDED_ROLES.includes(orderUser.role)) {
         continue;
       }
 
@@ -788,15 +783,13 @@ const getOverview = async (req, res) => {
       let name = "";
       let phone = "";
       let hasUser = false;
-      let orderUser = null;
 
-      if (o.user) {
-        key = String(o.user._id);
-        email = o.user.email ? o.user.email.toLowerCase().trim() : "";
-        name = o.user.name || "";
-        phone = o.user.phone || "";
+      if (orderUser) {
+        key = String(orderUser._id);
+        email = orderUser.email ? orderUser.email.toLowerCase().trim() : "";
+        name = orderUser.name || "";
+        phone = orderUser.phone || "";
         hasUser = true;
-        orderUser = o.user;
       } else {
         email = o.customerEmail ? o.customerEmail.toLowerCase().trim() : "";
         if (!email && o.shippingAddress?.email) {
@@ -1047,23 +1040,18 @@ const getOverview = async (req, res) => {
 
     const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 3);
 
-    // Trial Stats
+    // Trial Stats (already fetched in parallel above)
     const threeDaysFromNow = new Date();
     threeDaysFromNow.setDate(now.getDate() + 3);
 
-    let trialQuery = {};
-    if (isValidObjectId(explicitClientId)) {
-      trialQuery = { _id: new mongoose.Types.ObjectId(String(explicitClientId)) };
-    }
-    const trialClients = await Client.find(trialQuery);
     const trialStats = {
-      totalTrialClients: trialClients.length,
+      totalTrialClients: (trialClients || []).length,
       activeTrials: 0,
       expiredTrials: 0,
       expiringSoon: 0,
     };
 
-    trialClients.forEach((client) => {
+    (trialClients || []).forEach((client) => {
       const isExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < now);
       if (isExpired) {
         trialStats.expiredTrials++;
@@ -1092,12 +1080,10 @@ const getOverview = async (req, res) => {
       cancelledThisMonth,
       validOrdersFound,
       totalRevenueCalculated,
-      lossThisMonth,
-      profitThisMonth,
       topProductFound
     });
 
-    res.json({
+    const responsePayload = {
       success: true,
       data: {
         totalRevenue: Math.round(curStats.revenue * 100) / 100,
@@ -1113,8 +1099,6 @@ const getOverview = async (req, res) => {
         conversionRateChange: Math.round(conversionRateChange * 10) / 10,
         conversionRateTrend: trendFromChange(conversionRateChange),
         salesThisMonth,
-        lossThisMonth,
-        profitThisMonth,
         totalOrdersThisMonth: curStats.orderCount,
         totalOrdersThisMonthChange: Math.round(orderCountChange * 10) / 10,
         totalOrdersThisMonthTrend: trendFromChange(orderCountChange),
@@ -1127,7 +1111,10 @@ const getOverview = async (req, res) => {
         topProducts,
         trialStats
       }
-    });
+    };
+
+    setCachedSuperAdminOverview(cacheKey, responsePayload);
+    res.json(responsePayload);
   } catch (error) {
     console.error("[Superadmin] getOverview error:", error.message);
     res.status(500).json({ success: false, message: error.message });

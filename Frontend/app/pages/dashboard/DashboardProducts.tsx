@@ -31,16 +31,65 @@ import { useNavigate } from 'react-router';
 
 const ITEMS_PER_PAGE = 12;
 
+function normalizeProducts(items: any[]): ShopProduct[] {
+  return (items || []).map((p: any) => ({
+    id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
+    _id: p._id,
+    name: p.name || 'Unnamed Product',
+    slug: slugifyProductName(p.name || 'product'),
+    price: typeof p.price === 'number' ? p.price : Number(p.price) || 0,
+    originalPrice: p.originalPrice,
+    description: p.description || '',
+    category: p.category || 'General',
+    image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop',
+    images: [getProductImageUrl(p)].filter(Boolean),
+    stock: Number(p.stockLevel ?? p.stock ?? p.quantity ?? p.currentStock ?? 0),
+    rating: p.rating || 0,
+    reviews: p.numReviews || 0,
+    featured: Boolean(p.isFeatured),
+    sku: p.sku || '',
+    isActive: p.isActive !== false,
+    isOnSale: Boolean(p.isOnSale),
+    salePercentage: p.salePercentage || 0,
+    brand: p.brand || '',
+  } as ShopProduct));
+}
+
+function getInitialCachedProducts(isUserRole: boolean): { products: ShopProduct[]; hasCached: boolean } {
+  try {
+    const cachedResponse = isUserRole ? catalogApi.getCached() : inventoryApi.getCachedManage();
+    if (cachedResponse) {
+      const items = Array.isArray(cachedResponse.data)
+        ? cachedResponse.data
+        : Array.isArray(cachedResponse.products)
+          ? cachedResponse.products
+          : Array.isArray(cachedResponse)
+            ? cachedResponse
+            : [];
+      if (items.length > 0) {
+        return { products: normalizeProducts(items), hasCached: true };
+      }
+    }
+  } catch {
+    // fallback to network fetch
+  }
+  return { products: [], hasCached: false };
+}
+
 export function DashboardProducts() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isUserRole = isCustomerAccountRole(user?.role);
 
+  // Stale-While-Revalidate: render cached products instantly if available
+  const initialData = useMemo(() => getInitialCachedProducts(isUserRole), [isUserRole]);
+  const [dynamicProducts, setDynamicProducts] = useState<ShopProduct[]>(() => initialData.products);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialData.hasCached);
+  const [isRevalidating, setIsRevalidating] = useState<boolean>(false);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Products');
   const [sortBy, setSortBy] = useState('featured');
-  const [isLoading, setIsLoading] = useState(true);
-  const [dynamicProducts, setDynamicProducts] = useState<ShopProduct[]>([]);
   const [wishlistKeySet, setWishlistKeySet] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -69,22 +118,24 @@ export function DashboardProducts() {
   }, [refreshWishlistKeys]);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchProducts = async () => {
       try {
-        setIsLoading(true);
+        if (dynamicProducts.length === 0) {
+          setIsLoading(true);
+        } else {
+          setIsRevalidating(true);
+        }
         setError(null);
 
         let responseData: DynamicProduct[] = [];
 
         if (isUserRole) {
-          // USER/CUSTOMER role: use the public product catalog endpoint
-          // GET /api/products — returns all active/visible products, no permission restriction
-          console.log('[DashboardProducts] USER role detected — fetching public catalog via GET /api/products');
-          const response = await catalogApi.getAll();
-          console.log('[DashboardProducts] Catalog API response:', response);
+          const response = await catalogApi.getAll(dynamicProducts.length > 0);
+          if (cancelled) return;
 
-          if (response.success) {
-            // /api/products returns { data: [...], products: [...] }
+          if (response && response.success) {
             const items = Array.isArray(response.data)
               ? response.data
               : Array.isArray((response as any).products)
@@ -93,50 +144,41 @@ export function DashboardProducts() {
             responseData = items;
           }
         } else {
-          // Staff/Client roles: use the inventory manage endpoint (existing behavior)
-          console.log('[DashboardProducts] Staff/Client role — fetching inventory via GET /api/inventory/manage');
-          const response = await inventoryApi.getManage();
-          if (response.success && Array.isArray(response.data)) {
+          const response = await inventoryApi.getManage(dynamicProducts.length > 0);
+          if (cancelled) return;
+
+          if (response && response.success && Array.isArray(response.data)) {
             responseData = response.data;
           }
         }
 
-        const normalized: ShopProduct[] = responseData.map((p: DynamicProduct) => ({
-          id: p._id || `dyn-${Math.random().toString(36).substr(2, 9)}`,
-          _id: p._id,
-          name: p.name,
-          slug: slugifyProductName(p.name),
-          price: p.price,
-          originalPrice: p.originalPrice,
-          description: p.description || '',
-          category: p.category,
-          image: getProductImageUrl(p) || 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop',
-          images: [getProductImageUrl(p)].filter(Boolean),
-          stock: p.stock,
-          rating: p.rating || 0,
-          reviews: p.numReviews || 0,
-          featured: p.isFeatured || false,
-          sku: p.sku,
-          isActive: p.isActive !== false,
-          isOnSale: p.isOnSale || false,
-          salePercentage: p.salePercentage || 0,
-          brand: (p as any).brand || '',
-        } as ShopProduct));
-
-        setDynamicProducts(normalized);
-        console.log(`[DashboardProducts] Loaded ${normalized.length} products`);
+        if (cancelled) return;
+        const normalized = normalizeProducts(responseData);
+        if (normalized.length > 0 || dynamicProducts.length === 0) {
+          setDynamicProducts(normalized);
+        }
       } catch (err: any) {
+        if (cancelled) return;
         console.error('[DashboardProducts] API error:', err.message);
-        setError(isUserRole
-          ? 'Could not load the product catalog. Please try again.'
-          : 'Dynamic inventory could not be loaded.'
-        );
+        if (dynamicProducts.length === 0) {
+          setError(isUserRole
+            ? 'Could not load the product catalog. Please try again.'
+            : 'Dynamic inventory could not be loaded.'
+          );
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+          setIsRevalidating(false);
+        }
       }
     };
 
     fetchProducts();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isUserRole]);
 
   const allProducts = useMemo(() => dynamicProducts, [dynamicProducts]);
@@ -332,16 +374,26 @@ export function DashboardProducts() {
           <CardContent className="p-6 sm:p-8">
             <AnimatePresence mode="wait">
               {isLoading ? (
-                <motion.div
-                  key="loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex flex-col items-center justify-center py-24"
+                <div
+                  key="skeleton-grid"
+                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
                 >
-                  <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-                  <p className="text-muted-foreground font-medium">Loading catalog...</p>
-                </motion.div>
+                  {Array.from({ length: 8 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-2xl border border-gray-100 dark:border-white/10 bg-white dark:bg-zinc-900 p-4 shadow-sm flex flex-col gap-3 animate-pulse"
+                    >
+                      <div className="aspect-square w-full rounded-xl bg-slate-200 dark:bg-zinc-800" />
+                      <div className="flex justify-between items-center pt-1">
+                        <div className="h-3 w-16 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                        <div className="h-3 w-12 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                      </div>
+                      <div className="h-4 w-3/4 bg-slate-200 dark:bg-zinc-800 rounded-md" />
+                      <div className="h-5 w-1/3 bg-slate-200 dark:bg-zinc-800 rounded-md mt-1" />
+                      <div className="h-9 w-full bg-slate-200 dark:bg-zinc-800 rounded-xl mt-2" />
+                    </div>
+                  ))}
+                </div>
               ) : error ? (
                 <motion.div
                   key="error"
@@ -538,13 +590,15 @@ function UserProductCard({
         <img
           src={
             product.image ||
-            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=600&auto=format&fit=crop'
+            'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop'
           }
           alt={product.name}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           onError={(e) => {
             (e.target as HTMLImageElement).src =
-              'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=600&auto=format&fit=crop';
+              'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=400&auto=format&fit=crop';
           }}
         />
 

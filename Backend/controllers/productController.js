@@ -179,10 +179,11 @@ const getProducts = async (req, res) => {
       query.isActive = isActive === "true";
     }
 
-    // Pagination parameters - 0 or no limit means return all
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 0; 
-    const skip = limit ? (page - 1) * limit : 0;
+    // Pagination parameters - default to 50 items per page with skip/limit
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const rawLimit = req.query.limit;
+    const limit = rawLimit === "0" || rawLimit === "all" ? 0 : (parseInt(rawLimit, 10) || 50); 
+    const skip = limit > 0 ? (page - 1) * limit : 0;
 
     const isPosRequest = req.query.pos === "true" || req.query.source === "pos";
     const requestedFields = req.query.fields;
@@ -198,6 +199,10 @@ const getProducts = async (req, res) => {
         "_id name sku barcode price unitPrice stock stockLevel quantity currentStock category image imageUrl description clientId gst gstRate"
       );
     } else {
+      // High-performance selective projection for list view: excludes heavy reviews array and large data blobs
+      dbQuery = dbQuery.select(
+        "_id name title sku barcode category price unitPrice originalPrice comparePrice stock stockLevel quantity currentStock lowStockAlert image imageUrl images status isActive isFeatured isOnSale salePercentage rating numReviews brand clientId clientName gst gstRate createdAt updatedAt"
+      );
       dbQuery = dbQuery.populate("clientId", "storeName companyName shopName email");
     }
 

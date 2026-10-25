@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
 import { getFullImageUrl } from '../utils/imageUrl';
@@ -14,7 +14,6 @@ import {
   Warehouse,
   Heart,
   Activity,
-  Mail,
   Truck,
   Shield,
   UserCog,
@@ -63,7 +62,6 @@ import { DashboardStats } from '../components/DashboardStats';
 import { DashboardCharts } from '../components/DashboardCharts';
 import { DashboardRecentTickets } from '../components/DashboardRecentTickets';
 import { DashboardQuickActions } from '../components/DashboardQuickActions';
-import { DashboardContactSummary } from '../components/DashboardContactSummary';
 import { DashboardNavbar } from '../components/DashboardNavbar';
 import { Footer } from '../components/Footer';
 import { DashboardSkeleton } from '../components/DashboardSkeleton';
@@ -83,6 +81,7 @@ import {
 } from '../utils/staffRoles';
 import { fetchAdminAnalytics, fetchUserAnalytics, fetchSuperAdminOverview, type AdminAnalyticsData, type UserAnalyticsData } from '../api/analytics';
 import { fetchUserDashboardOverview, type UserDashboardOverviewData } from '../api/orders';
+import { prefetchProductsForRole } from '../api/products';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
 import { toast } from 'sonner';
 
@@ -102,10 +101,6 @@ const sidebarItems = [
     icon: Users,
     href: "/dashboard/customers",
     adminOnly: true,
-    subItems: [
-      { title: "All Customers", href: "/dashboard/customers", icon: Users },
-      { title: "Contact Form", href: "/dashboard/customers/contact-form", icon: Mail }
-    ]
   },
   { title: "Users & roles", icon: UserCog, href: "/dashboard/users", adminOnly: true },
   { title: "Clients", icon: Building2, href: "/super-admin/clients", superAdminOnly: true },
@@ -149,62 +144,127 @@ export function Dashboard() {
   const staff = isStaffRole(user?.role);
   const isOverviewPath = location.pathname === '/dashboard';
 
-  const [overviewData, setOverviewData] = useState<AdminAnalyticsData | null>(null);
+  // Client-side cache for instant render (Stale-While-Revalidate)
+  const userCacheKey = `${user?.role || ''}_${user?._id || user?.id || ''}`;
+  
+  const getCachedOverview = useCallback((): AdminAnalyticsData | null => {
+    try {
+      const raw = sessionStorage.getItem(`agy_dashboard_overview_${userCacheKey}`);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [userCacheKey]);
+
+  const setCachedOverview = useCallback((data: AdminAnalyticsData) => {
+    try {
+      sessionStorage.setItem(`agy_dashboard_overview_${userCacheKey}`, JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+  }, [userCacheKey]);
+
+  const getCachedUserOverview = useCallback((): UserDashboardOverviewData | null => {
+    try {
+      const raw = sessionStorage.getItem(`agy_dashboard_user_overview_${userCacheKey}`);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [userCacheKey]);
+
+  const setCachedUserOverview = useCallback((data: UserDashboardOverviewData) => {
+    try {
+      sessionStorage.setItem(`agy_dashboard_user_overview_${userCacheKey}`, JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+  }, [userCacheKey]);
+
+  const getCachedUserAnalytics = useCallback((): UserAnalyticsData | null => {
+    try {
+      const raw = sessionStorage.getItem(`agy_dashboard_user_analytics_${userCacheKey}`);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [userCacheKey]);
+
+  const setCachedUserAnalytics = useCallback((data: UserAnalyticsData) => {
+    try {
+      sessionStorage.setItem(`agy_dashboard_user_analytics_${userCacheKey}`, JSON.stringify(data));
+    } catch {
+      // ignore
+    }
+  }, [userCacheKey]);
+
+  const initialCachedOverview = useMemo(() => getCachedOverview(), [getCachedOverview]);
+  const initialCachedUserOverview = useMemo(() => getCachedUserOverview(), [getCachedUserOverview]);
+  const initialCachedUserAnalytics = useMemo(() => getCachedUserAnalytics(), [getCachedUserAnalytics]);
+
+  const [overviewData, setOverviewData] = useState<AdminAnalyticsData | null>(initialCachedOverview);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [userOverviewData, setUserOverviewData] = useState<UserDashboardOverviewData | null>(null);
+  const [userOverviewData, setUserOverviewData] = useState<UserDashboardOverviewData | null>(initialCachedUserOverview);
   const [userOverviewError, setUserOverviewError] = useState<string | null>(null);
-  const [userAnalyticsData, setUserAnalyticsData] = useState<UserAnalyticsData | null>(null);
+  const [userAnalyticsData, setUserAnalyticsData] = useState<UserAnalyticsData | null>(initialCachedUserAnalytics);
   const [userAnalyticsError, setUserAnalyticsError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+
   const loadOverview = useCallback(
-    async (opts?: { silent?: boolean }): Promise<{ ok: boolean; error?: string }> => {
+    async (opts?: { silent?: boolean; force?: boolean }): Promise<{ ok: boolean; error?: string }> => {
       if (!staff || !isOverviewPath) {
         setOverviewLoading(false);
         return { ok: true };
       }
-      if (!opts?.silent) {
+      // If we already have data, revalidate in background without blocking with skeleton
+      if (!opts?.silent && !overviewData) {
         setOverviewLoading(true);
       }
       setOverviewError(null);
       try {
         let d: AdminAnalyticsData;
+        const fetchOpts = opts?.force ? { params: { refresh: 'true' } } : undefined;
         if (isSuperAdminRole(user?.role)) {
           console.log('[Dashboard] Fetching /api/superadmin/overview');
-          d = await fetchSuperAdminOverview();
+          d = await fetchSuperAdminOverview(fetchOpts);
           console.log('[Dashboard] SuperAdmin Overview Data:', d);
         } else {
           console.log('[Dashboard] Fetching /api/admin/analytics');
-          d = await fetchAdminAnalytics();
+          d = await fetchAdminAnalytics(fetchOpts);
         }
         setOverviewData(d);
+        setCachedOverview(d);
         console.log("Dashboard overview API response:", d);
         return { ok: true };
       } catch (e: unknown) {
         console.error('[Dashboard] Error in loadOverview:', e);
         const msg = e instanceof Error ? e.message : 'Failed to load dashboard data';
         setOverviewError(msg);
-        if (!opts?.silent) {
+        if (!overviewData && !opts?.silent) {
           setOverviewData(null);
         }
         return { ok: false, error: msg };
       } finally {
-        if (!opts?.silent) {
-          setOverviewLoading(false);
-        }
+        setOverviewLoading(false);
       }
     },
-    [staff, isOverviewPath, user?.role]
+    [staff, isOverviewPath, user?.role, overviewData, setCachedOverview]
   );
 
   useEffect(() => {
-    void loadOverview();
+    // If we have cached data, fetch in background silently (Stale-While-Revalidate)
+    const hasCache = !!overviewData;
+    void loadOverview({ silent: hasCache });
   }, [loadOverview]);
 
   useEffect(() => {
     const handleOrderDeleted = () => {
       console.log('[Dashboard] Order deleted event received, refetching overview stats...');
-      void loadOverview({ silent: true });
+      void loadOverview({ silent: true, force: true });
     };
     window.addEventListener('order-deleted', handleOrderDeleted);
     return () => {
@@ -232,27 +292,36 @@ export function Dashboard() {
         if (!cancelled) {
           setUserOverviewData(overview);
           setUserAnalyticsData(analytics);
+          setCachedUserOverview(overview);
+          setCachedUserAnalytics(analytics);
         }
       } catch (e: unknown) {
         if (!cancelled) {
           const errMsg = e instanceof Error ? e.message : 'Failed to load overview';
           setUserOverviewError(errMsg);
           setUserAnalyticsError(errMsg);
-          setUserOverviewData(null);
-          setUserAnalyticsData(null);
+          if (!userOverviewData) {
+            setUserOverviewData(null);
+            setUserAnalyticsData(null);
+          }
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.role, location.pathname]);
+  }, [user?.role, location.pathname, setCachedUserOverview, setCachedUserAnalytics, userOverviewData]);
 
   useEffect(() => {
     if (isClientRole(user?.role) && location.pathname === '/dashboard') {
       // No redirect
     }
   }, [user?.role, location.pathname, navigate]);
+
+  // Background pre-fetch products immediately on mounting Dashboard for instant navigation
+  useEffect(() => {
+    prefetchProductsForRole(user);
+  }, [user]);
 
   const handleDashboardSync = useCallback(async () => {
     setSyncing(true);
@@ -270,7 +339,7 @@ export function Dashboard() {
         }
         return;
       }
-      const res = await loadOverview({ silent: true });
+      const res = await loadOverview({ silent: true, force: true });
       if (res.ok) {
         toast.success('Dashboard synced');
       } else {
@@ -375,7 +444,7 @@ export function Dashboard() {
     isCustomerOverview && userOverviewData === null && userOverviewError === null;
   const showOverviewSkeleton =
     isOverview &&
-    ((staff && (overviewLoading || (!overviewData && !overviewError))) || userOverviewPending);
+    ((staff && !overviewData && (overviewLoading || !overviewError)) || (userOverviewPending && !userOverviewData));
 
   const isAdminRole = normalizeRole(user?.role) === 'admin';
 
@@ -574,6 +643,8 @@ export function Dashboard() {
                         );
                       }
 
+                      const isProductsItem = href === '/dashboard/products' || item.title === 'Products';
+
                       return (
                         <SidebarMenuItem key={item.title}>
                           <SidebarMenuButton
@@ -588,7 +659,16 @@ export function Dashboard() {
                             }
                             className={dashboardSidebarNavButtonClass(isActive)}
                           >
-                            <Link to={href || '#'} state={href === '/pos' ? { fromDashboard: location.pathname } : undefined}>
+                            <Link
+                              to={href || '#'}
+                              state={href === '/pos' ? { fromDashboard: location.pathname } : undefined}
+                              onMouseEnter={() => {
+                                if (isProductsItem) prefetchProductsForRole(user);
+                              }}
+                              onFocus={() => {
+                                if (isProductsItem) prefetchProductsForRole(user);
+                              }}
+                            >
                               {item.icon && <item.icon className="w-5 h-5 shrink-0" />}
                               <span className="group-data-[collapsible=icon]:hidden flex-1 min-w-0 text-left text-[16px] font-semibold tracking-wide leading-snug">
                                 {item.title === 'Orders' && (isSuperAdminRole(user?.role) || isClientRole(user?.role))
@@ -747,11 +827,6 @@ export function Dashboard() {
                                 staffView={staff}
                                 revenueInInr={isSuperAdminRole(user?.role) || isClientRole(user?.role)}
                               />
-                            </motion.div>
-                          )}
-                          {(isSuperAdminRole(user?.role) || isClientRole(user?.role)) && (
-                            <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
-                              <DashboardContactSummary />
                             </motion.div>
                           )}
                           <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>

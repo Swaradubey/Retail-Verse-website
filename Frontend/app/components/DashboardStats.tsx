@@ -10,8 +10,6 @@ import {
   ArrowDownRight,
   UserCheck,
   Receipt,
-  TrendingDown,
-  Wallet,
   Clock,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -317,30 +315,10 @@ export function DashboardStats({
           description: loadingDesc,
           path: '/dashboard/analytics',
         },
-        {
-          title: 'LOSS THIS MONTH',
-          value: baseError,
-          change: '—',
-          isPositive: true,
-          icon: TrendingDown,
-          description: loadingDesc,
-          path: '/dashboard/analytics',
-        },
-        {
-          title: 'PROFIT THIS MONTH',
-          value: baseError,
-          change: '—',
-          isPositive: true,
-          icon: Wallet,
-          description: loadingDesc,
-          path: '/dashboard/analytics',
-        },
       ];
     }
 
     const sales = s.salesThisMonth ?? 0;
-    const loss = s.lossThisMonth ?? 0;
-    const profit = s.profitThisMonth ?? Math.round((sales - loss) * 100) / 100;
 
     return [
       {
@@ -350,24 +328,6 @@ export function DashboardStats({
         isPositive: true,
         icon: Receipt,
         description: 'All orders this month',
-        path: '/dashboard/analytics',
-      },
-      {
-        title: 'LOSS THIS MONTH',
-        value: formatCurrency(loss, true),
-        change: '—',
-        isPositive: loss === 0,
-        icon: TrendingDown,
-        description: 'Refunds & cancellations',
-        path: '/dashboard/analytics',
-      },
-      {
-        title: 'PROFIT THIS MONTH',
-        value: formatCurrency(profit, true),
-        change: '—',
-        isPositive: profit >= 0,
-        icon: Wallet,
-        description: 'Paid revenue this month',
         path: '/dashboard/analytics',
       },
     ];
@@ -446,7 +406,7 @@ export function DashboardStats({
         {stats.map((stat, index) => renderKpiCard(stat as StatCardConfig, index, 0))}
       </div>
       {superAdminMonthKpis ? (
-        <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {superAdminMonthKpis.map((stat, index) => renderKpiCard(stat, index, stats.length))}
         </div>
       ) : null}
