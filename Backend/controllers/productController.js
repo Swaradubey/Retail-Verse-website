@@ -21,6 +21,7 @@ const {
 } = require("../utils/tenantResolver");
 const { getMerchantId } = require("../utils/merchantHelper");
 const { attachMarketplaceStatusToProducts } = require("../utils/marketplaceStatusHelper");
+const productCache = require("../utils/productCache");
 
 const productsUploadDir = path.resolve(__dirname, "../uploads/products");
 if (!fs.existsSync(productsUploadDir)) {
@@ -126,6 +127,15 @@ const normalizeSaleFields = (payload = {}) => {
 // @access  Public
 const getProducts = async (req, res) => {
   try {
+    // ── High Performance Memory Cache ──
+    const cacheKey = productCache.generateKey(req, "products");
+    const cached = productCache.get(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=45");
+      res.setHeader("X-Cache", "HIT");
+      return res.status(200).json(cached);
+    }
+
     const { category, search, minPrice, maxPrice, isActive } = req.query;
     
     // Use shared visibility filter
@@ -174,11 +184,6 @@ const getProducts = async (req, res) => {
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 0; 
     const skip = limit ? (page - 1) * limit : 0;
 
-    console.log("-----------------------------------------");
-    console.log("role:", req.user?.role, "clientId:", (req.query?.clientId || req.headers["x-client-id"]), "query:", JSON.stringify(query));
-    console.log("-----------------------------------------");
-    const totalProducts = await Product.countDocuments(query);
-
     const isPosRequest = req.query.pos === "true" || req.query.source === "pos";
     const requestedFields = req.query.fields;
 
@@ -202,31 +207,17 @@ const getProducts = async (req, res) => {
       dbQuery = dbQuery.skip(skip).limit(limit);
     }
 
-    // Ensure the query uses .lean() on Mongoose/MongoDB queries for faster JSON serialization
-    const products = await dbQuery.lean();
-    console.log("Returned count:", products.length);
+    // Run count and find concurrently to cut database query latency in half!
+    const [totalProducts, products] = await Promise.all([
+      Product.countDocuments(query),
+      dbQuery.lean()
+    ]);
 
-    // Dynamic Marketplace Status mapping or fast path for POS
+    // Fast path: Only fetch marketplace status when explicitly requested (admin dashboard)
     let productsWithListings = products;
-    if (isPosRequest) {
-      // Fast path for POS catalog: avoid external marketplace lookups
-      productsWithListings = products.map((pObj) => {
-        const availableStock = Number(
-          pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
-            ? pObj.stockLevel
-            : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
-            ? pObj.stock
-            : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
-            ? pObj.quantity
-            : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
-        ) || 0;
-        pObj.stockLevel = availableStock;
-        pObj.stock = availableStock;
-        pObj.quantity = availableStock;
-        pObj.currentStock = availableStock;
-        return pObj;
-      });
-    } else {
+    const shouldFetchMarketplaces = !isPosRequest && (req.query.withMarketplaces === "true" || req.query.marketplaceSync === "true");
+
+    if (shouldFetchMarketplaces) {
       try {
         const merchantId = getMerchantId(req);
         productsWithListings = await attachMarketplaceStatusToProducts({
@@ -246,7 +237,6 @@ const getProducts = async (req, res) => {
             syncError: m.error || ''
           }));
 
-          // Single source of truth for stockLevel in API response
           const availableStock = Number(
             pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
               ? pObj.stockLevel
@@ -260,32 +250,34 @@ const getProducts = async (req, res) => {
           pObj.stock = availableStock;
           pObj.quantity = availableStock;
           pObj.currentStock = availableStock;
-
           return pObj;
         });
       } catch (err) {
         console.error("[productController] Error resolving marketplace status in list:", err.message);
-        productsWithListings = productsWithListings.map(p => {
-          const pObj = typeof p.toObject === 'function' ? p.toObject({ virtuals: true }) : { ...p };
-          const availableStock = Number(
-            pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
-              ? pObj.stockLevel
-              : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
-              ? pObj.stock
-              : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
-              ? pObj.quantity
-              : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
-          ) || 0;
-          pObj.stockLevel = availableStock;
-          pObj.stock = availableStock;
-          pObj.quantity = availableStock;
-          pObj.currentStock = availableStock;
-          return pObj;
-        });
       }
+    } else {
+      // Ultra-fast path for storefront, shop, and POS: directly normalize stock in memory
+      productsWithListings = products.map((pObj) => {
+        const availableStock = Number(
+          pObj.stockLevel !== undefined && pObj.stockLevel !== null && Number(pObj.stockLevel) > 0
+            ? pObj.stockLevel
+            : pObj.stock !== undefined && pObj.stock !== null && Number(pObj.stock) > 0
+            ? pObj.stock
+            : pObj.quantity !== undefined && pObj.quantity !== null && Number(pObj.quantity) > 0
+            ? pObj.quantity
+            : pObj.stockLevel ?? pObj.stock ?? pObj.quantity ?? pObj.currentStock ?? 0
+        ) || 0;
+        pObj.stockLevel = availableStock;
+        pObj.stock = availableStock;
+        pObj.quantity = availableStock;
+        pObj.currentStock = availableStock;
+        pObj.marketplaceListings = [];
+        pObj.marketplaces = [];
+        return pObj;
+      });
     }
 
-    res.status(200).json({
+    const responsePayload = {
       success: true,
       count: products.length,
       data: productsWithListings,
@@ -293,7 +285,14 @@ const getProducts = async (req, res) => {
       totalProducts,
       page,
       totalPages: limit > 0 ? Math.ceil(totalProducts / limit) : 1
-    });
+    };
+
+    // Cache catalog result for 60 seconds
+    productCache.set(cacheKey, responsePayload, 60 * 1000);
+    res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=45");
+    res.setHeader("X-Cache", "MISS");
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     console.error("GET PRODUCTS ERROR", error);
     const isPosRequest = req.query?.pos === "true" || req.query?.source === "pos";
@@ -320,6 +319,14 @@ const getProducts = async (req, res) => {
 // @access  Public
 const getFeaturedProducts = async (req, res) => {
   try {
+    const cacheKey = productCache.generateKey(req, "featured");
+    const cached = productCache.get(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+      res.setHeader("X-Cache", "HIT");
+      return res.status(200).json(cached);
+    }
+
     const resolvedClientId = await resolveClientId(req);
     const scopeQuery = buildScopeQuery(req.user, resolvedClientId);
     let query = { isFeatured: true, isActive: true };
@@ -329,13 +336,20 @@ const getFeaturedProducts = async (req, res) => {
       .select(
         "name category price originalPrice isOnSale salePercentage image stock description sku createdAt updatedAt"
       )
-      .sort("-createdAt");
+      .sort("-createdAt")
+      .lean();
 
-    res.status(200).json({
+    const responsePayload = {
       success: true,
       count: products.length,
       data: products,
-    });
+    };
+
+    productCache.set(cacheKey, responsePayload, 60 * 1000);
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+    res.setHeader("X-Cache", "MISS");
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -349,6 +363,15 @@ const getFeaturedProducts = async (req, res) => {
 // @access  Public
 const getProductById = async (req, res) => {
   try {
+    const shouldFetchMarketplaces = req.query.withMarketplaces === "true";
+    const cacheKey = `product:${req.params.id}:${shouldFetchMarketplaces}`;
+    const cached = productCache.get(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+      res.setHeader("X-Cache", "HIT");
+      return res.status(200).json(cached);
+    }
+
     const resolvedClientId = await resolveClientId(req);
     const scopeQuery = buildScopeQuery(req.user, resolvedClientId);
     if (!isValidObjectId(req.params.id)) {
@@ -360,7 +383,7 @@ const getProductById = async (req, res) => {
     let query = { _id: req.params.id };
     applyScope(query, scopeQuery);
 
-    const product = await Product.findOne(query);
+    const product = await Product.findOne(query).lean();
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -368,27 +391,39 @@ const getProductById = async (req, res) => {
       });
     }
 
-    const productObj = product.toObject ? product.toObject({ virtuals: true }) : product;
-    try {
-      const merchantId = getMerchantId(req);
-      const [enriched] = await attachMarketplaceStatusToProducts({
-        products: [product],
-        merchantId
-      });
-      productObj.marketplaces = enriched.marketplaces || [];
-      const MarketplaceProduct = require("../models/MarketplaceProduct");
-      const listings = await MarketplaceProduct.find({ productId: product._id }).lean();
-      productObj.marketplaceListings = listings || [];
-    } catch (err) {
-      console.error("[productController] Error resolving listings for product:", err.message);
+    const productObj = { ...product };
+
+    if (shouldFetchMarketplaces) {
+      try {
+        const merchantId = getMerchantId(req);
+        const [enriched] = await attachMarketplaceStatusToProducts({
+          products: [product],
+          merchantId
+        });
+        productObj.marketplaces = enriched.marketplaces || [];
+        const MarketplaceProduct = require("../models/MarketplaceProduct");
+        const listings = await MarketplaceProduct.find({ productId: product._id }).lean();
+        productObj.marketplaceListings = listings || [];
+      } catch (err) {
+        console.error("[productController] Error resolving listings for product:", err.message);
+        productObj.marketplaceListings = [];
+        productObj.marketplaces = [];
+      }
+    } else {
       productObj.marketplaceListings = [];
       productObj.marketplaces = [];
     }
 
-    res.status(200).json({
+    const responsePayload = {
       success: true,
       data: productObj,
-    });
+    };
+
+    productCache.set(cacheKey, responsePayload, 60 * 1000);
+    res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
+    res.setHeader("X-Cache", "MISS");
+
+    res.status(200).json(responsePayload);
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -555,6 +590,9 @@ const createProduct = async (req, res) => {
     const formatted = formatProductWithClient(populatedDoc || product);
     formatted.marketplaces = [];
     formatted.marketplaceListings = [];
+
+    // Invalidate product cache so new product is immediately visible
+    productCache.invalidate();
 
     res.status(201).json({
       success: true,
@@ -941,6 +979,9 @@ const updateProduct = async (req, res) => {
     };
     console.log("[Backend Debug] PUT /api/products/:id - Response:", responsePayload);
 
+    // Invalidate product cache so updates are immediately reflected
+    productCache.invalidate();
+
     return res.status(200).json(responsePayload);
   } catch (error) {
     if (error.code === 11000) {
@@ -1008,6 +1049,9 @@ const updateProductStock = async (req, res) => {
 
     const formatted = await loadProductFormatted(existing._id, req);
 
+    // Invalidate product cache so stock updates reflect instantly
+    productCache.invalidate();
+
     res.status(200).json({
       success: true,
       message: "Stock updated successfully",
@@ -1052,6 +1096,10 @@ const deleteProduct = async (req, res) => {
       });
     }
     await Product.findByIdAndDelete(req.params.id);
+
+    // Invalidate product cache
+    productCache.invalidate();
+
     res.status(200).json({
       success: true,
       message: "Product deleted successfully",
@@ -1350,6 +1398,9 @@ const createProductWithImage = async (req, res) => {
 
     const saved = await newProduct.save();
     const formatted = formatProductWithClient(saved.toObject ? saved.toObject({ virtuals: true }) : saved);
+
+    // Invalidate product cache
+    productCache.invalidate();
 
     return res.status(201).json({
       success: true,

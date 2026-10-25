@@ -458,11 +458,16 @@ productSchema.post("findOneAndDelete", function (doc) {
 productSchema.index({ sku: 1 });
 productSchema.index({ barcode: 1 }, { unique: true, sparse: true });
 productSchema.index({ category: 1 });
+productSchema.index({ createdAt: -1 });
+productSchema.index({ isActive: 1, createdAt: -1 });
+productSchema.index({ isFeatured: 1, isActive: 1, createdAt: -1 });
 productSchema.index({ clientId: 1, barcode: 1 });
 productSchema.index({ clientId: 1, sku: 1 });
 productSchema.index({ clientId: 1, category: 1 });
 productSchema.index({ clientId: 1, createdAt: -1 });
+productSchema.index({ clientId: 1, isActive: 1, createdAt: -1 });
 productSchema.index({ clientId: 1, updatedAt: -1 });
+productSchema.index({ category: 1, isActive: 1, createdAt: -1 });
 productSchema.index({ updatedAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

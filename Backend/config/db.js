@@ -51,7 +51,15 @@ const connectDB = async () => {
 
   try {
     if (!cached.promise) {
-      cached.promise = mongoose.connect(mongoUri).then((mongooseInstance) => {
+      const mongooseOptions = {
+        maxPoolSize: 25, // Maintain up to 25 socket connections
+        minPoolSize: 5,  // Keep at least 5 connections warm to avoid cold query latency
+        socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+        serverSelectionTimeoutMS: 8000, // Keep trying to send operations for 8s
+        maxIdleTimeMS: 30000, // Close connections after 30s of idle
+        family: 4, // Use IPv4, skip slow IPv6 resolution on cloud hosts
+      };
+      cached.promise = mongoose.connect(mongoUri, mongooseOptions).then((mongooseInstance) => {
         return mongooseInstance;
       });
     }

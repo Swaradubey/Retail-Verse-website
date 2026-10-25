@@ -14,20 +14,41 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(s);
 };
 
-/**
- * Normalizes a domain name by removing protocol, www., and trailing slashes.
- * @param {string} domain
- * @returns {string}
- */
 function normalizeDomain(domain) {
   if (!domain) return "";
   let normalized = domain.toLowerCase().trim();
   normalized = normalized.replace(/^https?:\/\//, "");
   normalized = normalized.replace(/\/$/, "");
   normalized = normalized.replace(/^www\./, "");
-  // Remove port if present
   normalized = normalized.split(":")[0];
   return normalized;
+}
+
+const domainClientCache = new Map();
+const DOMAIN_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function getCachedDomainClientId(domain) {
+  const cached = domainClientCache.get(domain);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.clientId;
+  }
+  if (cached) domainClientCache.delete(domain);
+  return undefined;
+}
+
+function setCachedDomainClientId(domain, clientId) {
+  if (domainClientCache.size > 500) {
+    const firstKey = domainClientCache.keys().next().value;
+    if (firstKey) domainClientCache.delete(firstKey);
+  }
+  domainClientCache.set(domain, {
+    clientId,
+    expiresAt: Date.now() + DOMAIN_CACHE_TTL_MS
+  });
+}
+
+function clearDomainClientCache() {
+  domainClientCache.clear();
 }
 
 /**
@@ -138,6 +159,15 @@ async function resolveClientId(req) {
   for (const normalized of candidates) {
     if (isSystemDomain(normalized)) continue;
 
+    // Check memory cache first - 0ms response time
+    const cachedClientId = getCachedDomainClientId(normalized);
+    if (cachedClientId !== undefined) {
+      if (cachedClientId && isValidObjectId(cachedClientId)) {
+        return String(cachedClientId);
+      }
+      continue; // cached as null/not found
+    }
+
     try {
       const domainDoc = await CustomDomain.findOne({
         $or: [
@@ -146,10 +176,15 @@ async function resolveClientId(req) {
           { domain: normalized },
           { domain: `www.${normalized}` },
         ],
-      }).select("clientId");
+      }).select("clientId").lean();
 
       if (domainDoc && domainDoc.clientId && isValidObjectId(domainDoc.clientId)) {
-        return String(domainDoc.clientId);
+        const foundId = String(domainDoc.clientId);
+        setCachedDomainClientId(normalized, foundId);
+        return foundId;
+      } else {
+        // Cache negative lookup for 2 minutes to prevent repeated failing DB calls
+        setCachedDomainClientId(normalized, null);
       }
     } catch (err) {
       console.error(`[TenantResolver] Domain error: ${err.message}`);
@@ -330,5 +365,6 @@ module.exports = {
   applyScope,
   buildProductVisibilityFilter,
   isValidObjectId,
+  clearDomainClientCache,
 };
 

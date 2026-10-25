@@ -82,14 +82,26 @@ if (!isShopifyConfigured) {
 
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 const session = require("express-session");
 const connectDB = require("./config/db");
 const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const tenantMiddleware = require("./middleware/tenantMiddleware");
 const passport = require("./config/passport");
 const generateToken = require("./utils/generateToken");
+const { startKeepAlive } = require("./utils/keepAlive");
 
 const app = express();
+
+// High performance response compression (reduces payload size by 75-90%)
+app.use(compression({
+  threshold: 1024, // compress responses above 1KB
+  level: 6
+}));
+
+// In-memory cache for dynamic custom domain CORS lookups to prevent database queries on preflight requests
+const corsDomainCache = new Map();
+const CORS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 // Middleware
 const allowedOrigins = [
@@ -146,12 +158,17 @@ app.use(cors({
         return callback(null, true);
       }
 
+      // Check in-memory CORS domain cache first
+      const normalized = hostname.toLowerCase().replace(/^www\./, "");
+      const cached = corsDomainCache.get(normalized);
+      if (cached && Date.now() < cached.expiresAt) {
+        if (cached.allowed) return callback(null, true);
+        return callback(new Error("Not allowed by CORS"));
+      }
+
       // Dynamic Custom Domain Check from Database
       if (require("mongoose").connection.readyState === 1) {
         const CustomDomain = require("./models/CustomDomain");
-
-        // Normalize hostname for lookup (remove www.)
-        const normalized = hostname.toLowerCase().replace(/^www\./, "");
 
         const customDomain = await CustomDomain.findOne({
           $or: [
@@ -160,10 +177,13 @@ app.use(cors({
             { domain: normalized },
             { domain: `www.${normalized}` }
           ]
-        });
+        }).lean();
 
         if (customDomain) {
+          corsDomainCache.set(normalized, { allowed: true, expiresAt: Date.now() + CORS_CACHE_TTL_MS });
           return callback(null, true);
+        } else {
+          corsDomainCache.set(normalized, { allowed: false, expiresAt: Date.now() + CORS_CACHE_TTL_MS });
         }
       }
     } catch (err) {
@@ -174,6 +194,7 @@ app.use(cors({
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
+  maxAge: 86400, // 24 hours: browser caches preflight OPTIONS result
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "x-client-id", "x-client-domain", "x-client-origin"]
 }));
@@ -394,6 +415,9 @@ const PORT = process.env.PORT || 3000;
       console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
       console.log(`================================================\n`);
+
+      // Keep Render instance warm and prevent cold spin-downs
+      startKeepAlive();
 
       const sr = shiprocketService.getShiprocketEnvDiagnostics();
       if (sr.configuredForTracking) {

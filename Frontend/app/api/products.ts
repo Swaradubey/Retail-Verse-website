@@ -41,13 +41,33 @@ export const inventoryApi = {
   delete: (id: string) => ApiService.delete(`/api/inventory/${id}`),
 };
 
+// In-memory cache for instant client-side navigation without network delay
+const clientProductCache = new Map<string, { data: any; timestamp: number }>();
+const CLIENT_CACHE_TTL_MS = 30 * 1000; // 30 seconds
+
+export const clearClientProductCache = () => {
+  clientProductCache.clear();
+};
+
 export const productApi = {
-  getAll: (clientId?: string) => {
+  getAll: async (clientId?: string, forceRefresh = false) => {
+    const cacheKey = `products_${clientId || 'global'}`;
+    const cached = clientProductCache.get(cacheKey);
+    const now = Date.now();
+
+    if (!forceRefresh && cached && (now - cached.timestamp < CLIENT_CACHE_TTL_MS)) {
+      return cached.data;
+    }
+
     const headers: Record<string, string> = {};
     if (clientId) {
       headers["x-client-id"] = clientId;
     }
-    return ApiService.get("/api/products", { headers });
+    const res = await ApiService.get("/api/products", { headers });
+    if (res && res.success) {
+      clientProductCache.set(cacheKey, { data: res, timestamp: Date.now() });
+    }
+    return res;
   },
 
   /** Scoped inventory list for dashboard (populates `client`; Super Admin sees all). */
@@ -57,27 +77,43 @@ export const productApi = {
     return ApiService.get(`/api/products/${id}`);
   },
 
-  getFeatured: (clientId?: string) => {
+  getFeatured: async (clientId?: string, forceRefresh = false) => {
+    const cacheKey = `featured_${clientId || 'global'}`;
+    const cached = clientProductCache.get(cacheKey);
+    const now = Date.now();
+
+    if (!forceRefresh && cached && (now - cached.timestamp < CLIENT_CACHE_TTL_MS)) {
+      return cached.data;
+    }
+
     const headers: Record<string, string> = {};
     if (clientId) {
       headers["x-client-id"] = clientId;
     }
-    return ApiService.get("/api/products/featured", { headers });
+    const res = await ApiService.get("/api/products/featured", { headers });
+    if (res && res.success) {
+      clientProductCache.set(cacheKey, { data: res, timestamp: Date.now() });
+    }
+    return res;
   },
   
-  create: (payload: Product) => {
+  create: async (payload: Product) => {
+    clearClientProductCache();
     return ApiService.post("/api/products", payload);
   },
   
-  update: (id: string, payload: Partial<Product>) => {
+  update: async (id: string, payload: Partial<Product>) => {
+    clearClientProductCache();
     return ApiService.put(`/api/products/${id}`, payload);
   },
   
-  delete: (id: string) => {
+  delete: async (id: string) => {
+    clearClientProductCache();
     return ApiService.delete(`/api/products/${id}`);
   },
   
-  rate: (id: string, rating: number) => {
+  rate: async (id: string, rating: number) => {
+    clearClientProductCache();
     return ApiService.post(`/api/products/${id}/rating`, { rating });
   },
 };
