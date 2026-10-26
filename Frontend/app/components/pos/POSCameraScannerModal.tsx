@@ -229,16 +229,41 @@ export const POSCameraScannerModal: React.FC<POSCameraScannerModalProps> = ({
         aspectRatio: 1.333333,
       };
 
-      await html5QrCode.start(
-        { facingMode: 'environment' },
-        config,
-        (decodedText: string) => {
-          handleDecodedBarcode(decodedText);
-        },
-        () => {
-          // Frame non-decode (expected while scanning)
+      // Smart camera selection: On phones use back camera; on laptops cleanly use the front/only webcam
+      let cameraConstraint: any = { facingMode: 'environment' };
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        if (devices && devices.length > 0) {
+          const backCam = devices.find((d) => /back|rear|environment/i.test(d.label));
+          cameraConstraint = backCam ? backCam.id : devices[0].id;
         }
-      );
+      } catch (_camErr) {
+        cameraConstraint = { facingMode: 'environment' };
+      }
+
+      try {
+        await html5QrCode.start(
+          cameraConstraint,
+          config,
+          (decodedText: string) => {
+            handleDecodedBarcode(decodedText);
+          },
+          () => {
+            // Frame non-decode (expected while scanning)
+          }
+        );
+      } catch (startErr) {
+        console.warn('[POSCameraScanner] Initial camera start failed, retrying with default webcam constraint:', startErr);
+        // Fallback to default webcam for laptops
+        await html5QrCode.start(
+          {},
+          config,
+          (decodedText: string) => {
+            handleDecodedBarcode(decodedText);
+          },
+          () => {}
+        );
+      }
 
       isScanningActiveRef.current = true;
       setIsInitializing(false);

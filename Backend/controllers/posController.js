@@ -12,6 +12,9 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(s);
 };
 
+const couponRuleCache = new Map();
+const COUPON_CACHE_TTL = 60 * 1000;
+
 /**
  * Helper to validate coupon against MongoDB Coupon model or default rule (SAVE1000: min ₹3000 -> ₹500 off)
  */
@@ -19,24 +22,7 @@ async function resolveCouponRule(code) {
   const normalized = String(code || "").trim().toUpperCase();
   if (!normalized) return null;
 
-  // 1. Try finding in MongoDB Coupon collection
-  try {
-    const dbCoupon = await Coupon.findOne({ code: normalized, isActive: true })
-      .select("_id code discountAmount minOrderSubtotal description isActive")
-      .lean();
-    if (dbCoupon) {
-      return {
-        code: dbCoupon.code,
-        discountAmount: Number(dbCoupon.discountAmount) || 500,
-        minOrderSubtotal: Number(dbCoupon.minOrderSubtotal) || 3000,
-        description: dbCoupon.description || "Flat ₹500 off on cart subtotal of ₹3,000 or more",
-      };
-    }
-  } catch (err) {
-    console.warn("[posController] Coupon lookup warning:", err.message);
-  }
-
-  // 2. Default standard rule: SAVE1000 / FLAT1000 gives flat ₹500 off on min subtotal ₹3000
+  // 1. Instant check for built-in standard rules (< 1ms)
   if (
     normalized === "SAVE1000" ||
     normalized === "FLAT1000" ||
@@ -49,6 +35,32 @@ async function resolveCouponRule(code) {
       minOrderSubtotal: 3000,
       description: "Flat ₹500 off on cart subtotal of ₹3,000 or more",
     };
+  }
+
+  // 2. Check in-memory cache
+  const cached = couponRuleCache.get(normalized);
+  if (cached && Date.now() - cached.timestamp < COUPON_CACHE_TTL) {
+    return cached.rule;
+  }
+
+  // 3. Try finding in MongoDB Coupon collection
+  try {
+    const dbCoupon = await Coupon.findOne({ code: normalized, isActive: true })
+      .select("_id code discountAmount minOrderSubtotal description isActive")
+      .lean();
+    if (dbCoupon) {
+      const rule = {
+        code: dbCoupon.code,
+        discountAmount: Number(dbCoupon.discountAmount) || 500,
+        minOrderSubtotal: Number(dbCoupon.minOrderSubtotal) || 3000,
+        description: dbCoupon.description || "Flat ₹500 off on cart subtotal of ₹3,000 or more",
+      };
+      couponRuleCache.set(normalized, { rule, timestamp: Date.now() });
+      return rule;
+    }
+    couponRuleCache.set(normalized, { rule: null, timestamp: Date.now() });
+  } catch (err) {
+    console.warn("[posController] Coupon lookup warning:", err.message);
   }
 
   return null;

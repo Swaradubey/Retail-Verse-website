@@ -119,8 +119,8 @@ const uploadBannerImages = (req, res, next) => {
 
 /**
  * Process uploaded files:
- * If Cloudinary is available, upload local file to Cloudinary and delete local temp file.
- * Otherwise, generate a relative public URL `/uploads/banners/{filename}`.
+ * Upload desktop and mobile images concurrently via Promise.all() to eliminate waterfall delays.
+ * Uses non-blocking asynchronous fs calls to avoid starving Node.js event loop.
  */
 async function processBannerUploads(req) {
   const result = {
@@ -131,66 +131,75 @@ async function processBannerUploads(req) {
   const desktopFile = req.files && req.files.image ? req.files.image[0] : null;
   const mobileFile = req.files && req.files.mobileImage ? req.files.mobileImage[0] : null;
 
+  const uploadTasks = [];
+
+  // Parallel upload 1: Desktop artwork
   if (desktopFile) {
     if (cloudinaryClient) {
-      try {
-        const uploadRes = await cloudinaryClient.uploader.upload(desktopFile.path, {
-          folder: "banners",
-          resource_type: "image",
-        });
-        result.imageUrl = uploadRes.secure_url;
-        // Clean up temporary disk file
-        try {
-          fs.unlinkSync(desktopFile.path);
-        } catch (_) {}
-      } catch (cloudErr) {
-        console.warn("[BannerStorage] Cloudinary desktop upload failed, using local fallback:", cloudErr.message);
-        result.imageUrl = `/uploads/banners/${desktopFile.filename}`;
-      }
+      uploadTasks.push(
+        cloudinaryClient.uploader
+          .upload(desktopFile.path, {
+            folder: "banners",
+            resource_type: "image",
+          })
+          .then((uploadRes) => {
+            result.imageUrl = uploadRes.secure_url;
+            fs.promises.unlink(desktopFile.path).catch(() => {});
+          })
+          .catch((cloudErr) => {
+            console.warn("[BannerStorage] Cloudinary desktop upload failed, using local fallback:", cloudErr.message);
+            result.imageUrl = `/uploads/banners/${desktopFile.filename}`;
+          })
+      );
     } else {
       result.imageUrl = `/uploads/banners/${desktopFile.filename}`;
     }
   }
 
+  // Parallel upload 2: Mobile artwork
   if (mobileFile) {
     if (cloudinaryClient) {
-      try {
-        const uploadRes = await cloudinaryClient.uploader.upload(mobileFile.path, {
-          folder: "banners/mobile",
-          resource_type: "image",
-        });
-        result.mobileImageUrl = uploadRes.secure_url;
-        // Clean up temporary disk file
-        try {
-          fs.unlinkSync(mobileFile.path);
-        } catch (_) {}
-      } catch (cloudErr) {
-        console.warn("[BannerStorage] Cloudinary mobile upload failed, using local fallback:", cloudErr.message);
-        result.mobileImageUrl = `/uploads/banners/${mobileFile.filename}`;
-      }
+      uploadTasks.push(
+        cloudinaryClient.uploader
+          .upload(mobileFile.path, {
+            folder: "banners/mobile",
+            resource_type: "image",
+          })
+          .then((uploadRes) => {
+            result.mobileImageUrl = uploadRes.secure_url;
+            fs.promises.unlink(mobileFile.path).catch(() => {});
+          })
+          .catch((cloudErr) => {
+            console.warn("[BannerStorage] Cloudinary mobile upload failed, using local fallback:", cloudErr.message);
+            result.mobileImageUrl = `/uploads/banners/${mobileFile.filename}`;
+          })
+      );
     } else {
       result.mobileImageUrl = `/uploads/banners/${mobileFile.filename}`;
     }
+  }
+
+  // Await both uploads in parallel if any
+  if (uploadTasks.length > 0) {
+    await Promise.all(uploadTasks);
   }
 
   return result;
 }
 
 /**
- * Utility to delete local stored images if banners are deleted or replaced
+ * Utility to delete local stored images if banners are deleted or replaced (non-blocking)
  */
 function deleteStoredImage(fileUrl) {
   if (!fileUrl || typeof fileUrl !== "string") return;
   if (fileUrl.startsWith("/uploads/banners/")) {
     const filename = path.basename(fileUrl);
     const fullPath = path.join(localBannersDir, filename);
-    try {
-      if (fs.existsSync(fullPath)) {
-        fs.unlinkSync(fullPath);
+    fs.unlink(fullPath, (err) => {
+      if (err && err.code !== "ENOENT") {
+        console.warn("[BannerStorage] Could not delete image:", err.message);
       }
-    } catch (err) {
-      console.warn("[BannerStorage] Could not delete image:", err.message);
-    }
+    });
   }
 }
 

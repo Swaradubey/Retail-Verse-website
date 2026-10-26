@@ -12,31 +12,62 @@ interface EbayHeroBannerProps {
   className?: string;
 }
 
+// In-memory client-side cache and deduplication for active promotional banners
+const clientBannerCache = new Map<string, { data: Banner[]; timestamp: number }>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const CLIENT_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 export function EbayHeroBanner({
   placement = 'HOME_HERO',
   autoplayInterval = 5000,
   className = '',
 }: EbayHeroBannerProps) {
-  const [banners, setBanners] = useState<Banner[]>([]);
+  const cached = clientBannerCache.get(placement);
+  const [banners, setBanners] = useState<Banner[]>(cached ? cached.data : []);
   const [currentIndex, setCurrentIndex] = useState(0);
-  // Keep isLoading only to suppress rendering until we know if banners exist.
-  // We do NOT show any skeleton — the rest of the page renders immediately.
-  const [isLoading, setIsLoading] = useState(true);
+  // If we already have cached banners, don't show loading state
+  const [isLoading, setIsLoading] = useState(!cached);
   const [isPaused, setIsPaused] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch active banners on mount
+  // Fetch active banners on mount with Stale-While-Revalidate (SWR) pattern
   useEffect(() => {
     let isMounted = true;
 
     async function loadActiveBanners() {
-      setIsLoading(true);
+      const now = Date.now();
+      const existing = clientBannerCache.get(placement);
+
+      // Fast-path: render immediately from client cache
+      if (existing) {
+        setBanners(existing.data);
+        setIsLoading(false);
+
+        // If cache is fresh (< 60s), avoid background re-fetch
+        if (now - existing.timestamp < CLIENT_CACHE_TTL_MS) {
+          return;
+        }
+      } else {
+        setIsLoading(true);
+      }
+
       try {
-        const res = await bannersApi.getActive(placement);
+        // Deduplicate in-flight promises to prevent duplicate simultaneous fetches
+        let fetchPromise = inFlightRequests.get(placement);
+        if (!fetchPromise) {
+          fetchPromise = bannersApi.getActive(placement);
+          inFlightRequests.set(placement, fetchPromise);
+        }
+
+        const res = await fetchPromise;
+        inFlightRequests.delete(placement);
+
         if (isMounted && res.success && Array.isArray(res.data)) {
+          clientBannerCache.set(placement, { data: res.data, timestamp: Date.now() });
           setBanners(res.data);
         }
       } catch (err) {
+        inFlightRequests.delete(placement);
         console.warn('[EbayHeroBanner] Could not load active banners:', err);
       } finally {
         if (isMounted) {

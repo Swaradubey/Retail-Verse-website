@@ -451,6 +451,13 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
+// High-performance compound indexes for POS & order operations
+orderSchema.index({ status: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ orderStatus: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ paymentStatus: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ offlineOrderId: 1 }, { sparse: true });
+orderSchema.index({ clientId: 1, status: 1, isDeleted: 1, createdAt: -1 });
+
 orderSchema.pre("save", function (next) {
   if (this.invoiceNumber && !this.orderId) {
     this.orderId = this.invoiceNumber;

@@ -236,9 +236,26 @@ export function DashboardSettings() {
       setSectionError(null);
       setLoadError(null);
       try {
-        const res = await settingsApi.get();
-        console.log('[Settings Page] GET /api/settings response', res);
+        const normalizedRole = normalizeRole(user?.role);
+        const canSeeRazorpay =
+          normalizedRole === 'client' ||
+          normalizedRole === 'admin' ||
+          normalizedRole === 'super_admin' ||
+          normalizedRole === 'client_admin';
+
+        // Parallel non-blocking fetch: load Settings and Razorpay config concurrently
+        const [res, rzpRes] = await Promise.all([
+          settingsApi.get(),
+          canSeeRazorpay
+            ? settingsApi.getRazorpayConfig().catch((err) => {
+                console.warn('[Settings Page] Optional Razorpay fetch failed:', err);
+                return null;
+              })
+            : Promise.resolve(null),
+        ]);
+
         if (cancelled) return;
+
         if (res.success && res.data) {
           const normalized = normalizeSettingsPayload(res.data as SettingsPayload);
           setBaseline(clonePayload(normalized));
@@ -247,25 +264,19 @@ export function DashboardSettings() {
           throw new Error(res.message || 'Invalid settings response');
         }
 
-        const normalizedRole = normalizeRole(user?.role);
-        const canSeeRazorpay = normalizedRole === 'client' || normalizedRole === 'admin' || normalizedRole === 'super_admin' || normalizedRole === 'client_admin';
-        if (canSeeRazorpay) {
-          const rzpRes = await settingsApi.getRazorpayConfig();
-          if (cancelled) return;
-          if (rzpRes.success && rzpRes.data) {
-            setRazorpayEnabled(rzpRes.data.razorpayEnabled);
-            setRazorpayKeyId(rzpRes.data.razorpayKeyId);
-            setRazorpayKeySecret(rzpRes.data.razorpayKeySecret);
-            setWebhookSecret(rzpRes.data.webhookSecret);
-            setIsConnected(rzpRes.data.isConnected);
-            setRazorpayBaseline({
-              razorpayEnabled: rzpRes.data.razorpayEnabled,
-              razorpayKeyId: rzpRes.data.razorpayKeyId,
-              razorpayKeySecret: rzpRes.data.razorpayKeySecret,
-              webhookSecret: rzpRes.data.webhookSecret,
-              isConnected: rzpRes.data.isConnected,
-            });
-          }
+        if (rzpRes && rzpRes.success && rzpRes.data) {
+          setRazorpayEnabled(rzpRes.data.razorpayEnabled);
+          setRazorpayKeyId(rzpRes.data.razorpayKeyId);
+          setRazorpayKeySecret(rzpRes.data.razorpayKeySecret);
+          setWebhookSecret(rzpRes.data.webhookSecret);
+          setIsConnected(rzpRes.data.isConnected);
+          setRazorpayBaseline({
+            razorpayEnabled: rzpRes.data.razorpayEnabled,
+            razorpayKeyId: rzpRes.data.razorpayKeyId,
+            razorpayKeySecret: rzpRes.data.razorpayKeySecret,
+            webhookSecret: rzpRes.data.webhookSecret,
+            isConnected: rzpRes.data.isConnected,
+          });
         }
       } catch (e: unknown) {
         if (cancelled) return;

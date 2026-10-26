@@ -281,7 +281,17 @@ export function BannerSettings() {
 
       if (res.success && res.data) {
         toast.success(editingBanner ? 'Banner updated successfully!' : 'Banner created successfully!');
+        const savedBanner = res.data;
+        // Immediate optimistic UI update: render new/updated banner instantly
+        setBanners((prev) => {
+          if (editingBanner) {
+            return prev.map((b) => (b._id === editingBanner._id ? savedBanner : b));
+          } else {
+            return [...prev, savedBanner];
+          }
+        });
         closeModal();
+        // Background revalidation
         fetchBanners();
       } else {
         throw new Error(res.message || 'Operation failed');

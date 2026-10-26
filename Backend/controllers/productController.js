@@ -1294,6 +1294,17 @@ const lookupProduct = async (req, res) => {
       ]
     };
 
+    const cacheKey = `lookup:${code}:${clientId || "all"}`;
+    const cachedProduct = productCache.get(cacheKey);
+    if (cachedProduct) {
+      return res.status(200).json({
+        success: true,
+        product: cachedProduct,
+        data: cachedProduct,
+        cached: true,
+      });
+    }
+
     let product = await Product.findOne(query)
       .select(posLookupFields)
       .lean();
@@ -1316,6 +1327,8 @@ const lookupProduct = async (req, res) => {
     }
 
     const formatted = formatProductWithClient(product);
+    productCache.set(cacheKey, formatted, 60000);
+
     return res.status(200).json({
       success: true,
       product: formatted,

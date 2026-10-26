@@ -455,7 +455,6 @@ productSchema.post("findOneAndDelete", function (doc) {
   });
 });
 
-productSchema.index({ sku: 1 });
 productSchema.index({ barcode: 1 }, { unique: true, sparse: true });
 productSchema.index({ category: 1 });
 productSchema.index({ createdAt: -1 });

@@ -13,12 +13,11 @@ const Razorpay = require("razorpay");
 async function getClientForUser(user) {
   if (user.clientId) return user.clientId;
   
-  // If user doesn't have a direct clientId but is client or admin,
-  // find a Client document they own or the first one in the system.
-  const ownedClient = await Client.findOne({ userId: user._id });
+  // Fast lean check with field selection
+  const ownedClient = await Client.findOne({ userId: user._id }).select("_id").lean();
   if (ownedClient) return ownedClient._id;
 
-  const anyClient = await Client.findOne();
+  const anyClient = await Client.findOne().select("_id").lean();
   if (anyClient) return anyClient._id;
 
   return null;
@@ -41,7 +40,9 @@ router.get(
         });
       }
 
-      let config = await ClientRazorpayConfig.findOne({ clientId });
+      const config = await ClientRazorpayConfig.findOne({ clientId })
+        .select("razorpayEnabled razorpayKeyId razorpayKeySecretEncrypted webhookSecretEncrypted isConnected")
+        .lean();
       if (!config) {
         // Return default empty config if it doesn't exist yet
         return res.status(200).json({

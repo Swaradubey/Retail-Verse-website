@@ -65,6 +65,13 @@ function userOwnsClientProduct(user, product) {
 const INVENTORY_MANAGER_TITLE_DESC_SUCCESS =
   "Inventory manager successfully updated products";
 
+const inventoryMetaCache = new Map();
+const INVENTORY_META_TTL = 30 * 1000; // 30 seconds
+
+function clearInventoryMetaCache() {
+  inventoryMetaCache.clear();
+}
+
 // @desc    List products for dashboard inventory (scoped for client role)
 // @route   GET /api/inventory/manage
 // @access  Private
@@ -124,37 +131,58 @@ const getInventoryManage = async (req, res) => {
       dbQuery = dbQuery.skip(skip).limit(limit);
     }
 
+    // Check meta cache for stats and categories to avoid heavy aggregation on each page view
+    const metaCacheKey = JSON.stringify(query);
+    const cachedMeta = inventoryMetaCache.get(metaCacheKey);
+    const isMetaFresh = cachedMeta && (Date.now() - cachedMeta.timestamp < INVENTORY_META_TTL);
+
+    const statsAggPromise = isMetaFresh
+      ? Promise.resolve(cachedMeta.statsAgg)
+      : Product.aggregate([
+          { $match: query },
+          {
+            $group: {
+              _id: null,
+              totalProducts: { $sum: 1 },
+              inStock: { $sum: { $cond: [{ $gte: [{ $ifNull: ["$stock", 0] }, 10] }, 1, 0] } },
+              lowStock: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $gt: [{ $ifNull: ["$stock", 0] }, 0] },
+                        { $lt: [{ $ifNull: ["$stock", 0] }, 10] }
+                      ]
+                    },
+                    1,
+                    0
+                  ]
+                }
+              },
+              outOfStock: { $sum: { $cond: [{ $eq: [{ $ifNull: ["$stock", 0] }, 0] }, 1, 0] } }
+            }
+          }
+        ]);
+
+    const categoriesPromise = isMetaFresh
+      ? Promise.resolve(cachedMeta.distinctCategories)
+      : Product.distinct("category", { ...query, category: { $exists: true, $ne: "" } });
+
     // Run count, data query, stats aggregation, and distinct categories concurrently
     const [totalCount, rows, statsAgg, distinctCategories] = await Promise.all([
       Product.countDocuments(query),
       dbQuery.lean(),
-      Product.aggregate([
-        { $match: query },
-        {
-          $group: {
-            _id: null,
-            totalProducts: { $sum: 1 },
-            inStock: { $sum: { $cond: [{ $gte: [{ $ifNull: ["$stock", 0] }, 10] }, 1, 0] } },
-            lowStock: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $gt: [{ $ifNull: ["$stock", 0] }, 0] },
-                      { $lt: [{ $ifNull: ["$stock", 0] }, 10] }
-                    ]
-                  },
-                  1,
-                  0
-                ]
-              }
-            },
-            outOfStock: { $sum: { $cond: [{ $eq: [{ $ifNull: ["$stock", 0] }, 0] }, 1, 0] } }
-          }
-        }
-      ]),
-      Product.distinct("category", { ...query, category: { $exists: true, $ne: "" } })
+      statsAggPromise,
+      categoriesPromise
     ]);
+
+    if (!isMetaFresh) {
+      inventoryMetaCache.set(metaCacheKey, {
+        statsAgg,
+        distinctCategories,
+        timestamp: Date.now()
+      });
+    }
 
     const stats = statsAgg[0] || {
       totalProducts: totalCount,
@@ -324,6 +352,7 @@ const createInventoryItem = async (req, res) => {
     }
 
     const item = await Product.create(payload);
+    clearInventoryMetaCache();
 
     // Queue marketplace sync asynchronously if requested
     const { publishTo } = req.body;
@@ -421,7 +450,7 @@ const getInventory = async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = hasLimit
       ? (req.query.limit === "0" || req.query.limit === "all" ? 0 : Math.max(1, parseInt(req.query.limit, 10) || 50))
-      : (req.query.page ? 50 : 0);
+      : 50;
     const skip = limit > 0 ? (page - 1) * limit : 0;
 
     let dbQuery = Product.find(query)
@@ -439,28 +468,30 @@ const getInventory = async (req, res) => {
     ]);
     const productsFound = inventory.length;
 
-    // Populate marketplace listings
+    // Populate marketplace listings only when requested
     let formattedInventory = inventory;
-    try {
-      const productIds = inventory.map(r => r._id);
-      const MarketplaceProduct = require("../models/MarketplaceProduct");
-      const listings = await MarketplaceProduct.find({ productId: { $in: productIds } }).lean();
-      
-      const listingsMap = {};
-      listings.forEach(l => {
-        if (!listingsMap[l.productId.toString()]) {
-          listingsMap[l.productId.toString()] = [];
-        }
-        listingsMap[l.productId.toString()].push(l);
-      });
+    if (req.query.includeMarketplaces === "true" && inventory.length > 0) {
+      try {
+        const productIds = inventory.map(r => r._id);
+        const MarketplaceProduct = require("../models/MarketplaceProduct");
+        const listings = await MarketplaceProduct.find({ productId: { $in: productIds } }).lean();
+        
+        const listingsMap = {};
+        listings.forEach(l => {
+          if (!listingsMap[l.productId.toString()]) {
+            listingsMap[l.productId.toString()] = [];
+          }
+          listingsMap[l.productId.toString()].push(l);
+        });
 
-      formattedInventory = inventory.map(p => {
-        const pObj = { ...p };
-        pObj.marketplaceListings = listingsMap[p._id.toString()] || [];
-        return pObj;
-      });
-    } catch (err) {
-      console.error("[inventoryController] Error loading marketplace listings in list:", err.message);
+        formattedInventory = inventory.map(p => {
+          const pObj = { ...p };
+          pObj.marketplaceListings = listingsMap[p._id.toString()] || [];
+          return pObj;
+        });
+      } catch (err) {
+        console.error("[inventoryController] Error loading marketplace listings in list:", err.message);
+      }
     }
 
     // Requested debug logs
@@ -786,6 +817,8 @@ const updateInventoryItem = async (req, res) => {
       { new: true, runValidators: true }
     );
 
+    clearInventoryMetaCache();
+
     if (!updatedItem) {
       return res.status(404).json({ success: false, message: "Failed to update inventory item" });
     }
@@ -883,6 +916,7 @@ const updateStock = async (req, res) => {
       source: 'manual_stock_edit',
       referenceId: req.user?._id
     });
+    clearInventoryMetaCache();
 
     const populated = await Product.findById(existing._id)
       .populate({ path: "clientId", select: "companyName shopName email" })
@@ -922,6 +956,7 @@ const deleteInventoryItem = async (req, res) => {
       });
     }
     await Product.findByIdAndDelete(req.params.id);
+    clearInventoryMetaCache();
     res.json({ success: true, message: "Inventory item removed successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -1064,6 +1099,7 @@ const createInventoryProduct = async (req, res) => {
     });
 
     const savedProduct = await newProduct.save();
+    clearInventoryMetaCache();
 
     // Fast non-blocking lean response containing only essential saved fields (< 60ms latency)
     const responseProduct = {
