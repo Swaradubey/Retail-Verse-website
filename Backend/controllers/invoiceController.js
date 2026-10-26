@@ -4,8 +4,13 @@ const SupportTicket = require("../models/SupportTicket");
 const User = require("../models/User");
 const { isValidObjectId, resolveClientId } = require("../utils/tenantResolver");
 
+// In-memory cache for resolved business profiles to eliminate N+1 DB lookups
+const businessProfileCache = new Map();
+const BUSINESS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 /**
  * Helper to fetch and resolve business profile details for a Client.
+ * Cached to prevent N+1 queries on invoice/quote lists.
  * @param {import("mongoose").Types.ObjectId|Object|null} clientInput
  * @returns {Promise<Object>}
  */
@@ -26,6 +31,12 @@ async function resolveBusinessProfile(clientInput) {
     return business;
   }
 
+  const cacheKey = String(clientInput?._id || clientInput);
+  const cached = businessProfileCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < BUSINESS_CACHE_TTL) {
+    return cached.data;
+  }
+
   const Client = require("../models/Client");
   const User = require("../models/User");
   const CustomDomain = require("../models/CustomDomain");
@@ -33,7 +44,7 @@ async function resolveBusinessProfile(clientInput) {
   let client = clientInput;
   if (clientInput && !(clientInput.companyName || clientInput.shopName)) {
     try {
-      client = await Client.findById(clientInput);
+      client = await Client.findById(clientInput).select("companyName shopName brandingName logo permanentAddress email phone gst userId createdBy").lean();
     } catch (err) {
       console.error("[resolveBusinessProfile] Error fetching client by ID:", err.message);
     }
@@ -49,7 +60,7 @@ async function resolveBusinessProfile(clientInput) {
     business.taxNumber = client.gst || "";
 
     try {
-      const domainDoc = await CustomDomain.findOne({ clientId: client._id, status: "Verified" });
+      const domainDoc = await CustomDomain.findOne({ clientId: client._id, status: "Verified" }).select("domainName domain").lean();
       if (domainDoc) {
         business.website = domainDoc.domainName || domainDoc.domain || "";
       }
@@ -59,14 +70,14 @@ async function resolveBusinessProfile(clientInput) {
   }
 
   // Fallback Logic:
-  // 1. Business Name (client.companyName)
-  // 2. Store Name (client.shopName)
-  // 3. Merchant Name (User name)
   if (!business.name && client) {
     try {
-      let merchantUser = await User.findById(client.userId || client.createdBy);
+      let merchantUser = null;
+      if (client.userId || client.createdBy) {
+        merchantUser = await User.findById(client.userId || client.createdBy).select("name email phone address storeSettings").lean();
+      }
       if (!merchantUser) {
-        merchantUser = await User.findOne({ clientId: client._id, role: { $in: ["client", "admin"] } });
+        merchantUser = await User.findOne({ clientId: client._id, role: { $in: ["client", "admin"] } }).select("name email phone address storeSettings").lean();
       }
       if (merchantUser) {
         business.name = merchantUser.name || "";
@@ -86,20 +97,18 @@ async function resolveBusinessProfile(clientInput) {
     business.name = "Business Profile";
   }
 
+  businessProfileCache.set(cacheKey, { timestamp: Date.now(), data: business });
   return business;
 }
 
-// @desc    Get all invoices
+// @desc    Get all invoices with server-side pagination, search, and status filtering
 // @route   GET /api/invoices
-// @access  Private (SuperAdmin)
+// @access  Private (SuperAdmin, Admin, Client)
 const getInvoices = async (req, res) => {
   try {
     const role = req.user?.role || req.user?.userRole || req.user?.accountType;
     const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
     const clientId = req.user?.clientId || req.clientId || (await resolveClientId(req));
-
-    // Requirement 10 & 16: Log data retrieval details
-    console.log(`[invoiceController] getInvoices - Page: Invoices, Role: ${role}, ClientId: ${clientId || "global"}`);
 
     const query = {};
     if (isSuperAdmin) {
@@ -112,66 +121,155 @@ const getInvoices = async (req, res) => {
       query.clientId = clientId;
     }
 
-    console.log("-----------------------------------------");
-    console.log("role:", role, "clientId:", clientId, "query:", JSON.stringify(query));
-    console.log("-----------------------------------------");
-    let invoices = await Invoice.find(query).sort({ createdAt: -1 }).populate("clientId").lean();
-    const orders = await Order.find(query).sort({ createdAt: -1 }).populate("clientId").lean();
+    // Keep base scope query for tenant-wide stats
+    const baseScopeQuery = { ...query };
 
-    if (!invoices || invoices.length < orders.length) {
-      console.log(`[invoiceController] Found ${invoices?.length || 0} invoices but ${orders.length} orders. Deriving missing invoices...`);
+    // Dynamic search filtering (invoiceNumber, orderId, customerName, customerEmail)
+    if (req.query.search && String(req.query.search).trim()) {
+      const sanitized = String(req.query.search).trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+      const searchRegex = new RegExp(sanitized, "i");
+      const searchConditions = [
+        { invoiceNumber: searchRegex },
+        { orderId: searchRegex },
+        { customerName: searchRegex },
+        { customerEmail: searchRegex },
+      ];
 
-      const existingOrderIds = new Set((invoices || []).map(inv => inv.orderId));
-
-      const derivedInvoices = orders
-        .filter(order => !existingOrderIds.has(order.orderId))
-        .map(order => {
-          const isPos = /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId) || order.orderSource === "pos";
-          const items = (order.items || []).map(i => {
-            const price = Number(i.price || 0);
-            const qty = Number(i.quantity || 1);
-            const rate = Number(i.gstRate || 0);
-            const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
-            return {
-              name: i.name || "Item",
-              quantity: qty,
-              price: price,
-              subtotal: price * qty,
-              gstRate: rate,
-              gstAmount: amt,
-            };
-          });
-          const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
-          const tax = order.taxPrice || items.reduce((sum, i) => sum + i.gstAmount, 0);
-          const totalAmount = order.totalPrice || (subtotal + tax);
-          return {
-            _id: order._id,
-            invoiceNumber: `INV-${order.orderId || order._id.toString().substring(0, 8).toUpperCase()}`,
-            orderId: order.orderId,
-            customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "Unknown",
-            customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
-            items,
-            subtotal,
-            tax,
-            cgst: tax / 2,
-            sgst: tax / 2,
-            discountAmount: Number(order.discountAmount) || 0,
-            couponCode: order.couponCode || "",
-            totalAmount,
-            paymentMethod: order.paymentMethod || "N/A",
-            paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),
-            orderStatus: order.orderStatus || "placed",
-            createdAt: order.createdAt,
-            clientId: order.clientId,
-          };
-        });
-
-      invoices = [...(invoices || []), ...derivedInvoices].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchConditions }];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions;
+      }
     }
 
-    // Ensure all POS invoices return "paid" regardless of database state and attach business details
-    invoices = await Promise.all(
-      invoices.map(async (inv) => {
+    // Dynamic status filtering
+    if (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all") {
+      const s = String(req.query.status).trim().toLowerCase();
+      if (["paid", "completed"].includes(s)) {
+        query.paymentStatus = { $in: [new RegExp("^paid$", "i"), new RegExp("^completed$", "i")] };
+      } else if (s === "pending") {
+        query.paymentStatus = { $nin: [new RegExp("^paid$", "i"), new RegExp("^completed$", "i")] };
+      } else {
+        query.paymentStatus = new RegExp(`^${s}$`, "i");
+      }
+    }
+
+    // Check if missing invoices need to be derived/backfilled from orders
+    // Quick count check prevents full collection scanning
+    try {
+      const invoiceCount = await Invoice.countDocuments(baseScopeQuery);
+      const orderCount = await Order.countDocuments(baseScopeQuery);
+
+      if (orderCount > invoiceCount) {
+        const existingInvoices = await Invoice.find(baseScopeQuery).select("orderId").lean();
+        const existingOrderIds = new Set(existingInvoices.map((i) => i.orderId).filter(Boolean));
+
+        const missingOrders = await Order.find({
+          ...baseScopeQuery,
+          orderId: { $nin: Array.from(existingOrderIds) },
+        })
+          .select("_id orderId customerName customerEmail shippingAddress items taxPrice totalPrice discountAmount couponCode paymentMethod paymentStatus orderStatus createdAt clientId orderSource")
+          .lean();
+
+        if (missingOrders.length > 0) {
+          const docsToInsert = missingOrders.map((order) => {
+            const isPos = /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId) || order.orderSource === "pos";
+            const items = (order.items || []).map((i) => {
+              const price = Number(i.price || 0);
+              const qty = Number(i.quantity || 1);
+              const rate = Number(i.gstRate || 0);
+              const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
+              return {
+                name: i.name || "Item",
+                quantity: qty,
+                price: price,
+                subtotal: price * qty,
+                gstRate: rate,
+                gstAmount: amt,
+              };
+            });
+            const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
+            const tax = order.taxPrice || items.reduce((sum, i) => sum + i.gstAmount, 0);
+            const totalAmount = order.totalPrice || (subtotal + tax);
+            return {
+              invoiceNumber: `INV-${order.orderId || order._id.toString().substring(0, 8).toUpperCase()}`,
+              orderId: order.orderId,
+              customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "Unknown",
+              customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
+              items,
+              subtotal,
+              tax,
+              cgst: tax / 2,
+              sgst: tax / 2,
+              discountAmount: Number(order.discountAmount) || 0,
+              couponCode: order.couponCode || "",
+              totalAmount,
+              paymentMethod: order.paymentMethod || "N/A",
+              paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),
+              orderStatus: order.orderStatus || "placed",
+              createdAt: order.createdAt,
+              clientId: order.clientId,
+            };
+          });
+
+          await Invoice.insertMany(docsToInsert, { ordered: false }).catch(() => {});
+        }
+      }
+    } catch (syncErr) {
+      console.warn("[invoiceController] Invoice sync warning:", syncErr.message);
+    }
+
+    // Pagination parameters
+    const isAll = req.query.all === "true" || req.query.limit === "0";
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = isAll ? 0 : Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    // Lean Projection: Essential fields for list & dialog views
+    const projection = "_id invoiceNumber orderId customerName customerEmail items subtotal tax cgst sgst discountAmount couponCode totalAmount paymentMethod paymentStatus orderStatus createdAt clientId";
+
+    const queryChain = Invoice.find(query)
+      .select(projection)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!isAll) {
+      queryChain.skip(skip).limit(limit);
+    }
+
+    // Run count, paginated lean query, and tenant-wide stats aggregation concurrently
+    const [total, rawInvoices, statsResult] = await Promise.all([
+      Invoice.countDocuments(query),
+      queryChain,
+      Invoice.aggregate([
+        { $match: baseScopeQuery },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            completed: {
+              $sum: {
+                $cond: [
+                  { $in: [{ $toLower: { $ifNull: ["$paymentStatus", ""] } }, ["paid", "completed"]] },
+                  1,
+                  0
+                ]
+              }
+            },
+            revenue: {
+              $sum: {
+                $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }]
+              }
+            }
+          }
+        }
+      ])
+    ]);
+
+    // Attach cached business profile and format paymentStatus for POS
+    const invoices = await Promise.all(
+      rawInvoices.map(async (inv) => {
         const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
         if (isPos) {
           inv.paymentStatus = "paid";
@@ -181,7 +279,31 @@ const getInvoices = async (req, res) => {
       })
     );
 
-    res.json({ success: true, count: invoices.length, data: invoices });
+    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const s = statsResult[0] || { total: 0, completed: 0, revenue: 0 };
+    const stats = {
+      total: s.total || 0,
+      completed: s.completed || 0,
+      pending: Math.max(0, (s.total || 0) - (s.completed || 0)),
+      revenue: s.revenue || 0,
+    };
+
+    res.json({
+      success: true,
+      count: invoices.length,
+      total,
+      page: isAll ? 1 : page,
+      limit: isAll ? total : limit,
+      totalPages,
+      pagination: {
+        total,
+        page: isAll ? 1 : page,
+        limit: isAll ? total : limit,
+        totalPages,
+      },
+      stats,
+      data: invoices,
+    });
   } catch (error) {
     console.error("[invoiceController] getInvoices error:", error.message);
     res.status(500).json({ success: false, message: error.message });
@@ -190,14 +312,12 @@ const getInvoices = async (req, res) => {
 
 // @desc    Get invoice by ID
 // @route   GET /api/invoices/:id
-// @access  Private (SuperAdmin)
+// @access  Private (SuperAdmin, Admin, Client)
 const getInvoiceById = async (req, res) => {
   try {
     const role = req.user?.role || req.user?.userRole || req.user?.accountType;
     const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
     const clientId = req.user?.clientId || req.clientId || (await resolveClientId(req));
-
-    console.log(`[invoiceController] getInvoiceById - ID: ${req.params.id}, Role: ${role}, ClientId: ${clientId || "global"}`);
 
     if (!isValidObjectId(req.params.id)) {
       return res.status(404).json({ success: false, message: "Invoice not found or access denied (Invalid ID)" });
@@ -213,24 +333,64 @@ const getInvoiceById = async (req, res) => {
     } else {
       query.clientId = clientId;
     }
-    const invoice = await Invoice.findOne(query).populate("clientId");
+
+    let invoice = await Invoice.findOne(query).lean();
+
+    // Fallback: check Order collection if not found in Invoice collection
+    if (!invoice) {
+      const order = await Order.findOne(query).lean();
+      if (order) {
+        const isPos = /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId) || order.orderSource === "pos";
+        const items = (order.items || []).map((i) => {
+          const price = Number(i.price || 0);
+          const qty = Number(i.quantity || 1);
+          const rate = Number(i.gstRate || 0);
+          const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
+          return {
+            name: i.name || "Item",
+            quantity: qty,
+            price: price,
+            subtotal: price * qty,
+            gstRate: rate,
+            gstAmount: amt,
+          };
+        });
+        const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
+        const tax = order.taxPrice || items.reduce((sum, i) => sum + i.gstAmount, 0);
+        invoice = {
+          _id: order._id,
+          invoiceNumber: `INV-${order.orderId || order._id.toString().substring(0, 8).toUpperCase()}`,
+          orderId: order.orderId,
+          customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "Unknown",
+          customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
+          items,
+          subtotal,
+          tax,
+          cgst: tax / 2,
+          sgst: tax / 2,
+          discountAmount: Number(order.discountAmount) || 0,
+          couponCode: order.couponCode || "",
+          totalAmount: order.totalPrice || (subtotal + tax),
+          paymentMethod: order.paymentMethod || "N/A",
+          paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),
+          orderStatus: order.orderStatus || "placed",
+          createdAt: order.createdAt,
+          clientId: order.clientId,
+        };
+      }
+    }
 
     if (!invoice) {
       return res.status(404).json({ success: false, message: "Invoice not found or access denied" });
     }
 
-    // Override payment status for POS
-    const invoiceObj = invoice.toObject ? invoice.toObject() : { ...invoice };
-    if (/^POS-/i.test(invoiceObj.orderId) || /^ORD-POS-/i.test(invoiceObj.orderId)) {
-      invoiceObj.paymentStatus = "paid";
+    if (/^POS-/i.test(invoice.orderId) || /^ORD-POS-/i.test(invoice.orderId)) {
+      invoice.paymentStatus = "paid";
     }
 
-    // Resolve business details
-    invoiceObj.business = await resolveBusinessProfile(invoice.clientId);
+    invoice.business = await resolveBusinessProfile(invoice.clientId);
 
-    console.log(`[invoiceController] DB Query - Collection: invoices, Filter: ${JSON.stringify(query)}, Found: true`);
-
-    res.json({ success: true, data: invoiceObj });
+    res.json({ success: true, data: invoice });
   } catch (error) {
     console.error("[invoiceController] getInvoiceById error:", error.message);
     res.status(500).json({ success: false, message: error.message });

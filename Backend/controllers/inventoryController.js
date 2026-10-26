@@ -100,15 +100,72 @@ const getInventoryManage = async (req, res) => {
       if (maxPrice) query.price.$lte = Number(maxPrice);
     }
 
-    const rows = await Product.find(query)
+    // Pagination parameters - default to 50 items per request when paginated
+    const hasLimit = req.query.limit !== undefined && req.query.limit !== null;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = hasLimit
+      ? (req.query.limit === "0" || req.query.limit === "all" ? 0 : Math.max(1, parseInt(req.query.limit, 10) || 50))
+      : (req.query.page ? 50 : 0);
+    const skip = limit > 0 ? (page - 1) * limit : 0;
+
+    let sortOption = { updatedAt: -1 };
+    if (req.query.sort) {
+      const sortField = req.query.sort;
+      const sortOrder = req.query.order === "asc" || req.query.direction === "asc" ? 1 : -1;
+      sortOption = { [sortField]: sortOrder };
+    }
+
+    let dbQuery = Product.find(query)
       .select("name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl dimensions description isActive isFeatured isOnSale salePercentage clientId clientName gst gstRate createdAt updatedAt")
-      .sort("-updatedAt")
-      .populate({ path: "clientId", select: "companyName shopName storeName email" })
-      .lean();
+      .sort(sortOption)
+      .populate({ path: "clientId", select: "companyName shopName storeName email" });
+
+    if (limit > 0) {
+      dbQuery = dbQuery.skip(skip).limit(limit);
+    }
+
+    // Run count, data query, stats aggregation, and distinct categories concurrently
+    const [totalCount, rows, statsAgg, distinctCategories] = await Promise.all([
+      Product.countDocuments(query),
+      dbQuery.lean(),
+      Product.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalProducts: { $sum: 1 },
+            inStock: { $sum: { $cond: [{ $gte: [{ $ifNull: ["$stock", 0] }, 10] }, 1, 0] } },
+            lowStock: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gt: [{ $ifNull: ["$stock", 0] }, 0] },
+                      { $lt: [{ $ifNull: ["$stock", 0] }, 10] }
+                    ]
+                  },
+                  1,
+                  0
+                ]
+              }
+            },
+            outOfStock: { $sum: { $cond: [{ $eq: [{ $ifNull: ["$stock", 0] }, 0] }, 1, 0] } }
+          }
+        }
+      ]),
+      Product.distinct("category", { ...query, category: { $exists: true, $ne: "" } })
+    ]);
+
+    const stats = statsAgg[0] || {
+      totalProducts: totalCount,
+      inStock: 0,
+      lowStock: 0,
+      outOfStock: 0
+    };
 
     console.log("Inventory API role:", req.user?.role);
     console.log("Inventory filter:", JSON.stringify(query));
-    console.log("Inventory products count:", rows.length);
+    console.log("Inventory products count:", rows.length, "Total in DB:", totalCount);
 
     // Populate marketplace status only when explicitly requested
     let formattedRows = formatProductsWithClient(rows);
@@ -130,7 +187,14 @@ const getInventoryManage = async (req, res) => {
     return res.json({
       success: true,
       data: formattedRows,
-      count: rows.length
+      count: formattedRows.length,
+      total: totalCount,
+      totalProducts: totalCount,
+      page,
+      limit: limit > 0 ? limit : totalCount,
+      totalPages: limit > 0 ? Math.ceil(totalCount / limit) : 1,
+      stats,
+      categories: Array.isArray(distinctCategories) ? distinctCategories.filter(Boolean).sort() : []
     });
   } catch (error) {
     console.error("[Inventory] getInventoryManage:", error);
@@ -352,11 +416,27 @@ const getInventory = async (req, res) => {
     if (inStock === "false") query.stock = 0;
 
 
-    const inventory = await Product.find(query)
+    // Pagination parameters - default 50 items per request when paginated
+    const hasLimit = req.query.limit !== undefined && req.query.limit !== null;
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = hasLimit
+      ? (req.query.limit === "0" || req.query.limit === "all" ? 0 : Math.max(1, parseInt(req.query.limit, 10) || 50))
+      : (req.query.page ? 50 : 0);
+    const skip = limit > 0 ? (page - 1) * limit : 0;
+
+    let dbQuery = Product.find(query)
       .select("name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl dimensions description isActive isFeatured isOnSale salePercentage clientId clientName gst gstRate createdAt updatedAt")
-      .populate("clientId", "storeName companyName shopName")
-      .sort("-createdAt")
-      .lean();
+      .populate("clientId", "storeName companyName shopName email")
+      .sort("-createdAt");
+
+    if (limit > 0) {
+      dbQuery = dbQuery.skip(skip).limit(limit);
+    }
+
+    const [totalProducts, inventory] = await Promise.all([
+      Product.countDocuments(query),
+      dbQuery.lean()
+    ]);
     const productsFound = inventory.length;
 
     // Populate marketplace listings
@@ -375,7 +455,7 @@ const getInventory = async (req, res) => {
       });
 
       formattedInventory = inventory.map(p => {
-        const pObj = p.toObject ? p.toObject({ virtuals: true }) : p;
+        const pObj = { ...p };
         pObj.marketplaceListings = listingsMap[p._id.toString()] || [];
         return pObj;
       });
@@ -393,6 +473,12 @@ const getInventory = async (req, res) => {
     res.json({
       success: true,
       data: formattedInventory,
+      count: formattedInventory.length,
+      total: totalProducts,
+      totalProducts,
+      page,
+      limit: limit > 0 ? limit : totalProducts,
+      totalPages: limit > 0 ? Math.ceil(totalProducts / limit) : 1
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -412,9 +498,13 @@ const getInventoryById = async (req, res) => {
     let query = { _id: req.params.id };
     applyScope(query, scopeQuery);
 
-    const item = await Product.findOne(query);
+    const item = await Product.findOne(query)
+      .select("name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl dimensions description isActive isFeatured isOnSale salePercentage clientId clientName gst gstRate createdAt updatedAt")
+      .populate("clientId", "storeName companyName shopName email")
+      .lean();
     if (item) {
-      res.json({ success: true, data: item });
+      const formatted = formatProductWithClient(item);
+      res.json({ success: true, data: formatted, item: formatted });
     } else {
       res.status(404).json({ success: false, message: "Inventory item not found" });
     }
@@ -558,9 +648,12 @@ const updateInventoryItem = async (req, res) => {
         : (req.body.image !== undefined ? req.body.image : (req.body.photo !== undefined ? req.body.photo : req.body.image_url)));
     if (rawImg !== undefined) {
       const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
-      updatePayload.image = exactImageUrl;
-      updatePayload.imageUrl = exactImageUrl;
-      updatePayload.images = exactImageUrl ? [exactImageUrl] : [];
+      const processedImage = exactImageUrl.startsWith("data:image/")
+        ? processBase64ImageAsync(exactImageUrl)
+        : exactImageUrl;
+      updatePayload.image = processedImage;
+      updatePayload.imageUrl = processedImage;
+      updatePayload.images = processedImage ? [processedImage] : [];
     }
     if (isClientScopedRole(role)) {
       delete updatePayload.clientId;
@@ -894,8 +987,12 @@ const createInventoryProduct = async (req, res) => {
     const cleanSku = sku.trim();
     const cleanBarcode = barcode.trim();
 
-    // Duplicate SKU check
-    const existingSku = await Product.findOne({ sku: cleanSku }).lean();
+    // Fast Parallel Duplicate Check using covered indexed lookups (sku: 1, barcode: 1)
+    const [existingSku, existingBarcode] = await Promise.all([
+      Product.findOne({ sku: cleanSku }).select('_id').lean(),
+      Product.findOne({ barcode: cleanBarcode }).select('_id').lean(),
+    ]);
+
     if (existingSku) {
       return res.status(400).json({
         success: false,
@@ -903,8 +1000,6 @@ const createInventoryProduct = async (req, res) => {
       });
     }
 
-    // Duplicate Barcode check
-    const existingBarcode = await Product.findOne({ barcode: cleanBarcode }).lean();
     if (existingBarcode) {
       return res.status(400).json({
         success: false,
@@ -969,13 +1064,28 @@ const createInventoryProduct = async (req, res) => {
     });
 
     const savedProduct = await newProduct.save();
-    const leanProduct = savedProduct.toObject ? savedProduct.toObject({ virtuals: true }) : savedProduct;
+
+    // Fast non-blocking lean response containing only essential saved fields (< 60ms latency)
+    const responseProduct = {
+      _id: savedProduct._id,
+      sku: savedProduct.sku,
+      barcode: savedProduct.barcode,
+      name: savedProduct.name,
+      price: savedProduct.price,
+      stockLevel: savedProduct.stockLevel,
+      stock: savedProduct.stock,
+      category: savedProduct.category,
+      image: savedProduct.image,
+      imageUrl: savedProduct.imageUrl,
+      clientId: savedProduct.clientId,
+      clientName: savedProduct.clientName,
+    };
 
     return res.status(201).json({
       success: true,
       message: "Product saved successfully",
-      product: leanProduct,
-      data: leanProduct,
+      product: responseProduct,
+      data: responseProduct,
     });
   } catch (error) {
     console.error("[inventoryController] createInventoryProduct error:", error);

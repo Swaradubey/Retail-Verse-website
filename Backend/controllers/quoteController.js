@@ -21,8 +21,6 @@ const getQuotes = async (req, res) => {
     const isAdmin = req.user && (req.user.role === "admin" || req.user.role === "client");
     const clientId = req.user?.clientId || req.clientId || (await resolveClientId(req));
 
-    console.log(`[quoteController] getQuotes - Role: ${req.user?.role}, ClientId: ${clientId || "global"}`);
-
     let query = {};
 
     if (isSuperAdmin) {
@@ -36,12 +34,94 @@ const getQuotes = async (req, res) => {
       query = { userId: req.user._id };
     }
 
-    console.log("-----------------------------------------");
-    console.log("role:", req.user?.role, "clientId:", clientId, "query:", JSON.stringify(query));
-    console.log("-----------------------------------------");
-    const quotes = await Quote.find(query).sort({ createdAt: -1 });
+    // Keep base scope query for calculating overall stats
+    const baseScopeQuery = { ...query };
 
-    res.json({ success: true, count: quotes.length, data: quotes });
+    // Dynamic search filtering (quoteNumber, customerName, customerEmail)
+    if (req.query.search && String(req.query.search).trim()) {
+      const sanitized = String(req.query.search).trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+      const searchRegex = new RegExp(sanitized, "i");
+      query.$or = [
+        { quoteNumber: searchRegex },
+        { customerName: searchRegex },
+        { customerEmail: searchRegex },
+      ];
+    }
+
+    // Dynamic status filtering
+    if (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all") {
+      const statusRegex = new RegExp(`^${String(req.query.status).trim()}$`, "i");
+      query.status = statusRegex;
+    }
+
+    // Pagination parameters
+    const isAll = req.query.all === "true" || req.query.limit === "0";
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = isAll ? 0 : Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    // Projection: essential fields for list & details (avoiding heavy overhead)
+    const projection = "_id quoteNumber customerName customerEmail products originalTotal requestedPrice counterPrice finalPrice message adminMessage status paymentStatus paidAt validUntil clientId userId createdAt";
+
+    // Run count, paginated lean find, and tenant-wide stats aggregation concurrently
+    const queryChain = Quote.find(query)
+      .select(projection)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!isAll) {
+      queryChain.skip(skip).limit(limit);
+    }
+
+    const [total, quotes, statsResult] = await Promise.all([
+      Quote.countDocuments(query),
+      queryChain,
+      Quote.aggregate([
+        { $match: baseScopeQuery },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            accepted: { $sum: { $cond: [{ $eq: [{ $toLower: { $ifNull: ["$status", ""] } }, "accepted"] }, 1, 0] } },
+            pending: {
+              $sum: {
+                $cond: [
+                  { $in: [{ $toLower: { $ifNull: ["$status", ""] } }, ["pending", "countered"]] },
+                  1,
+                  0
+                ]
+              }
+            },
+            paid: { $sum: { $cond: [{ $eq: [{ $toLower: { $ifNull: ["$paymentStatus", ""] } }, "paid"] }, 1, 0] } },
+            totalAmount: {
+              $sum: {
+                $ifNull: ["$finalPrice", { $ifNull: ["$requestedPrice", 0] }]
+              }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    const stats = statsResult[0] || { total: 0, accepted: 0, pending: 0, paid: 0, totalAmount: 0 };
+
+    res.json({
+      success: true,
+      count: quotes.length,
+      total,
+      page: isAll ? 1 : page,
+      limit: isAll ? total : limit,
+      totalPages,
+      pagination: {
+        total,
+        page: isAll ? 1 : page,
+        limit: isAll ? total : limit,
+        totalPages,
+      },
+      stats,
+      data: quotes,
+    });
   } catch (error) {
     console.error("[quoteController] getQuotes error:", error.message);
     res.status(500).json({ success: false, message: error.message });
@@ -69,7 +149,7 @@ const getQuoteById = async (req, res) => {
       }
     }
 
-    const quote = await Quote.findOne(query);
+    const quote = await Quote.findOne(query).lean();
 
     if (!quote) {
       return res.status(404).json({ success: false, message: "Quote not found or access denied" });

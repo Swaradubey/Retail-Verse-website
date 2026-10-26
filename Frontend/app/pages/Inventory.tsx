@@ -40,7 +40,7 @@ import {
 } from '../utils/inventoryPermissions';
 import { isClientRole } from '../utils/staffRoles';
 
-const ITEMS_PER_PAGE = 8;
+const ITEMS_PER_PAGE = 50;
 const STAFF_LIST_ITEMS_PER_PAGE = 6;
 const INVENTORY_CACHE_PREFIX = 'retailverse_inventory_cache_';
 
@@ -182,6 +182,18 @@ export function Inventory() {
     direction: 'desc',
   });
   const [currentPage, setCurrentPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
+  const [serverTotalPages, setServerTotalPages] = useState<number | null>(null);
+  const [serverCategories, setServerCategories] = useState<string[]>([]);
+
+  // Debounce search input to eliminate unnecessary API requests
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   // Modal states
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -202,8 +214,8 @@ export function Inventory() {
   const [staffEmployeesPage, setStaffEmployeesPage] = useState(1);
   const [employeesLoading, setEmployeesLoading] = useState(false);
 
-  // 3. Background Stale-While-Revalidate Sync
-  const fetchAllProducts = async (isManual = false) => {
+  // 3. Background Stale-While-Revalidate Sync with Dynamic Pagination (50 items / request)
+  const fetchAllProducts = useCallback(async (isManual = false, pageToFetch = currentPage) => {
     const cachedProds = getCachedInventoryProducts(user?.clientId);
     const hasAnyProducts = products.length > 0 || cachedProds.length > 0;
     // Show full skeleton ONLY if zero products exist anywhere in state or cache
@@ -214,26 +226,39 @@ export function Inventory() {
     }
 
     try {
-      const response = await inventoryApi.getManage();
-      if (response.success && Array.isArray(response.data)) {
-        const freshData = response.data;
-        // Compare with previous products to avoid redundant re-renders
-        setProducts((prev) => {
-          try {
-            if (JSON.stringify(prev) === JSON.stringify(freshData)) {
-              return prev;
-            }
-          } catch {
-            // fallback
-          }
-          return freshData;
-        });
+      const response = await inventoryApi.getManage(isManual, {
+        page: pageToFetch,
+        limit: ITEMS_PER_PAGE,
+        search: debouncedSearch,
+        category,
+        stockStatus,
+        minPrice,
+        maxPrice,
+        sort: sortConfig.key,
+        direction: sortConfig.direction,
+      });
 
-        const newStats = computeInventoryStats(freshData);
+      if (response && response.success && Array.isArray(response.data)) {
+        const freshData = response.data;
+        setProducts(freshData);
+
+        if (typeof response.total === 'number') {
+          setServerTotal(response.total);
+        }
+        if (typeof response.totalPages === 'number') {
+          setServerTotalPages(response.totalPages);
+        }
+        if (Array.isArray(response.categories) && response.categories.length > 0) {
+          setServerCategories(response.categories);
+        }
+
+        const newStats = response.stats || computeInventoryStats(freshData);
         setStats(newStats);
 
-        saveCachedInventoryProducts(freshData, user?.clientId);
-        saveCachedInventoryStats(newStats);
+        if (pageToFetch === 1 && !debouncedSearch && category === 'All Categories' && stockStatus === 'all') {
+          saveCachedInventoryProducts(freshData, user?.clientId);
+          saveCachedInventoryStats(newStats);
+        }
       } else if (products.length === 0) {
         setProducts([]);
       }
@@ -248,7 +273,7 @@ export function Inventory() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [user?.clientId, currentPage, debouncedSearch, category, stockStatus, minPrice, maxPrice, sortConfig]);
 
   // Hydrate from cache when user/clientId loads if current state is empty
   useEffect(() => {
@@ -267,10 +292,10 @@ export function Inventory() {
     }
   }, [products]);
 
-  // Initial mount: load data in background silently if cache exists
+  // Initial and reactive fetch on page / filter changes
   useEffect(() => {
-    void fetchAllProducts(false);
-  }, []);
+    void fetchAllProducts(false, currentPage);
+  }, [fetchAllProducts, currentPage]);
 
   const loadStaffEmployees = useCallback(async () => {
     if (!isClientRole(user?.role) || !user?.clientId) {
@@ -353,27 +378,26 @@ export function Inventory() {
     return stock < threshold;
   }, []);
 
-  const lowStockCount = useMemo(() => {
-    return products.filter((p) => isLowStock(p)).length;
-  }, [products, isLowStock]);
+  const isServerPaginated = serverTotalPages !== null && serverTotalPages > 0;
+
+  const lowStockCount = stats?.lowStock !== undefined
+    ? stats.lowStock
+    : products.filter((p) => isLowStock(p)).length;
 
   const lowStockItems = useMemo(() => {
     return products.filter((p) => isLowStock(p));
   }, [products, isLowStock]);
 
-  const outOfStockCount = useMemo(() => {
-    return inventoryItems.filter((i) => (i.stock || 0) === 0).length;
-  }, [inventoryItems]);
+  const outOfStockCount = stats?.outOfStock !== undefined
+    ? stats.outOfStock
+    : inventoryItems.filter((i) => (i.stock || 0) === 0).length;
 
   const inventoryCategoryList = useMemo(() => {
-    return Array.from(
-      new Set(
-        products
-          .map((p) => (p.category ? String(p.category).trim() : ''))
-          .filter(Boolean)
-      )
-    ).sort((a, b) => a.localeCompare(b));
-  }, [products]);
+    const list = serverCategories.length > 0
+      ? serverCategories
+      : products.map((p) => (p.category ? String(p.category).trim() : ''));
+    return Array.from(new Set(list.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  }, [serverCategories, products]);
 
   // Filter and sort
   const filteredItems = useMemo(() => {
@@ -432,15 +456,21 @@ export function Inventory() {
   }, [inventoryItems, search, stockStatus, category, minPrice, maxPrice, sortConfig]);
 
   // Pagination
-  const totalPages = Math.ceil(filteredItems.length / ITEMS_PER_PAGE);
+  const totalPages = isServerPaginated
+    ? Math.max(1, serverTotalPages)
+    : Math.max(1, Math.ceil(filteredItems.length / ITEMS_PER_PAGE));
+
   const paginatedItems = useMemo(() => {
+    if (isServerPaginated) {
+      return inventoryItems;
+    }
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredItems.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredItems, currentPage]);
+  }, [isServerPaginated, inventoryItems, filteredItems, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, stockStatus, category, minPrice, maxPrice]);
+  }, [debouncedSearch, stockStatus, category, minPrice, maxPrice]);
 
   const handleSort = useCallback((key: SortConfig['key']) => {
     setSortConfig((prev) => ({

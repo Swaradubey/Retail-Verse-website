@@ -21,7 +21,9 @@ async function resolveCouponRule(code) {
 
   // 1. Try finding in MongoDB Coupon collection
   try {
-    const dbCoupon = await Coupon.findOne({ code: normalized, isActive: true });
+    const dbCoupon = await Coupon.findOne({ code: normalized, isActive: true })
+      .select("_id code discountAmount minOrderSubtotal description isActive")
+      .lean();
     if (dbCoupon) {
       return {
         code: dbCoupon.code,
@@ -1184,7 +1186,10 @@ const getHeldOrders = async (req, res) => {
       });
     }
 
-    const orders = await Order.find(filter).sort({ createdAt: -1 });
+    const orders = await Order.find(filter)
+      .select("_id orderId invoiceNumber offlineOrderId reference customerName customerPhone items subtotal discountAmount totalAmount grandTotal paymentMethod paymentStatus status orderStatus createdAt updatedAt")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,

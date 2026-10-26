@@ -194,9 +194,9 @@ const getProducts = async (req, res) => {
       const fieldList = requestedFields.split(",").map(f => f.trim()).join(" ");
       dbQuery = dbQuery.select(fieldList);
     } else if (isPosRequest) {
-      // Select only the necessary fields required for the POS catalog
+      // Select only the necessary fields required for the POS catalog (exclude heavy description & reviews)
       dbQuery = dbQuery.select(
-        "_id name sku barcode price unitPrice stock stockLevel quantity currentStock category image imageUrl description clientId gst gstRate"
+        "_id name title sku barcode price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert category image imageUrl clientId clientName gst gstRate status isActive"
       );
     } else {
       // High-performance selective projection for list view: excludes heavy reviews array and large data blobs
@@ -800,9 +800,12 @@ const updateProduct = async (req, res) => {
         : (req.body.image !== undefined ? req.body.image : (req.body.photo !== undefined ? req.body.photo : req.body.image_url)));
     if (rawImg !== undefined) {
       const exactImageUrl = typeof rawImg === "string" ? rawImg.trim() : (rawImg || "");
-      normalizedPayload.image = exactImageUrl;
-      normalizedPayload.imageUrl = exactImageUrl;
-      normalizedPayload.images = exactImageUrl ? [exactImageUrl] : [];
+      const processedImage = exactImageUrl.startsWith("data:image/")
+        ? processBase64ImageAsync(exactImageUrl)
+        : exactImageUrl;
+      normalizedPayload.image = processedImage;
+      normalizedPayload.imageUrl = processedImage;
+      normalizedPayload.images = processedImage ? [processedImage] : [];
     }
     console.log("[Backend Debug] PUT /api/products/:id - Allowed Fields Extracted:", normalizedPayload);
     console.log("[Backend Debug] Product Before Update:", {
@@ -1276,29 +1279,43 @@ const lookupProduct = async (req, res) => {
       return res.status(400).json({ success: false, message: "Code parameter is required" });
     }
 
+    const posLookupFields = "_id name title sku barcode category price unitPrice originalPrice stock stockLevel quantity currentStock lowStockAlert image imageUrl clientId clientName gst gstRate status isActive";
+    const clientId = req.query.clientId;
+    const baseFilter = {};
+    if (clientId && isValidObjectId(clientId)) {
+      baseFilter.$or = [{ clientId }, { clientId: null }];
+    }
+
     const query = {
+      ...baseFilter,
       $or: [
         { barcode: code },
         { sku: code }
       ]
     };
 
-    let product = await Product.findOne(query);
+    let product = await Product.findOne(query)
+      .select(posLookupFields)
+      .lean();
 
     if (!product) {
+      const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       product = await Product.findOne({
+        ...baseFilter,
         $or: [
-          { barcode: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } },
-          { sku: { $regex: new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") } }
+          { barcode: { $regex: new RegExp(`^${escaped}$`, "i") } },
+          { sku: { $regex: new RegExp(`^${escaped}$`, "i") } }
         ]
-      });
+      })
+      .select(posLookupFields)
+      .lean();
     }
 
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    const formatted = formatProductWithClient(product.toObject({ virtuals: true }));
+    const formatted = formatProductWithClient(product);
     return res.status(200).json({
       success: true,
       product: formatted,

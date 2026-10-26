@@ -217,11 +217,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/customers',
-            element: withSuspense(
-              <SuperAdminOrClientRoute>
-                <DashboardCustomers />
-              </SuperAdminOrClientRoute>
-            ),
+            element: <Navigate to="/dashboard" replace />,
           },
           {
             path: 'dashboard/customers/contact-form',

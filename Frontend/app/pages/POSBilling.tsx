@@ -438,7 +438,7 @@ export function POSBilling() {
         const queryParams = new URLSearchParams({
           limit: '250',
           pos: 'true',
-          fields: '_id,name,sku,barcode,price,unitPrice,stock,stockLevel,quantity,currentStock,category,image,imageUrl,description,clientId,gst,gstRate'
+          fields: '_id,name,title,sku,barcode,price,unitPrice,stock,stockLevel,quantity,currentStock,lowStockAlert,category,image,imageUrl,clientId,clientName,gst,gstRate'
         });
         if (clientId) {
           queryParams.append('clientId', clientId);

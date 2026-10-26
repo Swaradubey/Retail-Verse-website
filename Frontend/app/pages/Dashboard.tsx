@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useBranding } from '../context/BrandingContext';
-import { getFullImageUrl } from '../utils/imageUrl';
 import {
   LayoutDashboard,
   Package,
   ShoppingCart,
-  Users,
   LogOut,
   TrendingUp,
   HelpCircle,
@@ -40,7 +37,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -96,12 +92,6 @@ const sidebarItems = [
   { title: "Super Admin", icon: Shield, href: "/super-admin", superAdminOnly: true, hideForSuperAdmin: true },
   { title: "Orders", icon: ShoppingCart, href: "/dashboard/orders", hideForUser: false, hideForSuperAdmin: true },
   { title: "Invoice", icon: Receipt, href: "/dashboard/invoices", superAdminOnly: true },
-  {
-    title: "Customers",
-    icon: Users,
-    href: "/dashboard/customers",
-    adminOnly: true,
-  },
   { title: "Users & roles", icon: UserCog, href: "/dashboard/users", adminOnly: true },
   { title: "Clients", icon: Building2, href: "/super-admin/clients", superAdminOnly: true },
   { title: "Add Custom Domain", icon: Globe, href: "/super-admin/custom-domain", adminOnly: true },
@@ -132,13 +122,6 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  /** Dynamic brand name: from BrandingContext (pre-login), then user businessName, then default */
-  const { brandName: dsBrandName, logo: brandLogo } = useBranding();
-  const dsFinalBrandName = isSuperAdminRole(user?.role)
-    ? 'Daizy Homes'
-    : user?.role === 'client' && user?.businessName
-      ? user.businessName
-      : dsBrandName;
 
   const restrictedInventoryDashboardRole = isRestrictedInventoryDashboardRole(user?.role);
   const staff = isStaffRole(user?.role);
@@ -385,7 +368,6 @@ export function Dashboard() {
         item.href === '/dashboard/ai-voice-orders' ||
         item.href === '/dashboard/orders' ||
         item.href === '/dashboard/invoices' ||
-        item.href === '/dashboard/customers' ||
         item.href === '/dashboard/users' ||
         item.href === '/super-admin/custom-domain' ||
         item.href === '/dashboard/marketplaces' ||
@@ -398,7 +380,6 @@ export function Dashboard() {
       if (
         item.title === 'Orders' ||
         item.title === 'Track Order' ||
-        item.title === 'Customers' ||
         item.title === 'Wishlist' ||
         item.title === 'Wishlist Activity' ||
         item.title === 'SEO'
@@ -532,7 +513,7 @@ export function Dashboard() {
   return (
     <SidebarProvider>
       <div
-        className={`client-dashboard theme-${themeKey} flex flex-col min-h-screen w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
+        className={`client-dashboard theme-${themeKey} flex flex-col min-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
       >
         <ImpersonationBanner />
         <div className="flex min-h-0 flex-1 w-full">
@@ -540,59 +521,22 @@ export function Dashboard() {
           <Sidebar
             collapsible="icon"
             className="border-r border-[#2563EB]/30 bg-[#0B1F3A] text-[#F8FAFC]"
-            style={
-              user?.impersonation?.active
-                ? { top: '48px', height: 'calc(100svh - 48px)' }
-                : undefined
-            }
+            style={{
+              top: user?.impersonation?.active
+                ? 'calc(var(--top-nav-height, 148px) + 48px)'
+                : 'var(--top-nav-height, 148px)',
+              height: user?.impersonation?.active
+                ? 'calc(100svh - var(--top-nav-height, 148px) - 48px)'
+                : 'calc(100svh - var(--top-nav-height, 148px))',
+              bottom: 'auto',
+            }}
           >
-            <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6 border-b border-[#2563EB]/30 bg-[#0B1F3A] text-[#F8FAFC]">
-              {/* Expanded header */}
-              <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
-                <Link
-                  to="/"
-                  aria-label="Go to homepage"
-                  className="flex items-center gap-3 cursor-pointer min-w-0 flex-1 group/logo"
-                >
-                  {brandLogo ? (
-                    <div className="w-9 h-9 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center">
-                      <img
-                        src={getFullImageUrl(brandLogo)}
-                        alt={`${dsFinalBrandName} logo`}
-                        className="w-7 h-7 object-contain rounded-full"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).onerror = null;
-                          (e.target as HTMLImageElement).src = '/logo.png';
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-9 h-9 shrink-0 rounded-full bg-white/10 border-2 border-[#2563EB]/50 overflow-hidden flex items-center justify-center">
-                      <img
-                        src="/logo.png"
-                        alt={`${dsFinalBrandName} logo`}
-                        className="w-7 h-7 object-contain rounded-full"
-                      />
-                    </div>
-                  )}
-                  <div className="flex flex-col min-w-0 flex-1 leading-tight">
-                    <span className="font-bold text-xl tracking-tight text-[#F8FAFC] truncate">{dsFinalBrandName}</span>
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-[#2563EB]">PORTAL</span>
-                  </div>
-                </Link>
-                <SidebarTrigger className="size-7 shrink-0 text-[#F8FAFC] hover:text-[#FF6B00]" />
-              </div>
-              {/* Collapsed header - centered toggle */}
-              <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full h-full">
-                <SidebarTrigger className="size-7 text-[#F8FAFC] hover:text-[#FF6B00]" />
-              </div>
-            </SidebarHeader>
-
-            <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8 bg-[#0B1F3A] text-[#F8FAFC]">
-              <SidebarGroup>
-                <SidebarGroupLabel className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#F8FAFC]/60 group-data-[collapsible=icon]:hidden">
-                  Main Menu
-                </SidebarGroupLabel>
+            <SidebarContent className="px-2 pt-2 group-data-[collapsible=icon]:pt-2 group-data-[collapsible=icon]:px-1.5 bg-[#0B1F3A] text-[#F8FAFC]">
+              <SidebarGroup className="p-1 group-data-[collapsible=icon]:p-0">
+                <div className="flex items-center justify-between px-3 py-1 mb-1 text-xs font-bold uppercase tracking-wider text-[#F8FAFC]/60 group-data-[collapsible=icon]:justify-center">
+                  <span className="group-data-[collapsible=icon]:hidden">Main Menu</span>
+                  <SidebarTrigger className="size-7 text-[#F8FAFC] hover:text-[#FF6B00] cursor-pointer" />
+                </div>
                 <SidebarGroupContent>
                   <SidebarMenu className="gap-2">
                     {mainSidebarItems.map((item) => {

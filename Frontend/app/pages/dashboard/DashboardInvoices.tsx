@@ -20,6 +20,9 @@ import {
   Download,
   Printer,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -60,11 +63,34 @@ export function DashboardInvoices() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [activeTab, setActiveTab] = useState<TabType>('invoices');
+
+  // Pagination states
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [quotePage, setQuotePage] = useState(1);
+  const [invoicePagination, setInvoicePagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 1 });
+  const [quotePagination, setQuotePagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 1 });
+
+  // Server-computed stats
+  const [invoiceStats, setInvoiceStats] = useState<any>(null);
+  const [quoteStats, setQuoteStats] = useState<any>(null);
+
   const [viewInvoice, setViewInvoice] = useState<any | null>(null);
   const [viewQuote, setViewQuote] = useState<any | null>(null);
   const [isQuoteRequestOpen, setIsQuoteRequestOpen] = useState(false);
   const [isCreateQuoteOpen, setIsCreateQuoteOpen] = useState(false);
+
+  // Debounce search input to avoid spamming the backend
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setInvoicePage(1);
+      setQuotePage(1);
+    }, 350);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
 
   // Bargaining states
   const [counterPrice, setCounterPrice] = useState<string>('');
@@ -225,19 +251,59 @@ export function DashboardInvoices() {
     setIsLoading(true);
     setError(null);
     try {
+      const invParams = new URLSearchParams({
+        page: String(invoicePage),
+        limit: '20',
+        ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+      });
+
+      const quoteParams = new URLSearchParams({
+        page: String(quotePage),
+        limit: '20',
+        ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+      });
+
       const [invoiceRes, quoteRes] = await Promise.allSettled([
-        ApiService.get('/invoices', { pageName: 'Invoice' }),
-        ApiService.get('/quotes', { pageName: 'Quote' })
+        ApiService.get(`/invoices?${invParams.toString()}`, { pageName: 'Invoice' }),
+        ApiService.get(`/quotes?${quoteParams.toString()}`, { pageName: 'Quote' })
       ]);
 
       if (invoiceRes.status === 'fulfilled' && invoiceRes.value.success) {
         setInvoices(invoiceRes.value.data || []);
+        if (invoiceRes.value.pagination) {
+          setInvoicePagination(invoiceRes.value.pagination);
+        } else if (invoiceRes.value.total !== undefined) {
+          setInvoicePagination({
+            total: invoiceRes.value.total,
+            page: invoiceRes.value.page || 1,
+            limit: invoiceRes.value.limit || 20,
+            totalPages: invoiceRes.value.totalPages || 1,
+          });
+        }
+        if (invoiceRes.value.stats) {
+          setInvoiceStats(invoiceRes.value.stats);
+        }
       } else {
         setInvoices([]);
       }
 
       if (quoteRes.status === 'fulfilled' && quoteRes.value.success) {
         setQuotes(quoteRes.value.data || []);
+        if (quoteRes.value.pagination) {
+          setQuotePagination(quoteRes.value.pagination);
+        } else if (quoteRes.value.total !== undefined) {
+          setQuotePagination({
+            total: quoteRes.value.total,
+            page: quoteRes.value.page || 1,
+            limit: quoteRes.value.limit || 20,
+            totalPages: quoteRes.value.totalPages || 1,
+          });
+        }
+        if (quoteRes.value.stats) {
+          setQuoteStats(quoteRes.value.stats);
+        }
       } else {
         setQuotes([]);
       }
@@ -247,7 +313,7 @@ export function DashboardInvoices() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [invoicePage, quotePage, debouncedSearch, statusFilter]);
 
   useEffect(() => {
     void fetchData();
@@ -550,50 +616,52 @@ export function DashboardInvoices() {
   const currentData = activeTab === 'invoices' ? invoices : quotes;
 
   const filteredData = useMemo(() => {
-    const t = searchTerm.trim().toLowerCase();
-    if (!t) return currentData;
-    return currentData.filter((item: any) => {
-      const id = String(item.invoiceNumber || item.quoteNumber || '').toLowerCase();
-      const orderId = String(item.orderId || '').toLowerCase();
-      const name = String(item.customerName || '').toLowerCase();
-      const email = String(item.customerEmail || '').toLowerCase();
-      return id.includes(t) || orderId.includes(t) || name.includes(t) || email.includes(t);
-    });
-  }, [currentData, searchTerm]);
+    return currentData;
+  }, [currentData]);
 
   const stats = useMemo(() => {
     if (activeTab === 'invoices') {
-      const total = invoices.length;
-      const completed = invoices.filter((o) => 
-        ['paid', 'completed'].includes(String(o.paymentStatus).toLowerCase())
-      ).length;
-      const pending = total - completed;
-      const revenue = invoices.reduce((acc, o) => acc + (Number(o.totalAmount || o.subtotal) || 0), 0);
+      const total = invoiceStats ? invoiceStats.total : (invoicePagination.total || invoices.length);
+      const completed = invoiceStats
+        ? invoiceStats.completed
+        : invoices.filter((o) => ['paid', 'completed'].includes(String(o.paymentStatus).toLowerCase())).length;
+      const pending = invoiceStats ? invoiceStats.pending : Math.max(0, total - completed);
+      const revenue = invoiceStats
+        ? invoiceStats.revenue
+        : invoices.reduce((acc, o) => acc + (Number(o.totalAmount || o.subtotal) || 0), 0);
       return [
         { title: 'Total Invoices', value: total, icon: Receipt, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
         { title: 'Paid / Completed', value: completed, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
         { title: 'Pending Payment', value: pending, icon: Clock, iconBg: 'bg-[#FF6B00] text-[#F8FAFC]' },
-        { title: 'Total Revenue', value: `₹${revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
+        { title: 'Total Revenue', value: `₹${Number(revenue).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
       ];
     } else {
-      const total = quotes.length;
-      const accepted = quotes.filter((o) => String(o.status).toLowerCase() === 'accepted').length;
-      const pending = quotes.filter((o) => {
-        const ps = String(o.paymentStatus || '').toLowerCase();
-        const s = String(o.status || '').toLowerCase();
-        return s === 'pending' || s === 'countered' || (ps === 'pending' && s !== 'accepted' && s !== 'rejected');
-      }).length;
-      const paid = quotes.filter((o) => String(o.paymentStatus || '').toLowerCase() === 'paid').length;
-      const totalAmount = quotes.reduce((acc, o) => acc + (Number(o.finalPrice || o.requestedPrice) || 0), 0);
+      const total = quoteStats ? quoteStats.total : (quotePagination.total || quotes.length);
+      const accepted = quoteStats
+        ? quoteStats.accepted
+        : quotes.filter((o) => String(o.status).toLowerCase() === 'accepted').length;
+      const pending = quoteStats
+        ? quoteStats.pending
+        : quotes.filter((o) => {
+            const ps = String(o.paymentStatus || '').toLowerCase();
+            const s = String(o.status || '').toLowerCase();
+            return s === 'pending' || s === 'countered' || (ps === 'pending' && s !== 'accepted' && s !== 'rejected');
+          }).length;
+      const paid = quoteStats
+        ? quoteStats.paid
+        : quotes.filter((o) => String(o.paymentStatus || '').toLowerCase() === 'paid').length;
+      const totalAmount = quoteStats
+        ? quoteStats.totalAmount
+        : quotes.reduce((acc, o) => acc + (Number(o.finalPrice || o.requestedPrice) || 0), 0);
       return [
         { title: 'Total Quotes', value: total, icon: FileText, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
         { title: 'Accepted', value: accepted, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
         { title: 'Pending', value: pending, icon: Clock, iconBg: 'bg-[#FF6B00] text-[#F8FAFC]' },
         { title: 'Paid', value: paid, icon: CheckCircle2, iconBg: 'bg-[#2563EB] text-[#F8FAFC]' },
-        { title: 'Total Value', value: `₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
+        { title: 'Total Value', value: `₹${Number(totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`, icon: DollarSign, iconBg: 'bg-[#0B1F3A] text-[#F8FAFC]' },
       ];
     }
-  }, [activeTab, invoices, quotes]);
+  }, [activeTab, invoices, quotes, invoiceStats, quoteStats, invoicePagination.total, quotePagination.total]);
 
   const getStatusColor = (status: string) => {
     const s = String(status).toLowerCase();
@@ -738,6 +806,32 @@ export function DashboardInvoices() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setInvoicePage(1);
+                      setQuotePage(1);
+                    }}
+                    className="rounded-xl border border-[#0B1F3A]/20 bg-[#F8FAFC] py-2.5 px-3 text-sm text-[#0B1F3A] font-semibold transition-all focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Statuses</option>
+                    {activeTab === 'invoices' ? (
+                      <>
+                        <option value="paid">Paid / Completed</option>
+                        <option value="pending">Pending Payment</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="pending">Pending</option>
+                        <option value="countered">Countered</option>
+                        <option value="accepted">Accepted</option>
+                        <option value="rejected">Rejected</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+                <div className="relative">
                   <Search className="absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#2563EB]" />
                   <input
                     type="text"
@@ -847,6 +941,108 @@ export function DashboardInvoices() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {((activeTab === 'invoices' ? invoicePagination.totalPages : quotePagination.totalPages) > 1 ||
+              (activeTab === 'invoices' ? invoicePagination.total : quotePagination.total) > 0) && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t border-[#0B1F3A]/10 bg-[#F8FAFC]">
+                <div className="text-xs font-semibold text-[#0B1F3A]/70">
+                  Showing{' '}
+                  <span className="font-bold text-[#0B1F3A]">
+                    {(activeTab === 'invoices' ? invoicePagination.total : quotePagination.total) === 0
+                      ? 0
+                      : ((activeTab === 'invoices' ? invoicePage : quotePage) - 1) * 20 + 1}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-bold text-[#0B1F3A]">
+                    {Math.min(
+                      (activeTab === 'invoices' ? invoicePage : quotePage) * 20,
+                      activeTab === 'invoices' ? invoicePagination.total : quotePagination.total
+                    )}
+                  </span>{' '}
+                  of{' '}
+                  <span className="font-bold text-[#0B1F3A]">
+                    {activeTab === 'invoices' ? invoicePagination.total : quotePagination.total}
+                  </span>{' '}
+                  {activeTab}
+                </div>
+                {(activeTab === 'invoices' ? invoicePagination.totalPages : quotePagination.totalPages) > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={(activeTab === 'invoices' ? invoicePage : quotePage) <= 1 || isLoading}
+                      onClick={() => {
+                        if (activeTab === 'invoices') {
+                          setInvoicePage((p) => Math.max(1, p - 1));
+                        } else {
+                          setQuotePage((p) => Math.max(1, p - 1));
+                        }
+                      }}
+                      className="rounded-xl border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC] disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <div className="flex items-center gap-1 px-1">
+                      {Array.from(
+                        { length: Math.min(5, activeTab === 'invoices' ? invoicePagination.totalPages : quotePagination.totalPages) },
+                        (_, i) => {
+                          const totalP = activeTab === 'invoices' ? invoicePagination.totalPages : quotePagination.totalPages;
+                          const curP = activeTab === 'invoices' ? invoicePage : quotePage;
+                          let pageNum = i + 1;
+                          if (totalP > 5 && curP > 3) {
+                            pageNum = curP - 2 + i;
+                            if (pageNum > totalP) {
+                              pageNum = totalP - 4 + i;
+                            }
+                          }
+                          if (pageNum <= 0 || pageNum > totalP) return null;
+                          const isActive = pageNum === curP;
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => {
+                                if (activeTab === 'invoices') setInvoicePage(pageNum);
+                                else setQuotePage(pageNum);
+                              }}
+                              disabled={isLoading}
+                              className={`h-8 w-8 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-[#2563EB] text-[#F8FAFC] shadow-sm'
+                                  : 'text-[#0B1F3A]/70 hover:bg-[#2563EB]/10 hover:text-[#0B1F3A]'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        (activeTab === 'invoices' ? invoicePage : quotePage) >=
+                          (activeTab === 'invoices' ? invoicePagination.totalPages : quotePagination.totalPages) || isLoading
+                      }
+                      onClick={() => {
+                        if (activeTab === 'invoices') {
+                          setInvoicePage((p) => Math.min(invoicePagination.totalPages, p + 1));
+                        } else {
+                          setQuotePage((p) => Math.min(quotePagination.totalPages, p + 1));
+                        }
+                      }}
+                      className="rounded-xl border-[#0B1F3A]/20 bg-[#F8FAFC] text-[#0B1F3A] hover:bg-[#2563EB] hover:text-[#F8FAFC] disabled:opacity-40 transition-colors cursor-pointer"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -475,5 +475,11 @@ productSchema.index({ createdBy: 1, createdAt: -1 });
 productSchema.index({ clientId: 1, status: 1, createdAt: -1 });
 productSchema.index({ name: 1 });
 productSchema.index({ updatedAt: -1 });
+productSchema.index({ barcode: 1, sku: 1 });
+productSchema.index({ barcode: 1, clientId: 1 });
+productSchema.index({ sku: 1, clientId: 1 });
+productSchema.index({ name: "text", sku: "text", barcode: "text" });
+productSchema.index({ clientId: 1, category: 1, status: 1 });
+productSchema.index({ clientId: 1, stock: 1, updatedAt: -1 });
 
 module.exports = mongoose.model("Product", productSchema);

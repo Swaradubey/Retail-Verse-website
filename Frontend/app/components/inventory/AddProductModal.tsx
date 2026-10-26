@@ -19,12 +19,29 @@ import {
   FileText,
   Printer,
   Trash2,
+  ChevronDown,
+  SlidersHorizontal,
+  Check,
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import api from '../../api/apiService';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '../ui/dropdown-menu';
 import { CameraScannerModal } from './CameraScannerModal';
+import { CameraPhotoModal } from './CameraPhotoModal';
+import {
+  PrintLabelSizeModal,
+  LabelSizeId,
+  LABEL_SIZE_OPTIONS,
+  generateDynamicPrintCss,
+} from './PrintLabelSizeModal';
 import { broadcastProductSync } from '../../utils/posProductSync';
 
 interface AddProductModalProps {
@@ -52,12 +69,32 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
   // Photo State (Mandatory)
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageBase64, setImageBase64] = useState<string>('');
+  const [isPhotoCameraOpen, setIsPhotoCameraOpen] = useState(false);
 
   // UI Control States
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [printCopies, setPrintCopies] = useState<number>(1);
+  const [selectedLabelSize, setSelectedLabelSize] = useState<LabelSizeId>('58mm');
+  const [isLabelSizeModalOpen, setIsLabelSizeModalOpen] = useState(false);
+
+  const storeName = React.useMemo(() => {
+    try {
+      const u = JSON.parse(localStorage.getItem('user') || '{}');
+      return u.storeName || u.shopName || u.companyName || u.businessName || '';
+    } catch {
+      return '';
+    }
+  }, []);
+
+  // Compact size label format (e.g. "50×30mm", "72×40mm", or "A4 Sheet")
+  const compactSizeLabel = React.useMemo(() => {
+    const opt = LABEL_SIZE_OPTIONS.find((o) => o.id === selectedLabelSize);
+    if (!opt) return 'Select Size';
+    if (opt.id === 'a4') return 'A4 Sheet';
+    return opt.dimensions.replace(/mm\s*×\s*/g, '×').replace(/\s+/g, '');
+  }, [selectedLabelSize]);
 
   // Refs
   const barcodeSvgRef = useRef<SVGSVGElement | null>(null);
@@ -98,6 +135,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       setImagePreview(null);
       setImageBase64('');
       setValidationErrors({});
+      setSelectedLabelSize('58mm');
+      setIsLabelSizeModalOpen(false);
 
       // Auto-focus barcode input so handheld hardware scanners immediately write into it
       const focusTimer = setTimeout(() => {
@@ -172,38 +211,42 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
   }, [isOpen, isScannerOpen]);
 
   // Render exact barcode to all printable SVG elements in #print-label-area
-  const renderPrintBarcode = useCallback((codeToRender: string) => {
-    const trimmedCode = codeToRender ? codeToRender.trim() : '';
-    if (!trimmedCode) return false;
+  const renderPrintBarcode = useCallback(
+    (codeToRender: string, sizeId: LabelSizeId = selectedLabelSize) => {
+      const trimmedCode = codeToRender ? codeToRender.trim() : '';
+      if (!trimmedCode) return false;
 
-    const svgs = document.querySelectorAll<SVGSVGElement>(
-      '#print-label-area .barcode-print-svg, #barcode-print'
-    );
-    if (!svgs || svgs.length === 0) return false;
+      const svgs = document.querySelectorAll<SVGSVGElement>(
+        '#print-label-area .barcode-print-svg, #barcode-print'
+      );
+      if (!svgs || svgs.length === 0) return false;
 
-    let successCount = 0;
-    svgs.forEach((svgElem) => {
-      try {
-        (JsBarcode as any)(svgElem, trimmedCode, {
-          format: 'CODE128',
-          lineColor: '#000000',
-          width: 1.8,
-          height: 48,
-          displayValue: true,
-          fontSize: 12,
-          font: 'monospace',
-          textMargin: 2,
-          margin: 4,
-          background: '#ffffff',
-        });
-        successCount++;
-      } catch (err) {
-        console.error('[AddProductModal] Print barcode SVG render error:', err);
-      }
-    });
+      const option =
+        LABEL_SIZE_OPTIONS.find((o) => o.id === sizeId) || LABEL_SIZE_OPTIONS[0];
+      const { width, height, fontSize, margin } = option.barcodeConfig;
 
-    return successCount > 0;
-  }, []);
+      let successCount = 0;
+      svgs.forEach((svgElem) => {
+        try {
+          (JsBarcode as any)(svgElem, trimmedCode, {
+            format: 'CODE128',
+            lineColor: '#000000',
+            width,
+            height,
+            displayValue: false,
+            margin,
+            background: '#ffffff',
+          });
+          successCount++;
+        } catch (err) {
+          console.error('[AddProductModal] Print barcode SVG render error:', err);
+        }
+      });
+
+      return successCount > 0;
+    },
+    [selectedLabelSize]
+  );
 
   // Sync print copies with stockLevel when stockLevel changes and is valid
   useEffect(() => {
@@ -212,7 +255,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     }
   }, [stockLevel]);
 
-  // Live Barcode SVG Rendering & Print Barcode Sync (updates on barcode OR printCopies change)
+  // Live Barcode SVG Rendering & Print Barcode Sync (updates on barcode, printCopies, or selectedLabelSize change)
   useEffect(() => {
     if (barcode.trim()) {
       if (barcodeSvgRef.current) {
@@ -236,13 +279,13 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
 
       // Synchronize all printable SVG barcodes across all requested copies
       const timer = setTimeout(() => {
-        renderPrintBarcode(barcode.trim());
+        renderPrintBarcode(barcode.trim(), selectedLabelSize);
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [barcode, printCopies, renderPrintBarcode]);
+  }, [barcode, printCopies, selectedLabelSize, renderPrintBarcode]);
 
-  // Print Label Handler for #print-label-area
+  // Print Label Handler: opens Label Size Selector modal
   const handlePrintLabel = () => {
     const exactBarcode = barcode.trim();
     if (!exactBarcode) {
@@ -251,11 +294,23 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       return;
     }
 
+    setIsLabelSizeModalOpen(true);
+  };
+
+  // Immediate print execution
+  const executePrint = (targetSize: LabelSizeId = selectedLabelSize) => {
+    const exactBarcode = barcode.trim();
+    if (!exactBarcode) {
+      toast.error('Please enter or generate a barcode first to print labels.');
+      barcodeInputRef.current?.focus();
+      return;
+    }
+
     // Ensure all requested barcode label SVGs are rendered before calling window.print()
-    const rendered = renderPrintBarcode(exactBarcode);
+    const rendered = renderPrintBarcode(exactBarcode, targetSize);
     if (!rendered) {
       setTimeout(() => {
-        renderPrintBarcode(exactBarcode);
+        renderPrintBarcode(exactBarcode, targetSize);
       }, 30);
     }
 
@@ -263,7 +318,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     requestAnimationFrame(() => {
       setTimeout(() => {
         window.print();
-      }, 100);
+      }, 120);
     });
   };
 
@@ -486,140 +541,24 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
 
   const modalContent = (
     <>
-      {/* Print-specific CSS styles */}
-      <style>{`
-        #print-label-area {
-          display: none;
-        }
-
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-
-          html, body {
-            background: #ffffff !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            height: auto !important;
-            min-height: 0 !important;
-            overflow: visible !important;
-          }
-
-          /* Hide all application and modal elements so they do NOT take up height */
-          body > *:not(#print-label-area) {
-            display: none !important;
-          }
-
-          body * {
-            visibility: hidden !important;
-          }
-
-          #print-label-area,
-          #print-label-area * {
-            visibility: visible !important;
-          }
-
-          #print-label-area {
-            position: relative !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-sizing: border-box !important;
-            page-break-inside: auto !important;
-            break-inside: auto !important;
-          }
-
-          #print-label-area.single-label {
-            display: flex !important;
-            justify-content: center !important;
-            align-items: flex-start !important;
-          }
-
-          #print-label-area.single-label .print-label-card {
-            width: fit-content !important;
-            max-width: 80mm !important;
-          }
-
-          #print-label-area.multi-label {
-            display: grid !important;
-            grid-template-columns: repeat(3, 1fr) !important;
-            gap: 3.5mm 4mm !important;
-          }
-
-          .print-label-card {
-            box-sizing: border-box !important;
-            padding: 3mm 4mm !important;
-            border: 0.5px dashed #666666 !important;
-            border-radius: 4px !important;
-            background: #ffffff !important;
-            color: #000000 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            text-align: center !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            width: 100% !important;
-            min-height: 28mm !important;
-            max-height: 33mm !important;
-            overflow: hidden !important;
-          }
-
-          .print-label-name {
-            font-size: 11px !important;
-            font-weight: 700 !important;
-            color: #000000 !important;
-            line-height: 1.15 !important;
-            margin-bottom: 1.5mm !important;
-            text-align: center !important;
-            word-break: break-word !important;
-            max-height: 2.3em !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            display: -webkit-box !important;
-            -webkit-line-clamp: 2 !important;
-            -webkit-box-orient: vertical !important;
-            width: 100% !important;
-          }
-
-          .print-label-barcode-container {
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-            width: 100% !important;
-            background: #ffffff !important;
-            overflow: hidden !important;
-          }
-
-          .barcode-print-svg {
-            max-width: 100% !important;
-            height: auto !important;
-            display: block !important;
-          }
-        }
-      `}</style>
+      {/* Dynamic Print-specific CSS styles generated for selectedLabelSize */}
+      <style>{generateDynamicPrintCss(selectedLabelSize)}</style>
 
       {/* Print Section strictly visible during print via #print-label-area */}
       <div
         id="print-label-area"
-        className={printCopies === 1 ? 'single-label' : 'multi-label'}
+        className={selectedLabelSize === 'a4' ? 'a4-grid' : 'thermal-roll'}
       >
         {Array.from({ length: Math.max(1, printCopies) }).map((_, idx) => (
           <div key={idx} className="print-label-card">
-            {/* Conditional Product Name Display:
-                If Product Name is entered, display it clearly above the barcode on the label.
-                If Product Name is empty, do NOT show any empty space, "undefined", "null", or placeholder text—render only the barcode label. */}
+            {/* Product Name (Truncated if too long) */}
             {name && name.trim() ? (
               <div className="print-label-name">
                 {name.trim()}
               </div>
             ) : null}
 
+            {/* 3. Barcode SVG (Bars only) */}
             <div className="print-label-barcode-container">
               <svg
                 id={idx === 0 ? 'barcode-print' : undefined}
@@ -627,15 +566,68 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                 className="barcode-print-svg"
               />
             </div>
+
+            {/* 4. Barcode Number */}
+            <div className="print-label-code-sku">
+              <span className="print-label-barcode-num">{barcode.trim()}</span>
+            </div>
+
+            {/* 5. MRP: ₹XXX.XX (Incl. of all taxes) */}
+            <div className="print-label-mrp">
+              MRP: ₹{price !== '' && price !== undefined && !isNaN(Number(price))
+                ? Number(price).toLocaleString('en-IN', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : '0.00'}{' '}
+              <span className="print-label-tax-note">(Incl. of all taxes)</span>
+            </div>
           </div>
         ))}
       </div>
+
+      {/* Select Label Size & Print Modal */}
+      <PrintLabelSizeModal
+        isOpen={isLabelSizeModalOpen}
+        onClose={() => setIsLabelSizeModalOpen(false)}
+        barcode={barcode}
+        productName={name}
+        sku={sku}
+        price={price}
+        printCopies={printCopies}
+        onCopiesChange={setPrintCopies}
+        selectedSize={selectedLabelSize}
+        storeName={storeName}
+        onSelectSize={(newSize) => {
+          setSelectedLabelSize(newSize);
+          renderPrintBarcode(barcode.trim(), newSize);
+        }}
+        onConfirmPrint={() => {
+          executePrint(selectedLabelSize);
+        }}
+      />
 
       {/* Camera Barcode Scanner Modal */}
       <CameraScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScanSuccess={handleScanSuccess}
+      />
+
+      {/* Live Camera Photo Capture Modal */}
+      <CameraPhotoModal
+        isOpen={isPhotoCameraOpen}
+        onClose={() => setIsPhotoCameraOpen(false)}
+        onCapture={(capturedBase64) => {
+          setImagePreview(capturedBase64);
+          setImageBase64(capturedBase64);
+          setValidationErrors((prev) => {
+            const next = { ...prev };
+            delete next.image;
+            return next;
+          });
+          toast.success('Product photo captured successfully!');
+        }}
       />
 
       {/* Main Modal Backdrop */}
@@ -679,8 +671,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                   <span className="text-[11px] text-zinc-500">Scan or auto-generate 12 digits</span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                  <div className="relative flex-1">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2">
+                  <div className="relative flex-1 min-w-[130px]">
                     <input
                       ref={barcodeInputRef}
                       type="text"
@@ -706,7 +698,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                           });
                         }
                       }}
-                      className={`w-full px-3.5 py-2.5 text-sm font-mono rounded-xl border bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 ${
+                      className={`w-full h-8 px-3 py-1.5 text-xs sm:text-sm font-mono rounded-xl border bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm focus:outline-none focus:ring-2 ${
                         validationErrors.barcode
                           ? 'border-red-500 focus:ring-red-500/20'
                           : 'border-zinc-300 dark:border-zinc-700 focus:ring-indigo-500/20 focus:border-indigo-500'
@@ -714,28 +706,110 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                     />
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center flex-wrap sm:flex-nowrap gap-1.5 shrink-0 overflow-x-auto py-0.5">
                     <Button
                       type="button"
+                      size="sm"
                       variant="outline"
                       onClick={() => setIsScannerOpen(true)}
-                      className="flex-1 sm:flex-none rounded-xl border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30 gap-1.5 text-xs font-semibold"
+                      className="h-8 px-2.5 py-1.5 rounded-xl border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30 gap-1 text-xs font-semibold shrink-0"
                     >
-                      <Scan className="w-4 h-4 text-indigo-600" />
+                      <Scan className="h-3.5 w-3.5 text-indigo-600" />
                       Scan
                     </Button>
                     <Button
                       type="button"
+                      size="sm"
                       variant="outline"
                       onClick={handleGenerateBarcode}
-                      className="flex-1 sm:flex-none rounded-xl border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 gap-1.5 text-xs font-semibold"
+                      className="h-8 px-2.5 py-1.5 rounded-xl border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 gap-1 text-xs font-semibold shrink-0"
                     >
-                      <Sparkles className="w-4 h-4 text-amber-500" />
+                      <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                       Generate
                     </Button>
 
+                    {/* Compact Label Size Selector with Dropdown Menu */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          title={`Label Size: ${LABEL_SIZE_OPTIONS.find((o) => o.id === selectedLabelSize)?.name || selectedLabelSize}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 h-8 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-xs font-semibold shadow-sm transition-all shrink-0 cursor-pointer"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span className="whitespace-nowrap">{compactSizeLabel}</span>
+                          <ChevronDown className="h-3 w-3 text-zinc-400 shrink-0" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="z-[110] w-64 p-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-2xl">
+                        <div className="px-2 py-1 text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                          Select Label Size
+                        </div>
+                        {LABEL_SIZE_OPTIONS.map((option) => {
+                          const isSelected = selectedLabelSize === option.id;
+                          const OptionIcon = option.icon;
+                          return (
+                            <DropdownMenuItem
+                              key={option.id}
+                              onClick={() => {
+                                setSelectedLabelSize(option.id);
+                                if (barcode.trim()) {
+                                  renderPrintBarcode(barcode.trim(), option.id);
+                                }
+                              }}
+                              className={`flex items-center justify-between gap-2.5 px-2.5 py-2 cursor-pointer rounded-xl text-xs transition-colors ${
+                                isSelected
+                                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-200 font-semibold'
+                                  : 'text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <OptionIcon
+                                  className={`h-3.5 w-3.5 shrink-0 ${
+                                    isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400'
+                                  }`}
+                                />
+                                <div className="flex flex-col min-w-0 text-left">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="truncate">{option.name}</span>
+                                    {option.badge && (
+                                      <span
+                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 ${
+                                          option.badge === 'Default'
+                                            ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300'
+                                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                                        }`}
+                                      >
+                                        {option.badge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
+                                    {option.dimensions}
+                                  </span>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <Check className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0 ml-1" />
+                              )}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                        <DropdownMenuSeparator className="my-1 border-zinc-100 dark:border-zinc-800" />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setIsLabelSizeModalOpen(true);
+                          }}
+                          className="flex items-center gap-2 px-2.5 py-2 cursor-pointer rounded-xl text-xs text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 font-semibold"
+                        >
+                          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+                          <span>All Sizes & Live Preview...</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
                     {/* Quantity / Copies Input */}
-                    <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl px-2.5 py-1.5 shadow-sm gap-1.5">
+                    <div className="flex items-center h-8 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl px-2 py-1 shadow-sm gap-1 shrink-0">
                       <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 select-none">
                         Qty:
                       </span>
@@ -748,24 +822,25 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                           const val = Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1));
                           setPrintCopies(val);
                         }}
-                        className="w-12 text-center text-xs font-bold bg-transparent text-zinc-900 dark:text-white focus:outline-none"
+                        className="w-8 text-center text-xs font-bold bg-transparent text-zinc-900 dark:text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         title="Enter number of barcode labels to print"
                       />
                     </div>
 
                     <Button
                       type="button"
+                      size="sm"
                       variant="outline"
                       onClick={handlePrintLabel}
-                      title={!barcode.trim() ? 'Enter or generate a barcode to print labels' : `Print ${printCopies} Barcode Labels`}
-                      className={`flex-1 sm:flex-none rounded-xl gap-1.5 text-xs font-semibold transition-all ${
+                      title={!barcode.trim() ? 'Enter or generate a barcode to print labels' : `Print ${printCopies} Barcode Labels (${selectedLabelSize})`}
+                      className={`h-8 px-2.5 py-1.5 rounded-xl gap-1 text-xs font-semibold transition-all shrink-0 ${
                         barcode.trim()
                           ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 shadow-sm'
                           : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
                       }`}
                     >
-                      <Printer className={`w-4 h-4 ${barcode.trim() ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500'}`} />
-                      Print {printCopies} {printCopies === 1 ? 'Label' : 'Labels'}
+                      <Printer className={`h-3.5 w-3.5 shrink-0 ${barcode.trim() ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500'}`} />
+                      <span>Print {printCopies} {printCopies === 1 ? 'Label' : 'Labels'}</span>
                     </Button>
                   </div>
                 </div>
@@ -903,21 +978,33 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                       className="w-20 h-20 object-cover rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white shadow-sm"
                     />
                     <div className="flex-1 space-y-1">
-                      <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                      <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                         Photo attached
                       </p>
                       <p className="text-[11px] text-zinc-500">
-                        Ready to encode and attach with product
+                        Ready to encode & save with product
                       </p>
-                      <div className="flex items-center gap-2 pt-1">
+                      <div className="flex items-center flex-wrap gap-2 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsPhotoCameraOpen(true)}
+                          className="h-7 text-xs rounded-lg border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 gap-1"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                          Retake
+                        </Button>
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           onClick={() => fileUploadInputRef.current?.click()}
-                          className="h-7 text-xs rounded-lg border-zinc-300 dark:border-zinc-700"
+                          className="h-7 text-xs rounded-lg border-zinc-300 dark:border-zinc-700 gap-1"
                         >
-                          Change
+                          <Upload className="w-3.5 h-3.5 text-zinc-600" />
+                          Change File
                         </Button>
                         <Button
                           type="button"
@@ -926,7 +1013,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                           onClick={handleRemoveImage}
                           className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg gap-1"
                         >
-                          <Trash2 className="w-3.5 h-3.5" /> Remove
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
                         </Button>
                       </div>
                     </div>
@@ -964,8 +1052,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => cameraCaptureInputRef.current?.click()}
-                        className="rounded-xl border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-xs gap-1.5"
+                        onClick={() => setIsPhotoCameraOpen(true)}
+                        className="rounded-xl border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-xs gap-1.5 font-semibold"
                       >
                         <Camera className="w-3.5 h-3.5 text-indigo-600" />
                         Capture Camera

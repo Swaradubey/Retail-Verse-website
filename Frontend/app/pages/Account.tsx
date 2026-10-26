@@ -48,9 +48,17 @@ export function Account() {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-[#fafafa] dark:bg-[#09090b]">
-        <Sidebar collapsible="icon" className="border-r border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-xl">
-          <SidebarHeader className="group-data-[collapsible=icon]:h-14 h-16 flex items-center px-6">
+      <div className="flex min-h-[calc(100vh-var(--top-nav-height,148px))] w-full bg-[#fafafa] dark:bg-[#09090b]">
+        <Sidebar
+          collapsible="icon"
+          className="border-r border-gray-200 dark:border-white/10 bg-white/50 dark:bg-black/50 backdrop-blur-xl"
+          style={{
+            top: 'var(--top-nav-height, 148px)',
+            height: 'calc(100svh - var(--top-nav-height, 148px))',
+            bottom: 'auto',
+          }}
+        >
+          <SidebarHeader className="group-data-[collapsible=icon]:h-12 h-14 flex items-center px-6">
             <div className="flex items-center gap-3 w-full group-data-[collapsible=icon]:hidden">
               <Link to="/" className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
@@ -64,9 +72,9 @@ export function Account() {
               <SidebarTrigger className="size-7" />
             </div>
           </SidebarHeader>
-          <SidebarContent className="px-2 pt-4 group-data-[collapsible=icon]:pt-8">
-            <SidebarGroup>
-              <SidebarGroupLabel className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <SidebarContent className="px-2 pt-1 group-data-[collapsible=icon]:pt-2 group-data-[collapsible=icon]:px-1.5">
+            <SidebarGroup className="p-1 group-data-[collapsible=icon]:p-0">
+              <SidebarGroupLabel className="px-3 py-1 text-xs font-bold uppercase tracking-wider text-muted-foreground group-data-[collapsible=icon]:hidden">
                 Account
               </SidebarGroupLabel>
               <SidebarGroupContent>

@@ -58,6 +58,32 @@ export function Header() {
   // Dropdown Refs for Click Outside
   const userDropdownRef = useRef<HTMLDivElement>(null);
   const watchlistDropdownRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+
+  // Measure and sync the exact header height to CSS variable --top-nav-height
+  useEffect(() => {
+    const updateHeaderHeight = () => {
+      if (headerRef.current) {
+        const height = headerRef.current.getBoundingClientRect().height;
+        if (height > 0) {
+          document.documentElement.style.setProperty('--top-nav-height', `${Math.round(height)}px`);
+        }
+      }
+    };
+
+    updateHeaderHeight();
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateHeaderHeight) : null;
+    if (headerRef.current && ro) {
+      ro.observe(headerRef.current);
+    }
+    window.addEventListener('resize', updateHeaderHeight);
+
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', updateHeaderHeight);
+    };
+  }, []);
 
   // Sync search input if URL contains ?q= or ?search= or ?category=
   useEffect(() => {
@@ -170,7 +196,7 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white font-sans text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+    <header ref={headerRef} className="sticky top-0 z-50 bg-white font-sans text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
       {/* ──────────────────────────────────────────────────────────────────
           1. TOP UTILITY BAR (eBay Classic Style)
       ────────────────────────────────────────────────────────────────── */}

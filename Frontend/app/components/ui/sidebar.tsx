@@ -183,22 +183,23 @@ function Sidebar({
   }
 
   if (isMobile) {
-    const isImpersonating = style != null;
-    const bannerTop = isImpersonating ? '150px' : undefined;
+    const bannerTop = (style as any)?.top || 'var(--top-nav-height, 148px)';
+    const bannerHeight = (style as any)?.height || `calc(100dvh - ${bannerTop})`;
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden z-40"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-              ...(bannerTop ? { top: bannerTop, height: `calc(100dvh - ${bannerTop})` } : {}),
+              top: bannerTop,
+              height: bannerHeight,
             } as React.CSSProperties
           }
-          overlayStyle={bannerTop ? { top: bannerTop } : undefined}
+          overlayStyle={{ top: bannerTop }}
           side={side}
         >
           <SheetHeader className="sr-only">
@@ -210,6 +211,13 @@ function Sidebar({
       </Sheet>
     );
   }
+
+  const resolvedStyle: React.CSSProperties = {
+    top: 'var(--top-nav-height, 148px)',
+    height: 'calc(100svh - var(--top-nav-height, 148px))',
+    bottom: 'auto',
+    ...style,
+  };
 
   return (
     <div
@@ -235,7 +243,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed inset-y-0 z-30 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -245,7 +253,7 @@ function Sidebar({
             : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}
-        style={style}
+        style={resolvedStyle}
         {...props}
       >
         <div
@@ -381,7 +389,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-y-auto",
+        "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden",
         className,
       )}
       {...props}

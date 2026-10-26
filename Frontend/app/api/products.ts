@@ -104,8 +104,33 @@ export const inventoryApi = {
     return getCachedProductData('inventory_manage');
   },
 
-  getManage: async (forceRefresh = false): Promise<any> => {
-    const key = 'inventory_manage';
+  getManage: async (
+    forceRefresh = false,
+    params?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      category?: string;
+      stockStatus?: string;
+      minPrice?: number;
+      maxPrice?: number;
+      sort?: string;
+      direction?: 'asc' | 'desc';
+    }
+  ): Promise<any> => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.category && params.category !== 'All Categories') searchParams.set('category', params.category);
+    if (params?.stockStatus && params.stockStatus !== 'all') searchParams.set('stockStatus', params.stockStatus);
+    if (params?.minPrice) searchParams.set('minPrice', String(params.minPrice));
+    if (params?.maxPrice !== undefined && params?.maxPrice < 999999) searchParams.set('maxPrice', String(params.maxPrice));
+    if (params?.sort) searchParams.set('sort', params.sort);
+    if (params?.direction) searchParams.set('direction', params.direction);
+
+    const queryString = searchParams.toString();
+    const key = `inventory_manage_${queryString || 'default'}`;
     const cached = memoryProductCache.get(key) || getFromSession(key);
     const now = Date.now();
 
@@ -113,9 +138,13 @@ export const inventoryApi = {
       return cached.data;
     }
 
-    const res = await ApiService.get<any>("/api/inventory/manage");
+    const url = queryString ? `/api/inventory/manage?${queryString}` : '/api/inventory/manage';
+    const res = await ApiService.get<any>(url);
     if (res && res.success) {
       setCachedProductData(key, res);
+      if (!queryString || params?.page === 1) {
+        setCachedProductData('inventory_manage', res);
+      }
     }
     return res;
   },
