@@ -26,7 +26,7 @@ async function resolveBusinessProfile(clientInput) {
     website: ""
   };
 
-  if (!clientInput) {
+  if (!clientInput || !isValidObjectId(clientInput?._id || clientInput)) {
     business.name = "Business Profile";
     return business;
   }
@@ -108,16 +108,12 @@ const getInvoices = async (req, res) => {
   try {
     const role = req.user?.role || req.user?.userRole || req.user?.accountType;
     const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
-    const clientId = req.user?.clientId || req.clientId || (await resolveClientId(req));
+    const clientId = isSuperAdmin ? null : (req.user?.clientId || req.clientId || (await resolveClientId(req)));
 
     const query = {};
     if (isSuperAdmin) {
-      query.$or = [
-        { clientId: { $exists: true, $ne: null } },
-        { storeId: { $exists: true, $ne: null } },
-        { tenantId: { $exists: true, $ne: null } }
-      ];
-    } else {
+      // Super Admin sees all invoices globally without unindexed $exists scan
+    } else if (clientId) {
       query.clientId = clientId;
     }
 
@@ -143,81 +139,16 @@ const getInvoices = async (req, res) => {
       }
     }
 
-    // Dynamic status filtering
+    // Dynamic status filtering - exact indexed matching
     if (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all") {
       const s = String(req.query.status).trim().toLowerCase();
       if (["paid", "completed"].includes(s)) {
-        query.paymentStatus = { $in: [new RegExp("^paid$", "i"), new RegExp("^completed$", "i")] };
+        query.paymentStatus = { $in: ["paid", "completed", "Paid", "Completed"] };
       } else if (s === "pending") {
-        query.paymentStatus = { $nin: [new RegExp("^paid$", "i"), new RegExp("^completed$", "i")] };
+        query.paymentStatus = { $nin: ["paid", "completed", "Paid", "Completed"] };
       } else {
-        query.paymentStatus = new RegExp(`^${s}$`, "i");
+        query.paymentStatus = s;
       }
-    }
-
-    // Check if missing invoices need to be derived/backfilled from orders
-    // Quick count check prevents full collection scanning
-    try {
-      const invoiceCount = await Invoice.countDocuments(baseScopeQuery);
-      const orderCount = await Order.countDocuments(baseScopeQuery);
-
-      if (orderCount > invoiceCount) {
-        const existingInvoices = await Invoice.find(baseScopeQuery).select("orderId").lean();
-        const existingOrderIds = new Set(existingInvoices.map((i) => i.orderId).filter(Boolean));
-
-        const missingOrders = await Order.find({
-          ...baseScopeQuery,
-          orderId: { $nin: Array.from(existingOrderIds) },
-        })
-          .select("_id orderId customerName customerEmail shippingAddress items taxPrice totalPrice discountAmount couponCode paymentMethod paymentStatus orderStatus createdAt clientId orderSource")
-          .lean();
-
-        if (missingOrders.length > 0) {
-          const docsToInsert = missingOrders.map((order) => {
-            const isPos = /^POS-/i.test(order.orderId) || /^ORD-POS-/i.test(order.orderId) || order.orderSource === "pos";
-            const items = (order.items || []).map((i) => {
-              const price = Number(i.price || 0);
-              const qty = Number(i.quantity || 1);
-              const rate = Number(i.gstRate || 0);
-              const amt = Number(i.gstAmount) || ((price * qty * rate) / 100);
-              return {
-                name: i.name || "Item",
-                quantity: qty,
-                price: price,
-                subtotal: price * qty,
-                gstRate: rate,
-                gstAmount: amt,
-              };
-            });
-            const subtotal = items.reduce((sum, i) => sum + i.subtotal, 0);
-            const tax = order.taxPrice || items.reduce((sum, i) => sum + i.gstAmount, 0);
-            const totalAmount = order.totalPrice || (subtotal + tax);
-            return {
-              invoiceNumber: `INV-${order.orderId || order._id.toString().substring(0, 8).toUpperCase()}`,
-              orderId: order.orderId,
-              customerName: order.customerName || (order.shippingAddress && order.shippingAddress.fullName) || "Unknown",
-              customerEmail: order.customerEmail || (order.shippingAddress && order.shippingAddress.email) || "",
-              items,
-              subtotal,
-              tax,
-              cgst: tax / 2,
-              sgst: tax / 2,
-              discountAmount: Number(order.discountAmount) || 0,
-              couponCode: order.couponCode || "",
-              totalAmount,
-              paymentMethod: order.paymentMethod || "N/A",
-              paymentStatus: isPos ? "paid" : (order.paymentStatus || "pending"),
-              orderStatus: order.orderStatus || "placed",
-              createdAt: order.createdAt,
-              clientId: order.clientId,
-            };
-          });
-
-          await Invoice.insertMany(docsToInsert, { ordered: false }).catch(() => {});
-        }
-      }
-    } catch (syncErr) {
-      console.warn("[invoiceController] Invoice sync warning:", syncErr.message);
     }
 
     // Pagination parameters
@@ -238,12 +169,22 @@ const getInvoices = async (req, res) => {
       queryChain.skip(skip).limit(limit);
     }
 
-    // Run count, paginated lean query, and tenant-wide stats aggregation concurrently
-    const [total, rawInvoices, statsResult] = await Promise.all([
-      Invoice.countDocuments(query),
+    const hasFilter = Boolean(
+      (req.query.search && String(req.query.search).trim()) ||
+      (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all")
+    );
+
+    // Run paginated lean query, and tenant-wide stats aggregation concurrently
+    const [rawInvoices, statsResult, filterCount] = await Promise.all([
       queryChain,
       Invoice.aggregate([
         { $match: baseScopeQuery },
+        {
+          $project: {
+            paymentStatus: 1,
+            amount: { $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }] }
+          }
+        },
         {
           $group: {
             _id: null,
@@ -251,36 +192,63 @@ const getInvoices = async (req, res) => {
             completed: {
               $sum: {
                 $cond: [
-                  { $in: [{ $toLower: { $ifNull: ["$paymentStatus", ""] } }, ["paid", "completed"]] },
+                  { $in: ["$paymentStatus", ["paid", "completed", "Paid", "Completed"]] },
                   1,
                   0
                 ]
               }
             },
             revenue: {
-              $sum: {
-                $ifNull: ["$totalAmount", { $ifNull: ["$subtotal", 0] }]
-              }
+              $sum: "$amount"
             }
           }
         }
-      ])
+      ]),
+      hasFilter ? Invoice.countDocuments(query) : null
     ]);
 
-    // Attach cached business profile and format paymentStatus for POS
-    const invoices = await Promise.all(
-      rawInvoices.map(async (inv) => {
-        const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
-        if (isPos) {
-          inv.paymentStatus = "paid";
-        }
-        inv.business = await resolveBusinessProfile(inv.clientId);
-        return inv;
-      })
-    );
+    // Batch resolve business profiles for unique client IDs in a single indexed query
+    const uniqueClientIds = Array.from(new Set(rawInvoices.map((inv) => inv.clientId && String(inv.clientId)).filter(Boolean)));
+    const profileMap = new Map();
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
+    if (uniqueClientIds.length > 0) {
+      try {
+        const Client = require("../models/Client");
+        const clientDocs = await Client.find({ _id: { $in: uniqueClientIds } })
+          .select("companyName shopName brandingName logo permanentAddress email phone gst")
+          .lean();
+
+        for (const c of clientDocs) {
+          profileMap.set(String(c._id), {
+            name: c.companyName || c.shopName || "Business Profile",
+            tagline: c.brandingName || "",
+            logo: c.logo || "",
+            address: c.permanentAddress || "",
+            email: c.email || "",
+            phone: c.phone || "",
+            taxNumber: c.gst || "",
+            website: "",
+          });
+        }
+      } catch (err) {
+        console.warn("[invoiceController] Batch business profile error:", err.message);
+      }
+    }
+
+    const defaultProfile = { name: "Business Profile", tagline: "", logo: "", address: "", email: "", phone: "", taxNumber: "", website: "" };
+
+    const invoices = rawInvoices.map((inv) => {
+      const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
+      if (isPos) {
+        inv.paymentStatus = "paid";
+      }
+      inv.business = (inv.clientId && profileMap.get(String(inv.clientId))) || defaultProfile;
+      return inv;
+    });
+
     const s = statsResult[0] || { total: 0, completed: 0, revenue: 0 };
+    const total = hasFilter ? (filterCount || 0) : (s.total || rawInvoices.length);
+    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
     const stats = {
       total: s.total || 0,
       completed: s.completed || 0,

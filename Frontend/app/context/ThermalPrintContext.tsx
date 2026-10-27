@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import JsBarcode from 'jsbarcode';
 import {
   thermalHardware,
+  thermalBluetooth,
   PrinterSettings,
   DEFAULT_PRINTER_SETTINGS,
   buildReceiptEscPos,
@@ -23,16 +25,20 @@ export interface ThermalPrintContextType {
   usbDevice: USBDevice | null;
   connectUsb: () => Promise<void>;
   disconnectUsb: () => Promise<void>;
+  isBluetoothSupported: boolean;
+  bluetoothDevice: any;
+  connectBluetooth: () => Promise<void>;
+  disconnectBluetooth: () => Promise<void>;
   printReceipt: (
     order: ThermalReceiptOrder,
     cashierName?: string,
     options?: PrintReceiptOptions
-  ) => Promise<{ success: boolean; method: 'webusb' | 'iframe'; error?: string }>;
+  ) => Promise<{ success: boolean; method: 'bluetooth' | 'webusb' | 'iframe'; error?: string }>;
   printBarcodeLabel: (
     data: BarcodeLabelData,
     copies?: number,
     exactDimensions?: string
-  ) => Promise<{ success: boolean; method: 'webusb' | 'iframe'; error?: string }>;
+  ) => Promise<{ success: boolean; method: 'bluetooth' | 'webusb' | 'iframe'; error?: string }>;
   isHardwareModalOpen: boolean;
   openHardwareModal: () => void;
   closeHardwareModal: () => void;
@@ -56,8 +62,10 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
   });
 
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
+  const [bluetoothDevice, setBluetoothDevice] = useState<any>(null);
   const [isHardwareModalOpen, setIsHardwareModalOpen] = useState<boolean>(false);
   const isWebUsbSupported = thermalHardware.isSupported();
+  const isBluetoothSupported = thermalBluetooth.isSupported();
 
   // Try auto-reconnect to paired USB devices on mount
   useEffect(() => {
@@ -111,6 +119,29 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, []);
 
+  const connectBluetooth = useCallback(async () => {
+    try {
+      const dev = await thermalBluetooth.requestDevice();
+      if (dev) {
+        setBluetoothDevice(dev);
+        toast.success(`Connected to ${dev.name || 'Bluetooth Thermal Printer'}`);
+      }
+    } catch (err: any) {
+      console.error('[ThermalPrintContext] Connect Bluetooth error:', err);
+      toast.error(err?.message || 'Failed to connect Bluetooth thermal printer');
+    }
+  }, []);
+
+  const disconnectBluetooth = useCallback(async () => {
+    try {
+      await thermalBluetooth.disconnect();
+      setBluetoothDevice(null);
+      toast.info('Bluetooth thermal printer disconnected');
+    } catch (err: any) {
+      console.error('[ThermalPrintContext] Disconnect Bluetooth error:', err);
+    }
+  }, []);
+
   const printReceipt = useCallback(
     async (
       order: ThermalReceiptOrder,
@@ -130,7 +161,9 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       const result = await printThermalReceipt(order, cashierName, mergedOptions);
       if (result.success) {
-        if (result.method === 'webusb') {
+        if (result.method === 'bluetooth') {
+          toast.success('Receipt sent directly to Bluetooth thermal printer');
+        } else if (result.method === 'webusb') {
           toast.success('Receipt sent directly to USB thermal printer');
         } else {
           toast.success('Thermal receipt sent to printer');
@@ -142,6 +175,25 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
     },
     [settings]
   );
+
+function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 28): string {
+  if (typeof document === 'undefined') return '';
+  try {
+    const svgElem = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    (JsBarcode as any)(svgElem, barcode, {
+      format: 'CODE128',
+      width: barWidth,
+      height: barHeight,
+      displayValue: false,
+      margin: 0,
+      lineColor: '#000000',
+    });
+    return svgElem.outerHTML;
+  } catch (err) {
+    console.warn('[ThermalPrintContext] Barcode SVG generation error:', err);
+    return `<div style="font-family:monospace;font-size:11px;font-weight:bold;letter-spacing:1px;">${barcode}</div>`;
+  }
+}
 
   const printBarcodeLabel = useCallback(
     async (
@@ -162,7 +214,7 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
             count
           );
           await thermalHardware.sendRaw(buffer);
-          toast.success(`Printed ${count} barcode labels via USB`);
+          toast.success(`Printed ${count} barcode label${count === 1 ? '' : 's'} via USB`);
           return { success: true, method: 'webusb' as const };
         } catch (usbErr) {
           console.warn('[ThermalPrintContext] USB label print failed, using isolated iframe:', usbErr);
@@ -176,7 +228,32 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
           maximumFractionDigits: 2,
         });
 
-        const storeTag = (data.storeName || settings.storeName || 'RETAILVERSE').toUpperCase();
+        // Parse exact dimensions (e.g. "50mm 25mm", "50mm 30mm", "40mm 30mm", "72mm 40mm")
+        let widthMm = 50;
+        let heightMm = 25;
+        if (exactDimensions) {
+          const parts = exactDimensions.trim().split(/\s+/);
+          if (parts.length >= 2) {
+            const parsedW = parseFloat(parts[0]);
+            const parsedH = parseFloat(parts[1]);
+            if (!isNaN(parsedW) && parsedW > 0) widthMm = parsedW;
+            if (!isNaN(parsedH) && parsedH > 0) heightMm = parsedH;
+          }
+        }
+
+        // Safe printable dimensions with 1mm edge buffer to prevent physical clipping
+        const cardWidthMm = Math.max(10, widthMm - 2);
+        const cardHeightMm = Math.max(10, heightMm - 1.5);
+        const isCompact = heightMm <= 26;
+        const barWidth = widthMm <= 42 ? 1.1 : 1.35;
+        const barHeight = isCompact ? 22 : 30;
+        const barcodeContainerHeight = isCompact ? '9mm' : '12mm';
+        const titleFontSize = isCompact ? '9px' : '10px';
+        const numFontSize = isCompact ? '8px' : '9px';
+        const mrpFontSize = isCompact ? '8.5px' : '9.5px';
+
+        // Pre-generate raw SVG barcodes in Javascript so they are 100% rendered offline without CDN delay
+        const svgContent = generateBarcodeSvgString(data.barcode, barWidth, barHeight);
 
         // Build HTML for the requested number of stickers
         let labelsHtml = '';
@@ -185,9 +262,9 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
             <div class="thermal-sticker-card">
               <div class="sticker-title">${data.name}</div>
               <div class="sticker-barcode-container">
-                <svg class="barcode-svg" id="barcode-target-${i}"></svg>
+                ${svgContent}
               </div>
-              <div class="sticker-number">${data.barcode}</div>
+              <div class="sticker-number">${data.barcode}${data.sku ? ` | SKU: ${data.sku}` : ''}</div>
               <div class="sticker-mrp">MRP: &#8377;${formattedPrice} (Incl. of all taxes)</div>
             </div>
           `;
@@ -196,7 +273,7 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const iframeHtml = `
           <style>
             @page {
-              size: ${exactDimensions || '50mm 30mm'} !important;
+              size: ${exactDimensions || '50mm 25mm'} !important;
               margin: 0 !important;
             }
             html, body {
@@ -204,15 +281,20 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
               padding: 0 !important;
               background: #fff !important;
               -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
               color: #000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
             }
+            .sticker-container {
+              margin: 0 !important;
+              padding: 0 !important;
+            }
             .thermal-sticker-card {
-              width: 48mm !important;
-              height: 28mm !important;
-              max-height: 28mm !important;
-              margin: 1mm auto !important;
-              padding: 1mm !important;
+              width: ${cardWidthMm}mm !important;
+              height: ${cardHeightMm}mm !important;
+              max-height: ${cardHeightMm}mm !important;
+              margin: 0.75mm auto !important;
+              padding: 0.5mm 1mm !important;
               box-sizing: border-box !important;
               display: flex !important;
               flex-direction: column !important;
@@ -230,7 +312,7 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
               page-break-after: avoid !important;
             }
             .sticker-title {
-              font-size: 10px !important;
+              font-size: ${titleFontSize} !important;
               font-weight: 700 !important;
               line-height: 1.1 !important;
               white-space: nowrap !important;
@@ -243,27 +325,31 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
               display: flex !important;
               justify-content: center !important;
               align-items: center !important;
-              height: 12mm !important;
+              height: ${barcodeContainerHeight} !important;
               width: 100% !important;
               overflow: hidden !important;
             }
-            .sticker-barcode-container svg,
-            .barcode-svg {
-              max-height: 12mm !important;
-              max-width: 95% !important;
+            .sticker-barcode-container svg {
+              max-height: ${barcodeContainerHeight} !important;
+              max-width: 96% !important;
               image-rendering: pixelated !important;
               shape-rendering: crispEdges !important;
             }
             .sticker-number {
-              font-size: 9px !important;
-              letter-spacing: 1px !important;
+              font-size: ${numFontSize} !important;
+              letter-spacing: 0.5px !important;
               font-family: monospace !important;
+              font-weight: 600 !important;
               line-height: 1 !important;
               color: #000 !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              max-width: 100% !important;
             }
             .sticker-mrp {
-              font-size: 9px !important;
-              font-weight: 600 !important;
+              font-size: ${mrpFontSize} !important;
+              font-weight: 700 !important;
               line-height: 1.1 !important;
               white-space: nowrap !important;
               color: #000 !important;
@@ -272,26 +358,6 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
           <div class="sticker-container">
             ${labelsHtml}
           </div>
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-          <script>
-            window.onload = function() {
-              if (window.JsBarcode) {
-                var svgs = document.querySelectorAll('.barcode-svg');
-                svgs.forEach(function(el) {
-                  try {
-                    JsBarcode(el, "${data.barcode}", {
-                      format: "CODE128",
-                      width: 1.3,
-                      height: 28,
-                      displayValue: false,
-                      margin: 0,
-                      lineColor: "#000000"
-                    });
-                  } catch(e) {}
-                });
-              }
-            };
-          </script>
         `;
 
         await printViaIsolatedIframe({
@@ -300,7 +366,7 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
           exactDimensions: exactDimensions,
         });
 
-        toast.success(`Printed ${count} barcode labels`);
+        toast.success(`Printed ${count} barcode label${count === 1 ? '' : 's'}`);
         return { success: true, method: 'iframe' as const };
       } catch (err: any) {
         console.error('[ThermalPrintContext] Label print error:', err);
@@ -355,6 +421,10 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         usbDevice,
         connectUsb,
         disconnectUsb,
+        isBluetoothSupported,
+        bluetoothDevice,
+        connectBluetooth,
+        disconnectBluetooth,
         printReceipt,
         printBarcodeLabel,
         isHardwareModalOpen,
@@ -376,6 +446,10 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         usbDevice={usbDevice}
         onConnectUsb={connectUsb}
         onDisconnectUsb={disconnectUsb}
+        isBluetoothSupported={isBluetoothSupported}
+        bluetoothDevice={bluetoothDevice}
+        onConnectBluetooth={connectBluetooth}
+        onDisconnectBluetooth={disconnectBluetooth}
         onTestPrintReceipt={testPrintReceipt}
         onTestPrintLabel={testPrintLabel}
       />

@@ -72,6 +72,27 @@ function clearInventoryMetaCache() {
   inventoryMetaCache.clear();
 }
 
+const clientCache = new Map();
+const CLIENT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+async function getCachedClient(clientId) {
+  if (!clientId || !isValidObjectId(clientId)) return null;
+  const idStr = String(clientId);
+  const cached = clientCache.get(idStr);
+  if (cached && (Date.now() - cached.timestamp < CLIENT_CACHE_TTL)) {
+    return cached.data;
+  }
+  try {
+    const client = await Client.findById(idStr).select("companyName shopName storeName email").lean();
+    if (client) {
+      clientCache.set(idStr, { data: client, timestamp: Date.now() });
+    }
+    return client;
+  } catch {
+    return null;
+  }
+}
+
 // @desc    List products for dashboard inventory (scoped for client role)
 // @route   GET /api/inventory/manage
 // @access  Private
@@ -280,14 +301,16 @@ const createInventoryItem = async (req, res) => {
     req.body.barcode = finalBarcode;
 
     // SKU uniqueness check (scoped to client if not global, or global if no client)
-    const skuQuery = { sku: finalSku };
-    if (targetClientId) {
-      skuQuery.clientId = targetClientId;
-    } else {
-      skuQuery.clientId = null;
-    }
-    
-    const existingProduct = await Product.findOne(skuQuery).lean();
+    const skuQuery = { sku: finalSku, clientId: targetClientId || null };
+    const barcodeQuery = { barcode: finalBarcode, clientId: targetClientId || null };
+
+    // Parallelize SKU check, Barcode check, and client name lookup concurrently (1 network roundtrip instead of 3)
+    const [existingProduct, existingBarcode, client] = await Promise.all([
+      Product.findOne(skuQuery).select('_id').lean(),
+      Product.findOne(barcodeQuery).select('_id').lean(),
+      targetClientId ? getCachedClient(targetClientId) : null
+    ]);
+
     if (existingProduct) {
       return res.status(400).json({
         success: false,
@@ -295,15 +318,6 @@ const createInventoryItem = async (req, res) => {
       });
     }
 
-    // Barcode uniqueness check (scoped to client/tenant)
-    const barcodeQuery = { barcode: finalBarcode };
-    if (targetClientId) {
-      barcodeQuery.clientId = targetClientId;
-    } else {
-      barcodeQuery.clientId = null;
-    }
-
-    const existingBarcode = await Product.findOne(barcodeQuery).lean();
     if (existingBarcode) {
       return res.status(409).json({
         success: false,
@@ -323,6 +337,9 @@ const createInventoryItem = async (req, res) => {
     payload.createdBy = req.user._id;
     payload.createdByRole = role;
     payload.clientId = targetClientId || null;
+    if (client) {
+      payload.clientName = client.storeName || client.shopName || client.companyName || "";
+    }
 
     // Explicitly parse stockLevel as Number (single source of truth for quantity)
     const rawStock = req.body.stockLevel !== undefined
@@ -341,15 +358,6 @@ const createInventoryItem = async (req, res) => {
     const parsedGst = (rawGst === "" || rawGst === null || rawGst === undefined) ? 0 : Math.max(0, Number(rawGst) || 0);
     payload.gst = parsedGst;
     payload.gstRate = parsedGst;
-
-    // Fetch clientName if possible to persist it
-    if (targetClientId) {
-      const Client = require("../models/Client");
-      const client = await Client.findById(targetClientId).select("companyName shopName storeName").lean();
-      if (client) {
-        payload.clientName = client.storeName || client.shopName || client.companyName || "";
-      }
-    }
 
     const item = await Product.create(payload);
     clearInventoryMetaCache();
@@ -379,15 +387,18 @@ const createInventoryItem = async (req, res) => {
       });
     }
 
-    const populated = await Product.findById(item._id)
-      .populate({ path: "clientId", select: "companyName shopName storeName email" })
-      .lean();
+    // Construct response directly without re-querying MongoDB Atlas
+    const itemObj = item.toObject ? item.toObject() : item;
+    if (client) {
+      itemObj.clientId = client;
+    }
+    const formatted = formatProductWithClient(itemObj);
 
     res.status(201).json({
       success: true,
       message: "Product added to inventory successfully",
-      data: formatProductWithClient(populated || item),
-      product: formatProductWithClient(populated || item),
+      data: formatted,
+      product: formatted,
     });
   } catch (error) {
     console.error("[Inventory] createInventoryItem Error:", error.message);
@@ -558,7 +569,7 @@ const updateInventoryItem = async (req, res) => {
     let query = { _id: req.params.id };
     applyScope(query, scopeQuery);
 
-    const item = await Product.findOne(query);
+    const item = await Product.findOne(query).lean();
     if (!item) {
       return res.status(404).json({ success: false, message: "Inventory item not found" });
     }
@@ -584,12 +595,6 @@ const updateInventoryItem = async (req, res) => {
         }
       }
 
-      console.log(`[Backend Debug] ${role} — inventory item before update:`, {
-        _id: item._id,
-        name: item.name,
-        description: item.description,
-      });
-
       if (
         title === undefined &&
         name === undefined &&
@@ -601,59 +606,46 @@ const updateInventoryItem = async (req, res) => {
         });
       }
 
+      const patch = {};
       if (title !== undefined) {
-        item.name = title;
+        patch.name = title;
       } else if (name !== undefined) {
-        item.name = name;
+        patch.name = name;
       }
       if (description !== undefined) {
-        item.description = description;
+        patch.description = description;
       }
 
-      const updatedItem = await item.save();
-      console.log(`[Backend Debug] ${role} — inventory item after save:`, {
-        _id: updatedItem._id,
-        name: updatedItem.name,
-        description: updatedItem.description,
-        updatedAt: updatedItem.updatedAt,
-      });
+      const updatedItem = await Product.findByIdAndUpdate(
+        item._id,
+        { $set: patch },
+        { new: true, runValidators: true }
+      ).lean();
 
-      // Sync the update to the `inventories` collection safely
-      try {
-        let inventoryDoc = await Inventory.findOne({ sku: updatedItem.sku });
-        let inventoryAction = "none";
-        
-        if (inventoryDoc) {
-          if (title !== undefined) {
-            inventoryDoc.name = title;
-          } else if (name !== undefined) {
-            inventoryDoc.name = name;
+      // Sync the update to the `inventories` collection safely in the background
+      setImmediate(async () => {
+        try {
+          let inventoryDoc = await Inventory.findOne({ sku: updatedItem.sku });
+          if (inventoryDoc) {
+            if (patch.name !== undefined) inventoryDoc.name = patch.name;
+            if (patch.description !== undefined) inventoryDoc.description = patch.description;
+            await inventoryDoc.save();
+          } else {
+            await Inventory.create({
+              name: updatedItem.name,
+              sku: updatedItem.sku,
+              description: updatedItem.description || "",
+              category: updatedItem.category || "Uncategorized",
+              price: updatedItem.price || 0,
+              stock: updatedItem.stock || 0,
+              image: updatedItem.image || "",
+              isActive: updatedItem.isActive !== undefined ? updatedItem.isActive : true
+            });
           }
-          if (description !== undefined) {
-            inventoryDoc.description = description;
-          }
-          await inventoryDoc.save();
-          inventoryAction = "updated";
-        } else {
-          // Create document if project expects one
-          inventoryDoc = await Inventory.create({
-            name: updatedItem.name,
-            sku: updatedItem.sku,
-            description: updatedItem.description || "",
-            category: updatedItem.category || "Uncategorized", // Fallback just in case
-            price: updatedItem.price || 0,
-            stock: updatedItem.stock || 0,
-            image: updatedItem.image || "",
-            isActive: updatedItem.isActive !== undefined ? updatedItem.isActive : true
-          });
-          inventoryAction = "created";
+        } catch (inventorySyncError) {
+          console.error("[Backend Debug] Failed to sync with inventories collection:", inventorySyncError.message);
         }
-        
-        console.log(`[Backend Debug] inventories collection ${inventoryAction}:`, inventoryDoc._id);
-      } catch (inventorySyncError) {
-        console.error("[Backend Debug] Failed to sync with inventories collection:", inventorySyncError.message);
-        // Continue and return success anyway since item was saved
-      }
+      });
 
       const responsePayload = {
         success: true,
@@ -663,11 +655,20 @@ const updateInventoryItem = async (req, res) => {
         product: updatedItem,
         data: updatedItem,
       };
-      console.log(`[Backend Debug] PUT /api/inventory/:id — final response (${role}):`, responsePayload);
       return res.json(responsePayload);
     }
 
-    const resolved = resolveProductUpdatePayload(role, req.body);
+    // Merge fallback fields from existing item so partial updates succeed
+    const mergedBody = { ...req.body };
+    if (mergedBody.sku === undefined && item.sku) mergedBody.sku = item.sku;
+    if (mergedBody.name === undefined && !mergedBody.title && !mergedBody.productName && item.name) mergedBody.name = item.name;
+    if (mergedBody.category === undefined && item.category) mergedBody.category = item.category;
+    if (mergedBody.price === undefined && item.price !== undefined) mergedBody.price = item.price;
+    if (mergedBody.stock === undefined && mergedBody.stockLevel === undefined && mergedBody.quantity === undefined && item.stock !== undefined) {
+      mergedBody.stock = item.stock;
+    }
+
+    const resolved = resolveProductUpdatePayload(role, mergedBody);
     if (!resolved.ok) {
       return res.status(resolved.status).json({ success: false, message: resolved.message });
     }
@@ -694,12 +695,7 @@ const updateInventoryItem = async (req, res) => {
     }
     delete updatePayload.title;
     const titleDescriptionOnlyFlow = isTitleDescriptionOnlyUpdate(updatePayload);
-    console.log(
-      "[Backend Debug] PUT /api/inventory/:id - admin path, titleDescriptionOnlyFlow:",
-      titleDescriptionOnlyFlow,
-      "role:",
-      role
-    );
+
     if (updatePayload.sku !== undefined || updatePayload.barcode !== undefined) {
       const targetClientId = item.clientId || resolvedClientId;
       const currentSku = item.sku;
@@ -723,35 +719,42 @@ const updateInventoryItem = async (req, res) => {
       updatePayload.sku = finalSku;
       updatePayload.barcode = finalBarcode;
 
-      if (finalSku !== currentSku) {
-        let skuQuery = { sku: finalSku, _id: { $ne: item._id } };
-        if (targetClientId) {
-          skuQuery.clientId = targetClientId;
-        } else {
-          skuQuery.clientId = null;
-        }
-        const existingProduct = await Product.findOne(skuQuery).lean();
-        if (existingProduct) {
-          return res.status(400).json({
-            success: false,
-            message: `A product with SKU "${finalSku}" already exists in your inventory.`,
-          });
-        }
-      }
+      const skuChanged = finalSku !== currentSku;
+      const barcodeChanged = Boolean(finalBarcode && finalBarcode !== currentBarcode);
 
-      if (finalBarcode && finalBarcode !== currentBarcode) {
-        let barcodeQuery = { barcode: finalBarcode, _id: { $ne: item._id } };
-        if (targetClientId) {
-          barcodeQuery.clientId = targetClientId;
-        } else {
-          barcodeQuery.clientId = null;
+      // Only perform database checks if SKU or Barcode actually changed!
+      if (skuChanged || barcodeChanged) {
+        const checks = [];
+        if (skuChanged) {
+          checks.push(
+            Product.findOne({ sku: finalSku, clientId: targetClientId || null, _id: { $ne: item._id } })
+              .select('_id')
+              .lean()
+              .then(p => ({ type: 'sku', exists: Boolean(p) }))
+          );
         }
-        const existingBarcode = await Product.findOne(barcodeQuery).lean();
-        if (existingBarcode) {
-          return res.status(409).json({
-            success: false,
-            message: "A product with this barcode already exists.",
-          });
+        if (barcodeChanged) {
+          checks.push(
+            Product.findOne({ barcode: finalBarcode, clientId: targetClientId || null, _id: { $ne: item._id } })
+              .select('_id')
+              .lean()
+              .then(p => ({ type: 'barcode', exists: Boolean(p) }))
+          );
+        }
+        const checkResults = await Promise.all(checks);
+        for (const resItem of checkResults) {
+          if (resItem.type === 'sku' && resItem.exists) {
+            return res.status(400).json({
+              success: false,
+              message: `A product with SKU "${finalSku}" already exists in your inventory.`,
+            });
+          }
+          if (resItem.type === 'barcode' && resItem.exists) {
+            return res.status(409).json({
+              success: false,
+              message: "A product with this barcode already exists.",
+            });
+          }
         }
       }
     }
@@ -763,8 +766,11 @@ const updateInventoryItem = async (req, res) => {
           updatePayload.clientId = null;
         } else if (!mongoose.Types.ObjectId.isValid(raw)) {
           return res.status(400).json({ success: false, message: "Invalid client assignment" });
+        } else if (String(item.clientId) === String(raw)) {
+          // Unchanged clientId: skip DB lookup
+          updatePayload.clientId = item.clientId;
         } else {
-          const c = await Client.findById(raw);
+          const c = await getCachedClient(raw);
           if (!c) {
             return res.status(400).json({ success: false, message: "Client not found for assignment" });
           }
@@ -815,7 +821,7 @@ const updateInventoryItem = async (req, res) => {
       item._id,
       { $set: updatePayload },
       { new: true, runValidators: true }
-    );
+    ).lean();
 
     clearInventoryMetaCache();
 
@@ -823,28 +829,26 @@ const updateInventoryItem = async (req, res) => {
       return res.status(404).json({ success: false, message: "Failed to update inventory item" });
     }
 
-    console.log("[Backend Debug] Inventory Item After Update:", {
-      _id: updatedItem._id,
-      name: updatedItem.name,
-      description: updatedItem.description,
-      updatedAt: updatedItem.updatedAt,
-    });
-
-    if (updatePayload.stock !== undefined) {
-      try {
-        const { updateInventory } = require('../services/inventoryService');
-        updateInventory({
-          tenantId: resolvedClientId || updatedItem.clientId || updatedItem.merchantId,
-          productId: updatedItem._id,
-          quantity: updatedItem.stock,
-          source: 'inventory_item_update',
-          referenceId: req.user?._id
-        }).catch((syncErr) => {
+    // Trigger central inventory sync asynchronously only if stock actually changed
+    const stockWasModified = updatePayload.stock !== undefined && Number(updatePayload.stock) !== Number(item.stock);
+    if (stockWasModified) {
+      setImmediate(() => {
+        try {
+          const { updateInventory } = require('../services/inventoryService');
+          updateInventory({
+            tenantId: resolvedClientId || updatedItem.clientId || updatedItem.merchantId,
+            productId: updatedItem._id,
+            quantity: updatedItem.stock,
+            source: 'inventory_item_update',
+            referenceId: req.user?._id,
+            skipLocalProductSave: true
+          }).catch((syncErr) => {
+            console.warn(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
+          });
+        } catch (syncErr) {
           console.warn(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
-        });
-      } catch (syncErr) {
-        console.warn(`[inventoryController] Central inventory sync warning: ${syncErr.message}`);
-      }
+        }
+      });
     }
 
     // Prevent false "new notification" if product was already low and still is low
@@ -853,7 +857,7 @@ const updateInventoryItem = async (req, res) => {
       const threshold = Number(updatedItem.lowStockThreshold || updatedItem.minStock || 10);
       const isLowStock = newStockVal > 0 && newStockVal < threshold;
       if (isLowStock) {
-        await Product.updateOne({ _id: updatedItem._id }, { $set: { updatedAt: oldUpdatedAt } });
+        Product.updateOne({ _id: updatedItem._id }, { $set: { updatedAt: oldUpdatedAt } }).catch(() => {});
       }
     }
 
@@ -1022,10 +1026,17 @@ const createInventoryProduct = async (req, res) => {
     const cleanSku = sku.trim();
     const cleanBarcode = barcode.trim();
 
-    // Fast Parallel Duplicate Check using covered indexed lookups (sku: 1, barcode: 1)
-    const [existingSku, existingBarcode] = await Promise.all([
+    // Client and ownership resolution
+    let targetClientId = req.body.clientId;
+    if (!targetClientId && req.user) {
+      targetClientId = req.user.clientId || req.user.assignedClient || null;
+    }
+
+    // Fast Parallel Duplicate Check and Client lookup in ONE roundtrip
+    const [existingSku, existingBarcode, client] = await Promise.all([
       Product.findOne({ sku: cleanSku }).select('_id').lean(),
       Product.findOne({ barcode: cleanBarcode }).select('_id').lean(),
+      targetClientId ? getCachedClient(targetClientId) : null
     ]);
 
     if (existingSku) {
@@ -1049,23 +1060,7 @@ const createInventoryProduct = async (req, res) => {
       height: Number(dimensions?.height) || 0,
     };
 
-    // Client and ownership resolution
-    let targetClientId = req.body.clientId;
-    if (!targetClientId && req.user) {
-      targetClientId = req.user.clientId || req.user.assignedClient || null;
-    }
-
-    let clientName = "";
-    if (targetClientId) {
-      try {
-        const client = await Client.findById(targetClientId).select("companyName shopName storeName").lean();
-        if (client) {
-          clientName = client.storeName || client.shopName || client.companyName || "";
-        }
-      } catch (clientErr) {
-        // ignore client lookup error
-      }
-    }
+    const clientName = client ? (client.storeName || client.shopName || client.companyName || "") : "";
 
     const processedImage = processBase64ImageAsync(finalImage);
 

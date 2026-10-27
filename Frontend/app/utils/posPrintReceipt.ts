@@ -10,6 +10,7 @@
 
 import {
   thermalHardware,
+  thermalBluetooth,
   buildReceiptEscPos,
   printViaIsolatedIframe,
   PrinterSettings,
@@ -358,29 +359,42 @@ export async function printThermalReceipt(
   order: ThermalReceiptOrder,
   cashierFallback: string = 'Staff',
   options?: PrintReceiptOptions
-): Promise<{ success: boolean; method: 'webusb' | 'iframe'; error?: string }> {
+): Promise<{ success: boolean; method: 'bluetooth' | 'webusb' | 'iframe'; error?: string }> {
   if (!order) {
     console.warn('[printThermalReceipt] No order document provided.');
     return { success: false, method: 'iframe', error: 'No order provided' };
   }
 
-  // 1. Try Direct WebUSB ESC/POS binary printing if connected
+  const rollWidth = options?.rollWidth || '58mm';
+  const settings: PrinterSettings = {
+    ...DEFAULT_PRINTER_SETTINGS,
+    rollWidth: rollWidth,
+    storeName: options?.storeName || DEFAULT_PRINTER_SETTINGS.storeName,
+    storeTagline: options?.storeTagline || DEFAULT_PRINTER_SETTINGS.storeTagline,
+    storeAddress: options?.storeAddress || DEFAULT_PRINTER_SETTINGS.storeAddress,
+    storePhone: options?.storePhone || DEFAULT_PRINTER_SETTINGS.storePhone,
+    storeGstin: options?.storeGstin || DEFAULT_PRINTER_SETTINGS.storeGstin,
+    footerNote: options?.footerNote || DEFAULT_PRINTER_SETTINGS.footerNote,
+  };
+
+  // 1. Try Direct Bluetooth ESC/POS binary printing if connected
+  if (thermalBluetooth.isConnected()) {
+    try {
+      const buffer = buildReceiptEscPos(order, settings, cashierFallback);
+      await thermalBluetooth.sendRaw(buffer);
+      console.log('[printThermalReceipt] Dispatched raw binary ESC/POS receipt via Bluetooth.');
+      return { success: true, method: 'bluetooth' };
+    } catch (btErr: any) {
+      console.warn('[printThermalReceipt] Bluetooth print error, falling back:', btErr);
+    }
+  }
+
+  // 2. Try Direct WebUSB ESC/POS binary printing if connected
   const activeUsbDevice = thermalHardware.getConnectedDevice();
   const preferUsb = options?.preferUsb !== false;
 
   if (activeUsbDevice && preferUsb) {
     try {
-      const settings: PrinterSettings = {
-        ...DEFAULT_PRINTER_SETTINGS,
-        rollWidth: options?.rollWidth || '80mm',
-        storeName: options?.storeName || DEFAULT_PRINTER_SETTINGS.storeName,
-        storeTagline: options?.storeTagline || DEFAULT_PRINTER_SETTINGS.storeTagline,
-        storeAddress: options?.storeAddress || DEFAULT_PRINTER_SETTINGS.storeAddress,
-        storePhone: options?.storePhone || DEFAULT_PRINTER_SETTINGS.storePhone,
-        storeGstin: options?.storeGstin || DEFAULT_PRINTER_SETTINGS.storeGstin,
-        footerNote: options?.footerNote || DEFAULT_PRINTER_SETTINGS.footerNote,
-      };
-
       const buffer = buildReceiptEscPos(order, settings, cashierFallback);
       await thermalHardware.sendRaw(buffer);
       console.log('[printThermalReceipt] Dispatched raw binary ESC/POS receipt via WebUSB.');
@@ -390,9 +404,8 @@ export async function printThermalReceipt(
     }
   }
 
-  // 2. Fallback: Isolated hidden <iframe> print engine
+  // 3. Fallback: Isolated hidden <iframe> print engine
   try {
-    const rollWidth = options?.rollWidth || '80mm';
     const htmlContent = generateThermalReceiptHtml(order, cashierFallback, options);
     const billNo = order.invoiceNumber || order.orderNumber || order.orderId || order._id || 'receipt';
 

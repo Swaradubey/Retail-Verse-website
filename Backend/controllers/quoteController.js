@@ -19,7 +19,7 @@ const getQuotes = async (req, res) => {
   try {
     const isSuperAdmin = req.user && req.user.role === "super_admin";
     const isAdmin = req.user && (req.user.role === "admin" || req.user.role === "client");
-    const clientId = req.user?.clientId || req.clientId || (await resolveClientId(req));
+    const clientId = isSuperAdmin ? null : (req.user?.clientId || req.clientId || (await resolveClientId(req)));
 
     let query = {};
 
@@ -48,10 +48,10 @@ const getQuotes = async (req, res) => {
       ];
     }
 
-    // Dynamic status filtering
+    // Dynamic status filtering - exact indexed matching
     if (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all") {
-      const statusRegex = new RegExp(`^${String(req.query.status).trim()}$`, "i");
-      query.status = statusRegex;
+      const s = String(req.query.status).trim().toLowerCase();
+      query.status = s;
     }
 
     // Pagination parameters
@@ -73,38 +73,47 @@ const getQuotes = async (req, res) => {
       queryChain.skip(skip).limit(limit);
     }
 
-    const [total, quotes, statsResult] = await Promise.all([
-      Quote.countDocuments(query),
+    const hasFilter = Boolean(
+      (req.query.search && String(req.query.search).trim()) ||
+      (req.query.status && String(req.query.status).trim() && String(req.query.status).toLowerCase() !== "all")
+    );
+
+    const [quotes, statsResult, filterCount] = await Promise.all([
       queryChain,
       Quote.aggregate([
         { $match: baseScopeQuery },
         {
+          $project: {
+            status: 1,
+            paymentStatus: 1,
+            amount: { $ifNull: ["$finalPrice", { $ifNull: ["$requestedPrice", 0] }] }
+          }
+        },
+        {
           $group: {
             _id: null,
             total: { $sum: 1 },
-            accepted: { $sum: { $cond: [{ $eq: [{ $toLower: { $ifNull: ["$status", ""] } }, "accepted"] }, 1, 0] } },
+            accepted: { $sum: { $cond: [{ $eq: ["$status", "accepted"] }, 1, 0] } },
             pending: {
               $sum: {
                 $cond: [
-                  { $in: [{ $toLower: { $ifNull: ["$status", ""] } }, ["pending", "countered"]] },
+                  { $in: ["$status", ["pending", "countered"]] },
                   1,
                   0
                 ]
               }
             },
-            paid: { $sum: { $cond: [{ $eq: [{ $toLower: { $ifNull: ["$paymentStatus", ""] } }, "paid"] }, 1, 0] } },
-            totalAmount: {
-              $sum: {
-                $ifNull: ["$finalPrice", { $ifNull: ["$requestedPrice", 0] }]
-              }
-            }
+            paid: { $sum: { $cond: [{ $eq: ["$paymentStatus", "paid"] }, 1, 0] } },
+            totalAmount: { $sum: "$amount" }
           }
         }
-      ])
+      ]),
+      hasFilter ? Quote.countDocuments(query) : null
     ]);
 
-    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
     const stats = statsResult[0] || { total: 0, accepted: 0, pending: 0, paid: 0, totalAmount: 0 };
+    const total = hasFilter ? (filterCount || 0) : (stats.total || quotes.length);
+    const totalPages = isAll ? 1 : Math.ceil(total / limit) || 1;
 
     res.json({
       success: true,

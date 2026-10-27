@@ -9,6 +9,41 @@ const { isClientScopedRole, normalizeRole } = require("../utils/clientScopedRole
 /** Roles counted as storefront customers for activity tracking (not staff/admin). */
 const CUSTOMER_LIKE_ROLES = ["user", "customer"];
 
+// In-memory cache for client trial check to avoid hitting MongoDB on every authenticated request
+const clientTrialCache = new Map();
+const TRIAL_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+async function checkClientTrialStatus(clientId) {
+  if (!clientId) return { isExpired: false };
+  const key = String(clientId);
+  const cached = clientTrialCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.result;
+  }
+
+  try {
+    const client = await Client.findById(clientId).select("isTrialExpired trialEndDate trialStatus").lean();
+    if (!client) {
+      const res = { isExpired: false };
+      clientTrialCache.set(key, { expiresAt: Date.now() + TRIAL_CACHE_TTL_MS, result: res });
+      return res;
+    }
+
+    const now = new Date();
+    const isExpired = client.isTrialExpired || (client.trialEndDate && new Date(client.trialEndDate) < now);
+
+    if (isExpired && !client.isTrialExpired) {
+      Client.updateOne({ _id: client._id }, { $set: { isTrialExpired: true, trialStatus: "expired" } }).catch(() => {});
+    }
+
+    const res = { isExpired };
+    clientTrialCache.set(key, { expiresAt: Date.now() + TRIAL_CACHE_TTL_MS, result: res });
+    return res;
+  } catch (err) {
+    return { isExpired: false };
+  }
+}
+
 const protect = async (req, res, next) => {
   let token;
 
@@ -75,28 +110,14 @@ const protect = async (req, res, next) => {
         }
 
         // Trial System Check for Client-scoped roles
-        if (req.user.role === "client") {
-          if (req.user.clientId) {
-            const client = await Client.findById(req.user.clientId);
-            if (client) {
-              const now = new Date();
-              const isExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < now);
-              
-              if (isExpired) {
-                // Auto-update if not already marked
-                if (!client.isTrialExpired) {
-                  client.isTrialExpired = true;
-                  client.trialStatus = "expired";
-                  await client.save();
-                }
-                
-                return res.status(403).json({
-                  success: false,
-                  message: "Your 14 days trial has expired. Please contact Super Admin.",
-                  trialExpired: true
-                });
-              }
-            }
+        if (req.user.role === "client" && req.user.clientId) {
+          const trial = await checkClientTrialStatus(req.user.clientId);
+          if (trial.isExpired) {
+            return res.status(403).json({
+              success: false,
+              message: "Your 14 days trial has expired. Please contact Super Admin.",
+              trialExpired: true
+            });
           }
         }
       }
@@ -104,22 +125,13 @@ const protect = async (req, res, next) => {
       // Trial System Check for Admin role (Admin is global, not client-scoped,
       // but may still have a linked clientId for trial tracking purposes)
       if (req.user.role === "admin" && req.user.clientId) {
-        const client = await Client.findById(req.user.clientId);
-        if (client) {
-          const now = new Date();
-          const isExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < now);
-          if (isExpired) {
-            if (!client.isTrialExpired) {
-              client.isTrialExpired = true;
-              client.trialStatus = "expired";
-              await client.save();
-            }
-            return res.status(403).json({
-              success: false,
-              message: "Your 14 days trial has expired. Please contact Super Admin.",
-              trialExpired: true
-            });
-          }
+        const trial = await checkClientTrialStatus(req.user.clientId);
+        if (trial.isExpired) {
+          return res.status(403).json({
+            success: false,
+            message: "Your 14 days trial has expired. Please contact Super Admin.",
+            trialExpired: true
+          });
         }
       }
 

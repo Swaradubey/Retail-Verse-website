@@ -251,69 +251,68 @@ export function DashboardInvoices() {
     setIsLoading(true);
     setError(null);
     try {
-      const invParams = new URLSearchParams({
-        page: String(invoicePage),
-        limit: '20',
-        ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-      });
+      if (activeTab === 'invoices') {
+        const invParams = new URLSearchParams({
+          page: String(invoicePage),
+          limit: '20',
+          ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        });
 
-      const quoteParams = new URLSearchParams({
-        page: String(quotePage),
-        limit: '20',
-        ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-      });
-
-      const [invoiceRes, quoteRes] = await Promise.allSettled([
-        ApiService.get(`/invoices?${invParams.toString()}`, { pageName: 'Invoice' }),
-        ApiService.get(`/quotes?${quoteParams.toString()}`, { pageName: 'Quote' })
-      ]);
-
-      if (invoiceRes.status === 'fulfilled' && invoiceRes.value.success) {
-        setInvoices(invoiceRes.value.data || []);
-        if (invoiceRes.value.pagination) {
-          setInvoicePagination(invoiceRes.value.pagination);
-        } else if (invoiceRes.value.total !== undefined) {
-          setInvoicePagination({
-            total: invoiceRes.value.total,
-            page: invoiceRes.value.page || 1,
-            limit: invoiceRes.value.limit || 20,
-            totalPages: invoiceRes.value.totalPages || 1,
-          });
-        }
-        if (invoiceRes.value.stats) {
-          setInvoiceStats(invoiceRes.value.stats);
+        const invoiceRes = await ApiService.get(`/invoices?${invParams.toString()}`, { pageName: 'Invoice' });
+        if (invoiceRes.success) {
+          setInvoices(invoiceRes.data || []);
+          if (invoiceRes.pagination) {
+            setInvoicePagination(invoiceRes.pagination);
+          } else if (invoiceRes.total !== undefined) {
+            setInvoicePagination({
+              total: invoiceRes.total,
+              page: invoiceRes.page || 1,
+              limit: invoiceRes.limit || 20,
+              totalPages: invoiceRes.totalPages || 1,
+            });
+          }
+          if (invoiceRes.stats) {
+            setInvoiceStats(invoiceRes.stats);
+          }
+        } else {
+          setInvoices([]);
         }
       } else {
-        setInvoices([]);
-      }
+        const quoteParams = new URLSearchParams({
+          page: String(quotePage),
+          limit: '20',
+          ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
+          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        });
 
-      if (quoteRes.status === 'fulfilled' && quoteRes.value.success) {
-        setQuotes(quoteRes.value.data || []);
-        if (quoteRes.value.pagination) {
-          setQuotePagination(quoteRes.value.pagination);
-        } else if (quoteRes.value.total !== undefined) {
-          setQuotePagination({
-            total: quoteRes.value.total,
-            page: quoteRes.value.page || 1,
-            limit: quoteRes.value.limit || 20,
-            totalPages: quoteRes.value.totalPages || 1,
-          });
+        const quoteRes = await ApiService.get(`/quotes?${quoteParams.toString()}`, { pageName: 'Quote' });
+        if (quoteRes.success) {
+          setQuotes(quoteRes.data || []);
+          if (quoteRes.pagination) {
+            setQuotePagination(quoteRes.pagination);
+          } else if (quoteRes.total !== undefined) {
+            setQuotePagination({
+              total: quoteRes.total,
+              page: quoteRes.page || 1,
+              limit: quoteRes.limit || 20,
+              totalPages: quoteRes.totalPages || 1,
+            });
+          }
+          if (quoteRes.stats) {
+            setQuoteStats(quoteRes.stats);
+          }
+        } else {
+          setQuotes([]);
         }
-        if (quoteRes.value.stats) {
-          setQuoteStats(quoteRes.value.stats);
-        }
-      } else {
-        setQuotes([]);
       }
     } catch (err: any) {
       setError(err.message || 'Could not load data.');
-      toast.error('Failed to load quotes and invoices.');
+      toast.error('Failed to load data.');
     } finally {
       setIsLoading(false);
     }
-  }, [invoicePage, quotePage, debouncedSearch, statusFilter]);
+  }, [activeTab, invoicePage, quotePage, debouncedSearch, statusFilter]);
 
   useEffect(() => {
     void fetchData();

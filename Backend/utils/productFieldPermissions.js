@@ -108,25 +108,30 @@ function resolveProductUpdatePayload(roleInput, body) {
     if (clean.photo && !clean.image) clean.image = clean.photo;
     if (clean.image && !clean.imageUrl) clean.imageUrl = clean.image;
 
-    const { name, sku, category, price, stock } = clean;
-    if (
-      !name ||
-      String(name).trim() === "" ||
-      !sku ||
-      String(sku).trim() === "" ||
-      !category ||
-      String(category).trim() === "" ||
-      price === undefined ||
-      price === null ||
-      stock === undefined ||
-      stock === null
-    ) {
+    if (Object.keys(clean).length === 0) {
       return {
         ok: false,
         status: 400,
-        message: "Name, SKU, category, price, and stock are required",
+        message: "No fields provided to update",
       };
     }
+
+    if (clean.name !== undefined && String(clean.name).trim() === "") {
+      return { ok: false, status: 400, message: "Product name cannot be empty" };
+    }
+    if (clean.sku !== undefined && String(clean.sku).trim() === "") {
+      return { ok: false, status: 400, message: "SKU cannot be empty" };
+    }
+    if (clean.category !== undefined && String(clean.category).trim() === "") {
+      return { ok: false, status: 400, message: "Category cannot be empty" };
+    }
+    if (clean.price !== undefined && (isNaN(Number(clean.price)) || Number(clean.price) < 0)) {
+      return { ok: false, status: 400, message: "Price must be a valid non-negative number" };
+    }
+    if (clean.stock !== undefined && (isNaN(Number(clean.stock)) || Number(clean.stock) < 0)) {
+      return { ok: false, status: 400, message: "Stock must be a valid non-negative number" };
+    }
+
     return { ok: true, update: clean };
   }
 

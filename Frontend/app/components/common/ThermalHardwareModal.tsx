@@ -3,6 +3,7 @@ import {
   X,
   Printer,
   Usb,
+  Bluetooth,
   Settings,
   CheckCircle2,
   AlertCircle,
@@ -25,6 +26,10 @@ interface ThermalHardwareModalProps {
   usbDevice: USBDevice | null;
   onConnectUsb: () => Promise<void>;
   onDisconnectUsb: () => Promise<void>;
+  isBluetoothSupported?: boolean;
+  bluetoothDevice?: any;
+  onConnectBluetooth?: () => Promise<void>;
+  onDisconnectBluetooth?: () => Promise<void>;
   onTestPrintReceipt: () => Promise<void>;
   onTestPrintLabel: () => Promise<void>;
 }
@@ -38,12 +43,17 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
   usbDevice,
   onConnectUsb,
   onDisconnectUsb,
+  isBluetoothSupported = true,
+  bluetoothDevice,
+  onConnectBluetooth,
+  onDisconnectBluetooth,
   onTestPrintReceipt,
   onTestPrintLabel,
 }) => {
   const [activeTab, setActiveTab] = useState<'hardware' | 'store'>('hardware');
   const [formSettings, setFormSettings] = useState<PrinterSettings>(settings);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnectingBt, setIsConnectingBt] = useState(false);
   const [isPrintingTest, setIsPrintingTest] = useState(false);
 
   // Sync form state when settings prop updates
@@ -65,6 +75,16 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
       await onConnectUsb();
     } finally {
       setIsConnecting(false);
+    }
+  };
+
+  const handleConnectBtClick = async () => {
+    if (!onConnectBluetooth) return;
+    setIsConnectingBt(true);
+    try {
+      await onConnectBluetooth();
+    } finally {
+      setIsConnectingBt(false);
     }
   };
 
@@ -140,6 +160,86 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
           {/* TAB 1: HARDWARE & CONNECTION */}
           {activeTab === 'hardware' && (
             <div className="space-y-6">
+              {/* Web Bluetooth Wireless Card */}
+              <div className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-900/60 bg-gradient-to-br from-indigo-50/70 to-violet-50/50 dark:from-indigo-950/30 dark:to-violet-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                        bluetoothDevice
+                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600'
+                          : 'bg-indigo-600 text-white shadow-sm'
+                      }`}
+                    >
+                      <Bluetooth className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
+                        Bluetooth Wireless Printer
+                        <span className="text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/80 dark:text-indigo-300 px-1.5 py-0.2 rounded-full uppercase">
+                          Recommended
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        1-Click wireless ESC/POS print for BillPlus, POS-58 & portable thermal printers
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {bluetoothDevice ? (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Connected ({bluetoothDevice.name || 'Bluetooth Printer'})
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-100/70 dark:bg-indigo-950/60 px-2 py-1 rounded-lg">
+                        Wireless Ready
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {isBluetoothSupported ? (
+                  <div className="flex items-center justify-between pt-1 border-t border-indigo-100 dark:border-indigo-900/40">
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {bluetoothDevice
+                        ? 'Connected wirelessly! Bill prints will send directly without opening any dialog.'
+                        : 'Connect BillPlus / portable thermal printer directly with 1 click.'}
+                    </p>
+                    {bluetoothDevice ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onDisconnectBluetooth}
+                        className="rounded-xl text-xs text-rose-600 hover:text-rose-700 border-rose-200 dark:border-rose-900"
+                      >
+                        Disconnect Bluetooth
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleConnectBtClick}
+                        disabled={isConnectingBt}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold px-4 gap-1.5 shadow-sm"
+                      >
+                        <Bluetooth className="w-3.5 h-3.5" />
+                        {isConnectingBt ? 'Searching...' : 'Pair Bluetooth Printer'}
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      Web Bluetooth is available on Chrome, Edge, and Android Chrome. Please open in Chrome.
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* WebUSB Hardware Status Card */}
               <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 space-y-3">
                 <div className="flex items-center justify-between">
@@ -471,10 +571,14 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
         <div className="px-6 py-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/80 flex items-center justify-between">
           <div className="text-xs text-zinc-500 flex items-center gap-2">
             <span className="font-medium">Active Engine:</span>
-            {usbDevice ? (
+            {bluetoothDevice ? (
+              <span className="text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1">
+                <Bluetooth className="w-3.5 h-3.5" /> Direct Bluetooth Wireless Binary
+              </span>
+            ) : usbDevice ? (
               <span className="text-emerald-600 font-bold">Direct WebUSB Binary</span>
             ) : (
-              <span className="text-indigo-600 font-bold">Zero-Margin Thermal iFrame</span>
+              <span className="text-zinc-600 dark:text-zinc-400 font-bold">Zero-Margin Thermal iFrame</span>
             )}
           </div>
           <Button

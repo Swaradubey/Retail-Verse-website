@@ -84,13 +84,16 @@ const quoteSchema = new mongoose.Schema(
   }
 );
 
-// Indexes for high-performance sorting and tenant/user/status filtering
-quoteSchema.index({ createdAt: -1 });
+// High-performance covered compound indexes for tenant, status, user, search, and aggregation
 quoteSchema.index({ clientId: 1, createdAt: -1 });
+quoteSchema.index({ clientId: 1, status: 1, createdAt: -1 });
+quoteSchema.index({ clientId: 1, paymentStatus: 1, createdAt: -1 });
 quoteSchema.index({ userId: 1, createdAt: -1 });
 quoteSchema.index({ status: 1, createdAt: -1 });
 quoteSchema.index({ paymentStatus: 1, createdAt: -1 });
-quoteSchema.index({ quoteNumber: 1 });
+quoteSchema.index({ customerEmail: 1, createdAt: -1 });
+quoteSchema.index({ customerName: 1, createdAt: -1 });
+quoteSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Quote", quoteSchema);
 

@@ -68,11 +68,20 @@ const connectDB = async () => {
     console.log("[MongoDB] Connected successfully");
     await ensurePrivilegedUsers();
 
-    // Ensure Product compound indexes exist in MongoDB Atlas (production safe)
+    // Ensure high-performance compound indexes exist in MongoDB Atlas (production safe)
     try {
       const Product = require("../models/Product");
-      Product.createIndexes().catch((idxErr) => {
-        console.warn("[MongoDB] Product index build warning:", idxErr.message);
+      const Invoice = require("../models/Invoice");
+      const Quote = require("../models/Quote");
+      const User = require("../models/User");
+
+      Promise.all([
+        Product.createIndexes(),
+        Invoice.createIndexes(),
+        Quote.createIndexes(),
+        User.createIndexes(),
+      ]).catch((idxErr) => {
+        console.warn("[MongoDB] Index build warning:", idxErr.message);
       });
     } catch (e) {}
 

@@ -15,7 +15,8 @@ async function updateInventory({
   source = 'manual_adjustment',
   referenceId = null,
   updatedAt = null,
-  idempotencyKey = null
+  idempotencyKey = null,
+  skipLocalProductSave = false
 }) {
   if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error('Valid productId is required for inventory update.');
@@ -38,7 +39,7 @@ async function updateInventory({
   const updateTimestamp = updatedAt ? new Date(updatedAt) : new Date();
 
   // Out-of-order / Stale job check: if product was updated after this event timestamp, skip
-  if (product.updatedAt && product.updatedAt.getTime() > updateTimestamp.getTime()) {
+  if (!skipLocalProductSave && product.updatedAt && product.updatedAt.getTime() > updateTimestamp.getTime()) {
     console.warn(`[INVENTORY_UPDATE][STALE_SKIPPED] Product ${productId} has newer updatedAt (${product.updatedAt.toISOString()}) than event timestamp (${updateTimestamp.toISOString()}). Update skipped.`);
     return {
       success: true,
@@ -49,21 +50,23 @@ async function updateInventory({
     };
   }
 
-  // 2. Persist local update in MongoDB (Product & Inventory collections)
-  product.stock = numericQuantity;
-  product.stockLevel = numericQuantity;
-  product.quantity = numericQuantity;
-  product.updatedAt = updateTimestamp;
+  // 2. Persist local update in MongoDB if not already saved
+  if (!skipLocalProductSave) {
+    product.stock = numericQuantity;
+    product.stockLevel = numericQuantity;
+    product.quantity = numericQuantity;
+    product.updatedAt = updateTimestamp;
 
-  if (variantId && product.variants && Array.isArray(product.variants)) {
-    const variant = product.variants.find(v => String(v._id) === String(variantId));
-    if (variant) {
-      variant.stock = numericQuantity;
-      if (variant.quantity !== undefined) variant.quantity = numericQuantity;
+    if (variantId && product.variants && Array.isArray(product.variants)) {
+      const variant = product.variants.find(v => String(v._id) === String(variantId));
+      if (variant) {
+        variant.stock = numericQuantity;
+        if (variant.quantity !== undefined) variant.quantity = numericQuantity;
+      }
     }
-  }
 
-  await product.save({ validateBeforeSave: true });
+    await product.save({ validateBeforeSave: true });
+  }
 
   // Sync to Inventory collection if matching document exists
   try {

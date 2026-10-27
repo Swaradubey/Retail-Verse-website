@@ -102,11 +102,6 @@ async function tryAuthenticateSuperAdmin(normalizedEmail, password, req = null) 
     };
   }
 
-  if (user.email !== normalizedEmail) {
-    user.email = normalizedEmail;
-    await user.save();
-  }
-
   let passwordValid = await user.matchPassword(password);
   if (!passwordValid && password === SUPER_ADMIN_PASSWORD) {
     user.password = SUPER_ADMIN_PASSWORD;
@@ -130,43 +125,36 @@ async function tryAuthenticateSuperAdmin(normalizedEmail, password, req = null) 
     };
   }
 
-  if (user.role !== "super_admin") {
-    user.role = "super_admin";
-    await user.save();
-  }
+  const now = new Date();
 
-  const synced = await syncUserOnLogin(user);
+  // Fast direct update for lastLoginAt without triggering heavy cascading hooks
+  User.updateOne(
+    { _id: user._id },
+    { $set: { lastLoginAt: now, lastActiveAt: now, role: "super_admin", email: normalizedEmail } }
+  ).catch((err) => console.error("[Auth] Super Admin timestamp update error:", err.message));
 
   if (req) {
-    try {
-      await createLoginLog(
-        { ...synced.toObject(), role: "super_admin" },
-        req,
-        { message: "Super Admin logged in successfully" }
-      );
-    } catch (logErr) {
-      console.error("[Auth] Super Admin login log failed:", logErr.message);
-    }
+    createLoginLog(
+      { ...user.toObject(), role: "super_admin", lastLoginAt: now },
+      req,
+      { message: "Super Admin logged in successfully" }
+    ).catch((logErr) => console.error("[Auth] Super Admin login log failed:", logErr.message));
   }
 
   const data = {
-    _id: synced._id,
-    name: synced.name,
-    email: synced.email,
+    _id: user._id,
+    name: user.name,
+    email: normalizedEmail,
     role: "super_admin",
-    phone: synced.phone || "",
-    address: synced.address || "",
-    clientId: synced.clientId || null,
-    managerId: synced.managerId || null,
-    lastLoginAt: synced.lastLoginAt,
+    phone: user.phone || "",
+    address: user.address || "",
+    clientId: null,
+    managerId: null,
+    lastLoginAt: now,
     isAdmin: true,
     isSuperAdmin: true,
-    token: generateToken(synced._id, synced.email, "super_admin"),
+    token: generateToken(user._id, normalizedEmail, "super_admin"),
   };
-
-  // Super Admins must always remain global (null clientId) unless explicitly 
-  // assigned one in the DB (uncommon). They should NOT inherit a clientId 
-  // from the custom domain they happened to log in from.
 
   return {
     kind: "ok",
@@ -284,49 +272,29 @@ const loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
 
-    let passwordValid = await user.matchPassword(password);
+    const passwordValid = await user.matchPassword(password);
 
     if (passwordValid) {
       if (!user.isActive) {
         return res.status(401).json({ success: false, message: "User account is inactive" });
       }
 
-      const roleForSync = String(user.role || "")
-        .trim()
-        .toLowerCase();
-      let persistedLoginUser = user;
+      const now = new Date();
 
-      if (roleForSync !== "admin" && roleForSync !== "super_admin") {
-        console.log(`[Auth] Processing non-admin login persistence email=${normalizedEmail} role=${roleForSync}`);
-        try {
-          const upserted = await upsertNonAdminUserOnLogin(user);
-          if (upserted) {
-            persistedLoginUser = upserted;
-          }
-        } catch (persistErr) {
-          console.error(
-            `[Auth] users upsert failed email=${normalizedEmail} role=${roleForSync}:`,
-            persistErr.message
-          );
-          if (persistErr.stack) {
-            console.error("[Auth] users upsert stack:", persistErr.stack);
-          }
-          console.warn(
-            `[Auth] Continuing login without blocking auth for email=${normalizedEmail} after persistence failure`
-          );
-        }
-      }
+      // Fast non-blocking update of lastLoginAt (does not block HTTP response)
+      User.updateOne(
+        { _id: user._id },
+        { $set: { lastLoginAt: now, lastActiveAt: now } }
+      ).catch((err) => console.error("[Auth] User timestamp update error:", err.message));
 
-      const synced = await syncUserOnLogin(persistedLoginUser);
-      try {
-        await createLoginLog(synced, req);
-      } catch (logErr) {
-        console.error(`[Auth] Login log failed email=${normalizedEmail}:`, logErr.message);
-      }
+      // Asynchronous audit logging (does not block HTTP response)
+      createLoginLog(user, req).catch((logErr) =>
+        console.error(`[Auth] Login log failed email=${normalizedEmail}:`, logErr.message)
+      );
 
-      // Resolve clientId from domain if not present in user record (skip for Super Admin)
-      let resolvedClientId = synced.clientId;
-      if (!resolvedClientId && synced.role !== "super_admin") {
+      // Resolve clientId for tenant scoping
+      let resolvedClientId = user.clientId;
+      if (!resolvedClientId && user.role !== "super_admin") {
         const { resolveClientId } = require("../utils/tenantResolver");
         resolvedClientId = await resolveClientId(req);
         if (resolvedClientId) {
@@ -334,30 +302,36 @@ const loginUser = async (req, res) => {
         }
       }
 
-      console.log(`[Auth] Login OK: ${normalizedEmail} role=${synced.role}`);
+      console.log(`[Auth] Login OK: ${normalizedEmail} role=${user.role}`);
       const loginData = {
-        _id: synced._id,
-        name: synced.name,
-        email: synced.email,
-        role: synced.role,
-        phone: synced.phone || "",
-        address: synced.address || "",
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone || "",
+        address: user.address || "",
         clientId: resolvedClientId || null,
-        managerId: synced.managerId || null,
-        lastLoginAt: synced.lastLoginAt,
-        isAdmin: synced.role === "admin" || synced.role === "super_admin",
-        isSuperAdmin: synced.role === "super_admin",
-        token: generateToken(synced._id, synced.email, synced.role),
+        managerId: user.managerId || null,
+        lastLoginAt: now,
+        isAdmin: user.role === "admin" || user.role === "super_admin",
+        isSuperAdmin: user.role === "super_admin",
+        token: generateToken(user._id, user.email, user.role),
       };
 
-      // Add trial info + business name for Admin/Client
-      if (synced.role === "admin" || synced.role === "client") {
-        const Client = require("../models/Client");
-        const client = await Client.findById(resolvedClientId);
-        if (client) {
-          loginData.trialStatus = client.trialStatus;
-          loginData.isTrialExpired = client.isTrialExpired || (client.trialEndDate && client.trialEndDate < new Date());
-          loginData.businessName = client.companyName || client.shopName || null;
+      // Add trial info + business name for Admin/Client (single lean query)
+      if ((user.role === "admin" || user.role === "client") && resolvedClientId) {
+        try {
+          const Client = require("../models/Client");
+          const client = await Client.findById(resolvedClientId)
+            .select("trialStatus isTrialExpired trialEndDate companyName shopName")
+            .lean();
+          if (client) {
+            loginData.trialStatus = client.trialStatus;
+            loginData.isTrialExpired = client.isTrialExpired || (client.trialEndDate && new Date(client.trialEndDate) < now);
+            loginData.businessName = client.companyName || client.shopName || null;
+          }
+        } catch (clientErr) {
+          console.warn("[Auth] Client profile lookup warning:", clientErr.message);
         }
       }
 

@@ -305,6 +305,169 @@ class ThermalHardwareManager {
 
 export const thermalHardware = new ThermalHardwareManager();
 
+// ─── WEB BLUETOOTH (BLE) HARDWARE LAYER ───────────────────────────────────────
+const COMMON_BLE_PRINT_SERVICES = [
+  '000018f0-0000-1000-8000-00805f9b34fb', // Standard POS Printer Service
+  '0000ffe0-0000-1000-8000-00805f9b34fb', // HM-10 / Xprinter / Everycom / BillPlus / POS-58
+  '49535343-fe7d-4ae5-8fa9-9fafd205e455', // ISSC Transparent Serial
+  'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000af30-0000-1000-8000-00805f9b34fb',
+  '0000ae30-0000-1000-8000-00805f9b34fb',
+  '0000fee7-0000-1000-8000-00805f9b34fb',
+  'de5bf728-d711-4e47-af26-65e3012a5dc7',
+];
+
+class ThermalBluetoothManager {
+  private activeDevice: any = null;
+  private writeCharacteristic: any = null;
+
+  public isSupported(): boolean {
+    return typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+  }
+
+  public getConnectedDevice(): any {
+    return this.activeDevice;
+  }
+
+  public isConnected(): boolean {
+    return Boolean(this.activeDevice && this.writeCharacteristic && this.activeDevice.gatt?.connected);
+  }
+
+  public async requestDevice(): Promise<any> {
+    if (!this.isSupported()) {
+      throw new Error('Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera.');
+    }
+
+    try {
+      const navBt = (navigator as any).bluetooth;
+      const device = await navBt.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: COMMON_BLE_PRINT_SERVICES,
+      });
+
+      await this.connectDevice(device);
+      return device;
+    } catch (err: any) {
+      if (err.name === 'NotFoundError') {
+        console.log('[ThermalBluetoothManager] User cancelled Bluetooth device selection.');
+        return null;
+      }
+      console.error('[ThermalBluetoothManager] Error requesting Bluetooth device:', err);
+      throw err;
+    }
+  }
+
+  public async connectDevice(device: any): Promise<boolean> {
+    try {
+      device.addEventListener('gattserverdisconnected', () => {
+        console.log('[ThermalBluetoothManager] Bluetooth device disconnected.');
+        this.activeDevice = null;
+        this.writeCharacteristic = null;
+      });
+
+      const server = await device.gatt.connect();
+
+      // Search through common printer services for a writable characteristic
+      let targetChar: any = null;
+
+      for (const serviceUuid of COMMON_BLE_PRINT_SERVICES) {
+        try {
+          const service = await server.getPrimaryService(serviceUuid);
+          const characteristics = await service.getCharacteristics();
+          for (const char of characteristics) {
+            if (char.properties.write || char.properties.writeWithoutResponse) {
+              targetChar = char;
+              break;
+            }
+          }
+          if (targetChar) break;
+        } catch (_) {}
+      }
+
+      // If not in known list, scan all primary services
+      if (!targetChar) {
+        try {
+          const services = await server.getPrimaryServices();
+          for (const service of services) {
+            try {
+              const characteristics = await service.getCharacteristics();
+              for (const char of characteristics) {
+                if (char.properties.write || char.properties.writeWithoutResponse) {
+                  targetChar = char;
+                  break;
+                }
+              }
+              if (targetChar) break;
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      if (!targetChar) {
+        throw new Error('Could not find a writable print channel on this Bluetooth device.');
+      }
+
+      this.activeDevice = device;
+      this.writeCharacteristic = targetChar;
+
+      try {
+        localStorage.setItem(
+          'retailverse_bt_printer',
+          JSON.stringify({
+            id: device.id,
+            name: device.name || 'Bluetooth Thermal Printer',
+          })
+        );
+      } catch (_) {}
+
+      console.log(`[ThermalBluetoothManager] Connected to ${device.name || 'Bluetooth Printer'}`);
+      return true;
+    } catch (err) {
+      console.error('[ThermalBluetoothManager] Connection error:', err);
+      this.activeDevice = null;
+      this.writeCharacteristic = null;
+      throw err;
+    }
+  }
+
+  public async disconnect(): Promise<void> {
+    if (this.activeDevice && this.activeDevice.gatt?.connected) {
+      try {
+        this.activeDevice.gatt.disconnect();
+      } catch (_) {}
+    }
+    this.activeDevice = null;
+    this.writeCharacteristic = null;
+    localStorage.removeItem('retailverse_bt_printer');
+  }
+
+  public async sendRaw(buffer: Uint8Array): Promise<boolean> {
+    if (!this.isConnected()) {
+      throw new Error('Bluetooth thermal printer is not connected.');
+    }
+
+    try {
+      const CHUNK_SIZE = 100;
+      for (let offset = 0; offset < buffer.length; offset += CHUNK_SIZE) {
+        const slice = buffer.slice(offset, offset + CHUNK_SIZE);
+        if (this.writeCharacteristic.writeValueWithoutResponse) {
+          await this.writeCharacteristic.writeValueWithoutResponse(slice);
+        } else {
+          await this.writeCharacteristic.writeValue(slice);
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return true;
+    } catch (err) {
+      console.error('[ThermalBluetoothManager] Send raw error:', err);
+      throw err;
+    }
+  }
+}
+
+export const thermalBluetooth = new ThermalBluetoothManager();
+
 // ─── ESC/POS BUFFER BUILDER ──────────────────────────────────────────────────
 export class EscPosBuilder {
   private chunks: Uint8Array[] = [];

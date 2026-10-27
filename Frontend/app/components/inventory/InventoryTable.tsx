@@ -336,14 +336,6 @@ function MobileCard({
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
               )}
-              {showStockAdjust && (
-                <button
-                  onClick={() => onUpdateStock(item)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
-                >
-                  <PackageOpen className="h-3.5 w-3.5" />
-                </button>
-              )}
               {onPrintBarcode && (
                 <button
                   type="button"
@@ -631,14 +623,6 @@ export function InventoryTable({
                             label="Edit product"
                             color="text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20 dark:hover:text-violet-400"
                             onClick={() => onEdit(item)}
-                          />
-                        )}
-                        {showStockAdjust && (
-                          <ActionButton
-                            icon={PackageOpen}
-                            label="Update stock"
-                            color="text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
-                            onClick={() => onUpdateStock(item)}
                           />
                         )}
                         {onPrintBarcode && (

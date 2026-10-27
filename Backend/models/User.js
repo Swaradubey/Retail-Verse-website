@@ -180,6 +180,10 @@ const userSchema = new mongoose.Schema(
   }
 );
 
+userSchema.index({ role: 1 });
+userSchema.index({ clientId: 1 });
+userSchema.index({ isActive: 1 });
+
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

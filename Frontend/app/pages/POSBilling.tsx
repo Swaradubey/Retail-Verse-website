@@ -41,6 +41,7 @@ import {
   ScanBarcode,
   Settings2,
   Usb,
+  Bluetooth,
 } from 'lucide-react';
 import api from '../api/apiService';
 import { useAuth } from '../context/AuthContext';
@@ -226,6 +227,8 @@ export function POSBilling() {
     printReceipt: thermalPrintReceipt,
     openHardwareModal,
     usbDevice,
+    bluetoothDevice,
+    connectBluetooth,
     settings: printerSettings,
     updateSettings: updatePrinterSettings,
   } = useThermalPrinter();
@@ -2181,16 +2184,24 @@ export function POSBilling() {
               type="button"
               onClick={openHardwareModal}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border shadow-2xs transition active:scale-95 ${
-                usbDevice
+                bluetoothDevice
+                  ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                  : usbDevice
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                   : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:border-violet-500'
               }`}
-              title="Configure Thermal Printer & WebUSB Settings"
+              title="Configure Thermal Printer & Bluetooth/USB Settings"
             >
-              <Printer className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-              <span className="hidden sm:inline">Thermal ({printerSettings.rollWidth})</span>
-              {usbDevice && (
-                <span className="w-2 h-2 rounded-full bg-emerald-500" title="USB Printer Active" />
+              {bluetoothDevice ? (
+                <Bluetooth className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              ) : (
+                <Printer className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+              )}
+              <span className="hidden sm:inline">
+                {bluetoothDevice ? bluetoothDevice.name || 'BT Printer' : `Thermal (${printerSettings.rollWidth})`}
+              </span>
+              {(bluetoothDevice || usbDevice) && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500" title="Printer Active" />
               )}
             </button>
 
@@ -3599,8 +3610,21 @@ export function POSBilling() {
               <span className="flex items-center gap-1.5">
                 <Printer className="w-3.5 h-3.5 text-violet-600" />
                 Roll: <strong className="text-zinc-800 dark:text-zinc-200">{printerSettings.rollWidth}</strong>
-                {usbDevice && (
+                {bluetoothDevice ? (
+                  <span className="text-[10px] text-indigo-600 font-bold bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded flex items-center gap-1">
+                    <Bluetooth className="w-3 h-3" /> {bluetoothDevice.name || 'Bluetooth'}
+                  </span>
+                ) : usbDevice ? (
                   <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 rounded">USB Direct</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={connectBluetooth}
+                    className="text-[10px] text-indigo-600 hover:text-indigo-700 font-bold bg-indigo-100/70 dark:bg-indigo-950/60 hover:bg-indigo-200/70 px-2 py-0.5 rounded-lg flex items-center gap-1 transition cursor-pointer shadow-2xs"
+                    title="1-Click pair Bluetooth thermal printer"
+                  >
+                    <Bluetooth className="w-3 h-3" /> Pair Bluetooth
+                  </button>
                 )}
               </span>
               <div className="flex items-center gap-2">

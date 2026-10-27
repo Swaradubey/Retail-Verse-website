@@ -221,14 +221,16 @@ export function Inventory() {
   const [employeesLoading, setEmployeesLoading] = useState(false);
 
   // 3. Background Stale-While-Revalidate Sync with Dynamic Pagination (50 items / request)
-  const fetchAllProducts = useCallback(async (isManual = false, pageToFetch = currentPage) => {
+  const fetchAllProducts = useCallback(async (isManual = false, pageToFetch = currentPage, isSilent = false) => {
     const cachedProds = getCachedInventoryProducts(user?.clientId);
     const hasAnyProducts = products.length > 0 || cachedProds.length > 0;
-    // Show full skeleton ONLY if zero products exist anywhere in state or cache
-    if (!isManual && !hasAnyProducts) {
-      setIsLoading(true);
-    } else {
-      setIsRefreshing(true);
+    // Show full skeleton ONLY if zero products exist anywhere in state or cache, and not silent
+    if (!isSilent) {
+      if (!isManual && !hasAnyProducts) {
+        setIsLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
     }
 
     try {
@@ -274,10 +276,14 @@ export function Inventory() {
       if (products.length === 0) {
         setProducts([]);
       }
-      toast.error(error.message || 'Failed to fetch dynamic products.');
+      if (!isSilent) {
+        toast.error(error.message || 'Failed to fetch dynamic products.');
+      }
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (!isSilent) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [user?.clientId, currentPage, debouncedSearch, category, stockStatus, minPrice, maxPrice, sortConfig]);
 
@@ -507,7 +513,7 @@ export function Inventory() {
           });
           setIsProductModalOpen(false);
           toast.success('Product created & synced to POS!', { id: saveToastId });
-          void fetchAllProducts();
+          void fetchAllProducts(false, currentPage, true);
         } else {
           toast.dismiss(saveToastId);
           throw new Error(response.message);
@@ -535,7 +541,7 @@ export function Inventory() {
           });
           setIsProductModalOpen(false);
           toast.success(response.message || 'Product updated successfully');
-          void fetchAllProducts();
+          void fetchAllProducts(false, currentPage, true);
         } else {
           throw new Error(response.message);
         }
@@ -808,7 +814,7 @@ export function Inventory() {
               return next;
             });
           }
-          void fetchAllProducts(true);
+          void fetchAllProducts(true, currentPage, true);
         }}
       />
 
