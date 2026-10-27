@@ -43,6 +43,7 @@ import {
   LABEL_SIZE_OPTIONS,
   generateDynamicPrintCss,
 } from './PrintLabelSizeModal';
+import { printViaIsolatedIframe } from '../../lib/thermalPrinter';
 import { Product } from '../../api/products';
 import type { ClientRow } from '../../api/clients';
 import type { InventoryEditMode } from '../../utils/inventoryPermissions';
@@ -377,7 +378,7 @@ export function ProductModal({
     setIsLabelSizeModalOpen(true);
   };
 
-  // Immediate print execution
+  // Immediate print execution via isolated iframe (eliminates browser A4 PDF dialog)
   const executePrint = (targetSize: LabelSizeId = selectedLabelSize) => {
     const exactBarcode = barcode.trim();
     if (!exactBarcode) {
@@ -386,7 +387,7 @@ export function ProductModal({
       return;
     }
 
-    // Ensure all requested barcode label SVGs are rendered before calling window.print()
+    // Ensure all requested barcode label SVGs are rendered before printing
     const rendered = renderPrintBarcode(exactBarcode, targetSize);
     if (!rendered) {
       setTimeout(() => {
@@ -394,11 +395,28 @@ export function ProductModal({
       }, 30);
     }
 
-    requestAnimationFrame(() => {
-      setTimeout(() => {
+    setTimeout(() => {
+      const printArea = document.getElementById('print-label-area');
+      if (printArea) {
+        const dimensionMap: Record<LabelSizeId, string> = {
+          '58mm': '50mm 30mm',
+          '80mm': '72mm 40mm',
+          '40x30': '40mm 30mm',
+          '100x150': '100mm 150mm',
+          'a4': 'A4 portrait',
+        };
+        const exactDim = dimensionMap[targetSize] || '50mm 30mm';
+        printViaIsolatedIframe({
+          html: `<div style="display:block !important;">${printArea.innerHTML}</div>`,
+          title: `Barcode Labels - ${exactBarcode}`,
+          exactDimensions: exactDim,
+        }).catch(() => {
+          window.print();
+        });
+      } else {
         window.print();
-      }, 120);
-    });
+      }
+    }, 120);
   };
 
   // Regenerate SKU on demand

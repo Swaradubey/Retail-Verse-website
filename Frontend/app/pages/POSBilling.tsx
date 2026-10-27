@@ -39,6 +39,8 @@ import {
   ChevronUp,
   Camera,
   ScanBarcode,
+  Settings2,
+  Usb,
 } from 'lucide-react';
 import api from '../api/apiService';
 import { useAuth } from '../context/AuthContext';
@@ -74,6 +76,7 @@ import {
 } from '../lib/posProductCache';
 import { subscribeToProductSync } from '../utils/posProductSync';
 import { printThermalReceipt } from '../utils/posPrintReceipt';
+import { useThermalPrinter } from '../hooks/useThermalPrinter';
 
 // Audio feedback helper for POS barcode scan beep
 function playScanSound(type: 'success' | 'error' = 'success') {
@@ -219,6 +222,13 @@ export interface POSCartItem {
 
 export function POSBilling() {
   const { user } = useAuth();
+  const {
+    printReceipt: thermalPrintReceipt,
+    openHardwareModal,
+    usbDevice,
+    settings: printerSettings,
+    updateSettings: updatePrinterSettings,
+  } = useThermalPrinter();
 
   // Resolve authenticated client ID with strict priority
   const currentClientId = useMemo(() => {
@@ -2124,15 +2134,14 @@ export function POSBilling() {
     }
   };
 
-  // Print Invoice Thermal Receipt via hidden iframe (direct / silent 80mm dark thermal formatting)
-  const handlePrintReceipt = (order: any) => {
+  // Print Invoice Thermal Receipt via WebUSB or isolated hidden iframe
+  const handlePrintReceipt = async (order: any) => {
     if (!order) {
       toast.error('No order selected to print');
       return;
     }
     try {
-      printThermalReceipt(order, user?.name || 'Staff');
-      toast.success('Thermal receipt sent to printer');
+      await thermalPrintReceipt(order, user?.name || 'Staff');
     } catch (err: any) {
       console.error('Print receipt error:', err);
       toast.error('Failed to trigger receipt printing');
@@ -2165,8 +2174,26 @@ export function POSBilling() {
             </div>
           </div>
 
-          {/* Header Controls: Held Orders trigger, Network Ambient Indicator & Sync Button */}
+          {/* Header Controls: Thermal Hardware, Held Orders, Network Indicator & Sync Button */}
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Thermal Printer Hardware Settings Button */}
+            <button
+              type="button"
+              onClick={openHardwareModal}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border shadow-2xs transition active:scale-95 ${
+                usbDevice
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 border-zinc-200 dark:border-zinc-700 hover:border-violet-500'
+              }`}
+              title="Configure Thermal Printer & WebUSB Settings"
+            >
+              <Printer className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+              <span className="hidden sm:inline">Thermal ({printerSettings.rollWidth})</span>
+              {usbDevice && (
+                <span className="w-2 h-2 rounded-full bg-emerald-500" title="USB Printer Active" />
+              )}
+            </button>
+
             {/* Held Orders / Recall Trigger Button with dynamic badge */}
             <button
               type="button"
@@ -3566,6 +3593,39 @@ export function POSBilling() {
                 </div>
               </div>
             )}
+
+            {/* Thermal Roll Profile Selector / Hardware Trigger */}
+            <div className="flex items-center justify-between text-[11px] text-zinc-500 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl px-3 py-1.5 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="flex items-center gap-1.5">
+                <Printer className="w-3.5 h-3.5 text-violet-600" />
+                Roll: <strong className="text-zinc-800 dark:text-zinc-200">{printerSettings.rollWidth}</strong>
+                {usbDevice && (
+                  <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 rounded">USB Direct</span>
+                )}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    updatePrinterSettings({
+                      rollWidth: printerSettings.rollWidth === '80mm' ? '58mm' : '80mm',
+                    })
+                  }
+                  className="text-violet-600 dark:text-violet-400 hover:underline font-semibold"
+                >
+                  Switch to {printerSettings.rollWidth === '80mm' ? '58mm' : '80mm'}
+                </button>
+                <span>·</span>
+                <button
+                  type="button"
+                  onClick={openHardwareModal}
+                  className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 p-0.5"
+                  title="Configure printer hardware"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
             <div className="flex gap-2 pt-1">
               <Button

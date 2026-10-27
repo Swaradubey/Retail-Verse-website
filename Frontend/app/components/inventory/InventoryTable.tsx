@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Package,
   AlertTriangle,
+  Barcode,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
@@ -37,6 +38,7 @@ interface InventoryTableProps {
   onEdit: (item: InventoryItem) => void;
   onUpdateStock: (item: InventoryItem) => void;
   onDelete: (item: InventoryItem) => void;
+  onPrintBarcode?: (item: InventoryItem) => void;
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
@@ -220,6 +222,7 @@ function MobileCard({
   onEdit,
   onUpdateStock,
   onDelete,
+  onPrintBarcode,
   showProductEdit,
   showStockAdjust,
   showProductDelete,
@@ -230,6 +233,7 @@ function MobileCard({
   onEdit: (item: InventoryItem) => void;
   onUpdateStock: (item: InventoryItem) => void;
   onDelete: (item: InventoryItem) => void;
+  onPrintBarcode?: (item: InventoryItem) => void;
   showProductEdit: boolean;
   showStockAdjust: boolean;
   showProductDelete: boolean;
@@ -340,6 +344,16 @@ function MobileCard({
                   <PackageOpen className="h-3.5 w-3.5" />
                 </button>
               )}
+              {onPrintBarcode && (
+                <button
+                  type="button"
+                  onClick={() => onPrintBarcode(item)}
+                  title="Print barcode labels"
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                >
+                  <Barcode className="h-3.5 w-3.5" />
+                </button>
+              )}
               {showProductDelete && (
                 <button
                   onClick={() => onDelete(item)}
@@ -383,6 +397,7 @@ export function InventoryTable({
   onEdit,
   onUpdateStock,
   onDelete,
+  onPrintBarcode,
   currentPage,
   totalPages,
   onPageChange,
@@ -626,6 +641,14 @@ export function InventoryTable({
                             onClick={() => onUpdateStock(item)}
                           />
                         )}
+                        {onPrintBarcode && (
+                          <ActionButton
+                            icon={Barcode}
+                            label="Print barcode labels"
+                            color="text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 dark:hover:text-indigo-400"
+                            onClick={() => onPrintBarcode(item)}
+                          />
+                        )}
                         {showProductDelete && (
                           <ActionButton
                             icon={Trash2}
@@ -655,6 +678,7 @@ export function InventoryTable({
             onEdit={onEdit}
             onUpdateStock={onUpdateStock}
             onDelete={onDelete}
+            onPrintBarcode={onPrintBarcode}
             showProductEdit={showProductEdit}
             showStockAdjust={showStockAdjust}
             showProductDelete={showProductDelete}

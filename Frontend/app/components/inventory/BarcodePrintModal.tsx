@@ -1,7 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import JsBarcode from 'jsbarcode';
-import { X, Printer, Plus, Minus, Layers, Check, RefreshCw } from 'lucide-react';
+import {
+  X,
+  Printer,
+  Plus,
+  Minus,
+  Layers,
+  Check,
+  Usb,
+  Settings2,
+  Sparkles,
+  Tag,
+  Store,
+} from 'lucide-react';
 import { Button } from '../ui/button';
+import { useThermalPrinter } from '../../hooks/useThermalPrinter';
+import { toast } from 'sonner';
 
 export interface BarcodePrintProduct {
   name: string;
@@ -11,6 +25,47 @@ export interface BarcodePrintProduct {
   stockLevel?: number | string;
   category?: string;
 }
+
+export type LabelDimensions = '50x25' | '50x30' | '40x30' | '72x40';
+
+export interface LabelSizePreset {
+  id: LabelDimensions;
+  name: string;
+  dimensions: string;
+  exactRule: string;
+  description: string;
+}
+
+export const LABEL_SIZE_PRESETS: LabelSizePreset[] = [
+  {
+    id: '50x25',
+    name: '50mm × 25mm',
+    dimensions: '50mm × 25mm',
+    exactRule: '50mm 25mm',
+    description: 'Standard 2-inch continuous thermal sticker roll',
+  },
+  {
+    id: '50x30',
+    name: '50mm × 30mm',
+    dimensions: '50mm × 30mm',
+    exactRule: '50mm 30mm',
+    description: 'Popular retail sticker roll with extra title room',
+  },
+  {
+    id: '40x30',
+    name: '40mm × 30mm',
+    dimensions: '40mm × 30mm',
+    exactRule: '40mm 30mm',
+    description: 'Compact jewelry, cosmetics, and accessories sticker',
+  },
+  {
+    id: '72x40',
+    name: '72mm × 40mm',
+    dimensions: '72mm × 40mm',
+    exactRule: '72mm 40mm',
+    description: 'Wide 80mm POS continuous adhesive label',
+  },
+];
 
 interface BarcodePrintModalProps {
   isOpen: boolean;
@@ -23,10 +78,21 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   onClose,
   product,
 }) => {
+  const {
+    printBarcodeLabel,
+    settings,
+    usbDevice,
+    openHardwareModal,
+  } = useThermalPrinter();
+
   const initialQuantity = Math.max(1, Number(product?.stockLevel) || 1);
   const [copies, setCopies] = useState<number>(initialQuantity);
-  const [renderedBarcodes, setRenderedBarcodes] = useState<boolean>(false);
-  const labelsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<LabelDimensions>('50x25');
+  const [includeStoreName, setIncludeStoreName] = useState<boolean>(true);
+  const [includeSku, setIncludeSku] = useState<boolean>(true);
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
+
+  const previewSvgRef = useRef<SVGSVGElement | null>(null);
 
   // Sync copy count whenever product changes
   useEffect(() => {
@@ -36,123 +102,102 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     }
   }, [product]);
 
-  // Render barcodes using JsBarcode
+  // Render live preview SVG barcode
   useEffect(() => {
-    if (!isOpen || !product?.barcode) return;
+    if (!isOpen || !product?.barcode || !previewSvgRef.current) return;
 
-    setRenderedBarcodes(false);
-    const timer = setTimeout(() => {
-      try {
-        const svgElements = document.querySelectorAll<SVGSVGElement>('.printable-barcode-svg');
-        svgElements.forEach((svg) => {
-          try {
-            (JsBarcode as any)(svg, product.barcode, {
-              format: 'CODE128',
-              lineColor: '#000000',
-              width: 1.8,
-              height: 42,
-              displayValue: true,
-              fontSize: 12,
-              font: 'monospace',
-              textMargin: 3,
-              margin: 4,
-              background: '#ffffff',
-            });
-          } catch (itemErr) {
-            console.warn('[BarcodePrintModal] Individual barcode render error:', itemErr);
-          }
-        });
-        setRenderedBarcodes(true);
-      } catch (err) {
-        console.error('[BarcodePrintModal] Barcode batch render error:', err);
-      }
-    }, 100);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, product?.barcode, copies]);
-
-  const handlePrint = () => {
-    window.print();
-  };
+    try {
+      (JsBarcode as any)(previewSvgRef.current, product.barcode, {
+        format: 'CODE128',
+        lineColor: '#000000',
+        width: selectedPreset === '40x30' ? 1.3 : 1.7,
+        height: selectedPreset === '40x30' ? 30 : 38,
+        displayValue: true,
+        fontSize: 11,
+        font: 'monospace',
+        textMargin: 2,
+        margin: 2,
+        background: '#ffffff',
+      });
+    } catch (err) {
+      console.warn('[BarcodePrintModal] SVG render error:', err);
+    }
+  }, [isOpen, product?.barcode, selectedPreset]);
 
   if (!isOpen || !product) return null;
+
+  const currentPreset =
+    LABEL_SIZE_PRESETS.find((p) => p.id === selectedPreset) || LABEL_SIZE_PRESETS[0];
 
   const formattedPrice = Number(product.price || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
-  return (
-    <>
-      {/* Print-specific CSS styles */}
-      <style>{`
-        @media print {
-          /* Hide all application chrome and modals */
-          body * {
-            visibility: hidden !important;
-          }
-          /* Make only the printable sheet and its contents visible */
-          #printable-barcode-sheet,
-          #printable-barcode-sheet * {
-            visibility: visible !important;
-          }
-          #printable-barcode-sheet {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 4mm !important;
-            background: #ffffff !important;
-            display: grid !important;
-            grid-template-columns: repeat(auto-fill, minmax(50mm, 1fr)) !important;
-            gap: 4mm !important;
-            page-break-inside: avoid !important;
-          }
-          .barcode-label-card {
-            width: 50mm !important;
-            height: 28mm !important;
-            padding: 2mm !important;
-            box-sizing: border-box !important;
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            border: 1px dashed #cccccc !important;
-            background: #ffffff !important;
-            color: #000000 !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-            text-align: center !important;
-          }
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-        }
-      `}</style>
+  const handlePrint = async () => {
+    setIsPrinting(true);
+    try {
+      await printBarcodeLabel(
+        {
+          name: product.name,
+          sku: includeSku ? product.sku : '',
+          barcode: product.barcode,
+          price: product.price,
+          storeName: includeStoreName ? settings.storeName : undefined,
+        },
+        copies,
+        currentPreset.exactRule
+      );
+    } catch (err: any) {
+      console.error('[BarcodePrintModal] Print error:', err);
+    } finally {
+      setIsPrinting(false);
+    }
+  };
 
-      {/* Screen Modal Container */}
+  return (
+    <div
+      className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
       <div
-        className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
-        role="dialog"
-        aria-modal="true"
+        className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative w-full max-w-3xl max-h-[90vh] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-gradient-to-r from-violet-600 via-indigo-600 to-indigo-700 text-white">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <Printer className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Print Barcode Labels</h3>
-                <p className="text-xs text-indigo-100">
-                  Thermal label print preview for {product.name}
-                </p>
-              </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-gradient-to-r from-violet-600 via-indigo-600 to-indigo-700 text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
+              <Printer className="w-5 h-5 text-white" />
             </div>
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                Direct Thermal Barcode Printing
+                {usbDevice && (
+                  <span className="text-[10px] font-semibold bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Usb className="w-2.5 h-2.5" />
+                    Direct USB
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-indigo-100">
+                Print pitch-black CODE128 thermal labels for {product.name}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
             <button
+              type="button"
+              onClick={openHardwareModal}
+              title="Thermal Printer & Hardware Settings"
+              className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
+            >
+              <Settings2 className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
               onClick={onClose}
               className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors"
               aria-label="Close dialog"
@@ -160,51 +205,105 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
+        </div>
 
-          {/* Configuration Toolbar */}
-          <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                Number of Copies:
+        {/* Modal Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Label Size Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 uppercase tracking-wider">
+                <Tag className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                Thermal Sticker Size
+              </label>
+              <span className="text-[11px] text-zinc-500 font-medium">
+                Active:{' '}
+                <strong className="text-indigo-600 dark:text-indigo-400">
+                  {currentPreset.dimensions}
+                </strong>
               </span>
-              <div className="flex items-center bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-sm p-1">
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {LABEL_SIZE_PRESETS.map((preset) => {
+                const isSelected = selectedPreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setSelectedPreset(preset.id)}
+                    className={`p-2.5 rounded-xl border text-left transition-all ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200 ring-2 ring-indigo-500/20'
+                        : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-xs font-bold">{preset.name}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">
+                      {preset.id === '50x25' ? 'Standard 2"' : preset.id === '50x30' ? 'Retail Roll' : preset.id === '40x30' ? 'Compact' : 'Wide 3"'}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Number of Copies Controls */}
+          <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                Print Copies (Quantity)
+              </span>
+              <p className="text-[11px] text-zinc-500">
+                Number of physical barcode stickers to print
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-sm p-1">
                 <button
                   type="button"
                   onClick={() => setCopies((prev) => Math.max(1, prev - 1))}
-                  className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 active:scale-95 transition-all"
+                  className="p-1 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95 transition-all"
                   aria-label="Decrease copies"
                 >
-                  <Minus className="w-4 h-4" />
+                  <Minus className="w-3.5 h-3.5" />
                 </button>
                 <input
                   type="number"
                   min={1}
                   max={500}
                   value={copies}
-                  onChange={(e) => setCopies(Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1)))}
-                  className="w-14 text-center text-sm font-bold bg-transparent text-zinc-900 dark:text-white focus:outline-none"
+                  onChange={(e) =>
+                    setCopies(Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1)))
+                  }
+                  className="w-12 text-center text-xs font-bold bg-transparent text-zinc-900 dark:text-white focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setCopies((prev) => Math.min(500, prev + 1))}
-                  className="p-1.5 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 active:scale-95 transition-all"
+                  className="p-1 rounded-lg text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 active:scale-95 transition-all"
                   aria-label="Increase copies"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              {/* Quick Presets */}
-              <div className="flex items-center gap-1.5">
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-1">
                 {[1, 5, 10].map((preset) => (
                   <button
                     key={preset}
                     type="button"
                     onClick={() => setCopies(preset)}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-all ${
+                    className={`px-2 py-1 text-xs font-semibold rounded-lg border transition-all ${
                       copies === preset
                         ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700'
+                        : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100'
                     }`}
                   >
                     {preset}
@@ -214,88 +313,126 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setCopies(Number(product.stockLevel))}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all"
+                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-all"
                   >
                     Stock ({product.stockLevel})
                   </button>
                 )}
               </div>
             </div>
-
-            <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
-              <span className="font-medium text-zinc-700 dark:text-zinc-300">Format:</span> CODE128
-              (50mm × 28mm)
-            </div>
           </div>
 
-          {/* Printable Sheet / Preview Body */}
-          <div className="flex-1 overflow-y-auto p-6 bg-zinc-100 dark:bg-zinc-950">
-            <div
-              id="printable-barcode-sheet"
-              ref={labelsContainerRef}
-              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4"
-            >
-              {Array.from({ length: copies }).map((_, idx) => (
-                <div
-                  key={idx}
-                  className="barcode-label-card bg-white rounded-2xl border border-zinc-200 dark:border-zinc-700/80 p-4 shadow-sm flex flex-col items-center justify-between text-center select-none"
+          {/* Label Content Toggles */}
+          <div className="flex items-center gap-6 px-1">
+            <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeStoreName}
+                onChange={(e) => setIncludeStoreName(e.target.checked)}
+                className="w-3.5 h-3.5 accent-indigo-600 rounded cursor-pointer"
+              />
+              Show Store Name ({settings.storeName})
+            </label>
+            <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeSku}
+                onChange={(e) => setIncludeSku(e.target.checked)}
+                className="w-3.5 h-3.5 accent-indigo-600 rounded cursor-pointer"
+              />
+              Show SKU ({product.sku || 'N/A'})
+            </label>
+          </div>
+
+          {/* Live Preview Card */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Live High-Contrast Thermal Sticker Preview
+              </span>
+              <span className="text-[11px] font-mono text-zinc-500">
+                100% Thermal Pitch-Black Contrast
+              </span>
+            </div>
+
+            <div className="p-6 bg-zinc-100 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center">
+              {/* Simulated Thermal Sticker */}
+              <div
+                className={`bg-white text-black p-3 rounded-xl border border-zinc-400 shadow-md flex flex-col items-center justify-between text-center select-none transition-all ${
+                  selectedPreset === '40x30'
+                    ? 'w-56 min-h-[100px]'
+                    : selectedPreset === '50x25'
+                    ? 'w-64 min-h-[110px]'
+                    : selectedPreset === '50x30'
+                    ? 'w-64 min-h-[125px]'
+                    : 'w-72 min-h-[140px]'
+                }`}
+              >
+                {includeStoreName && (
+                  <div className="w-full text-[10px] text-black font-extrabold uppercase tracking-wider mb-0.5">
+                    {settings.storeName}
+                  </div>
+                )}
+
+                <h4
+                  className="text-xs font-bold text-black line-clamp-1 w-full px-1"
+                  title={product.name}
                 >
-                  {/* Retailverse Brand Tag */}
-                  <div className="w-full flex items-center justify-between text-[10px] text-zinc-400 font-bold uppercase tracking-wider mb-1">
-                    <span>Retailverse</span>
-                    <span className="font-mono text-zinc-500">{product.sku}</span>
-                  </div>
+                  {product.name}
+                </h4>
 
-                  {/* Product Title */}
-                  <h4
-                    className="text-xs font-bold text-zinc-900 line-clamp-1 w-full"
-                    title={product.name}
-                  >
-                    {product.name}
-                  </h4>
-
-                  {/* Price */}
-                  <div className="text-sm font-extrabold text-indigo-600 dark:text-indigo-600 my-0.5">
-                    ₹{formattedPrice}
-                  </div>
-
-                  {/* SVG Barcode Output */}
-                  <div className="w-full flex items-center justify-center my-1 overflow-hidden">
-                    <svg className="printable-barcode-svg max-w-full h-auto" />
-                  </div>
+                <div className="text-xs font-black text-black my-0.5">
+                  MRP: ₹{formattedPrice} <span className="text-[9px] font-normal">(Incl. all taxes)</span>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {/* Modal Footer */}
-          <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between">
-            <div className="text-xs text-zinc-500 dark:text-zinc-400">
-              Total Labels to Print: <strong className="text-zinc-900 dark:text-white">{copies}</strong>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={onClose}
-                className="rounded-xl border-zinc-300 dark:border-zinc-700"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={handlePrint}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-600/25 px-5 font-semibold gap-2"
-              >
-                <Printer className="w-4 h-4" />
-                Print {copies} {copies === 1 ? 'Label' : 'Labels'}
-              </Button>
+                {/* SVG Barcode Output */}
+                <div className="w-full flex items-center justify-center my-0.5 bg-white">
+                  <svg ref={previewSvgRef} className="max-w-full h-auto" />
+                </div>
+
+                {includeSku && product.sku && (
+                  <div className="text-[9px] font-mono font-bold text-black">
+                    SKU: {product.sku}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-zinc-500 mt-2 text-center">
+                Engine: {usbDevice ? 'WebUSB Raw ESC/POS' : 'Isolated Hidden iFrame (@page exact size, 0 margin)'}
+              </p>
             </div>
           </div>
         </div>
+
+        {/* Modal Footer */}
+        <div className="px-6 py-4 border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between">
+          <div className="text-xs text-zinc-500 dark:text-zinc-400">
+            Total Labels to Print: <strong className="text-zinc-900 dark:text-white">{copies}</strong> ({currentPreset.dimensions})
+          </div>
+          <div className="flex items-center gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onClose}
+              className="rounded-xl border-zinc-300 dark:border-zinc-700"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handlePrint}
+              disabled={isPrinting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-600/25 px-5 font-semibold gap-2"
+            >
+              <Printer className="w-4 h-4" />
+              {isPrinting ? 'Printing...' : `Print ${copies} ${copies === 1 ? 'Label' : 'Labels'}`}
+            </Button>
+          </div>
+        </div>
       </div>
-    </>
+    </div>
   );
 };

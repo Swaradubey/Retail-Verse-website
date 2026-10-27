@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   RefreshCw,
   AlertTriangle,
+  Printer,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { InventoryStats, type InventoryStatsValues } from '../components/inventory/InventoryStats';
@@ -19,6 +20,8 @@ import { ProductDetailModal } from '../components/inventory/ProductDetailModal';
 import { StoreManagerModal } from '../components/inventory/StoreManagerModal';
 import { EmployeeModal } from '../components/inventory/EmployeeModal';
 import { LowStockAlertModal } from '../components/inventory/LowStockAlertModal';
+import { BarcodePrintModal, type BarcodePrintProduct } from '../components/inventory/BarcodePrintModal';
+import { useThermalPrinter } from '../hooks/useThermalPrinter';
 import { SortConfig, type InventoryItem } from '../types/inventory';
 import { productApi, inventoryApi, Product } from '../api/products';
 // import { products as staticProducts } from '../data/products';
@@ -145,6 +148,9 @@ export function Inventory() {
   const allowDelete = canDeleteInventoryProduct(role);
   const allowStockShortcut = canAdjustInventoryStock(role);
   const allowEditModal = canOpenProductEditModal(role);
+  const { openHardwareModal } = useThermalPrinter();
+  const [barcodeProductToPrint, setBarcodeProductToPrint] = useState<BarcodePrintProduct | null>(null);
+  const [isBarcodeModalOpen, setIsBarcodeModalOpen] = useState<boolean>(false);
 
   // 1. Synchronous Cache Initialization for products
   const [products, setProducts] = useState<Product[]>(() => {
@@ -640,6 +646,16 @@ export function Inventory() {
                     <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
                     <span className="ml-2 hidden text-sm font-semibold sm:inline">{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
                   </Button>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={openHardwareModal}
+                    title="Configure Thermal Printer & Hardware Settings"
+                    className="h-11 rounded-2xl border-indigo-200/80 bg-white/80 px-4 text-sm font-semibold text-indigo-900 shadow-[0_2px_8px_-2px_rgba(79,70,229,0.12)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white dark:border-indigo-500/30 dark:bg-indigo-950/40 dark:text-indigo-100"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span className="ml-2 hidden text-sm font-semibold sm:inline">Thermal Printer</span>
+                  </Button>
                   {allowAdd && (
                     <Button
                       onClick={() => {
@@ -735,6 +751,18 @@ export function Inventory() {
                 showProductEdit={allowEditModal}
                 showStockAdjust={allowStockShortcut}
                 showProductDelete={allowDelete}
+                onPrintBarcode={(item) => {
+                  const prod = products.find((p) => p._id === item.id);
+                  setBarcodeProductToPrint({
+                    name: item.name,
+                    sku: item.sku,
+                    barcode: prod?.barcode || item.sku,
+                    price: item.price,
+                    stockLevel: item.stock,
+                    category: item.category,
+                  });
+                  setIsBarcodeModalOpen(true);
+                }}
                 onView={(item) => {
                   setSelectedProduct(products.find(p => p._id === item.id) || null);
                   setIsDetailModalOpen(true);
@@ -812,6 +840,12 @@ export function Inventory() {
         isOpen={isLowStockModalOpen}
         items={lowStockItems}
         onClose={() => setIsLowStockModalOpen(false)}
+      />
+
+      <BarcodePrintModal
+        isOpen={isBarcodeModalOpen}
+        onClose={() => setIsBarcodeModalOpen(false)}
+        product={barcodeProductToPrint}
       />
 
       <EmployeeModal

@@ -69,6 +69,7 @@ import { toast } from 'sonner';
 import { getFullImageUrl, getProductImageUrl, PRODUCT_PLACEHOLDER } from '../utils/imageUrl';
 import ApiService from '../api/apiService';
 import { isStaffRole, isSuperAdminRole, isRestrictedInventoryDashboardRole } from '../utils/staffRoles';
+import { useThermalPrinter } from '../hooks/useThermalPrinter';
 
 interface CartItem extends Product {
   cartQuantity: number;
@@ -258,6 +259,7 @@ export function Pos() {
   const posInvoiceRef = useRef<HTMLDivElement>(null);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
   const [emailInputValue, setEmailInputValue] = useState('');
+  const { printReceipt: thermalPrintReceipt } = useThermalPrinter();
   const [emailInputError, setEmailInputError] = useState('');
   const [showAddedToast, setShowAddedToast] = useState(false);
   const addedToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1810,6 +1812,33 @@ export function Pos() {
     }
   };
 
+  const handleThermalPrint = () => {
+    const invoice = latestInvoiceData;
+    const order = latestOrderData;
+    if (!order && !invoice) {
+      toast.error('No receipt data available to print');
+      return;
+    }
+    const orderToPrint = {
+      invoiceNumber: invoice?.invoiceNumber || order?.invoiceNumber || order?._id,
+      createdAt: order?.createdAt || invoice?.createdAt || new Date(),
+      paymentMethod: order?.paymentMethod || invoice?.paymentMethod || 'CASH',
+      cashierName: user?.name || 'Staff',
+      customerName: order?.customer?.name || invoice?.customer?.name || order?.customerName || '',
+      customerPhone: order?.customer?.phone || invoice?.customer?.phone || '',
+      items: (order?.items || invoice?.items || []).map((i: any) => ({
+        name: i.name,
+        quantity: i.quantity || i.qty || 1,
+        unitPrice: i.price || i.unitPrice || 0,
+        itemTotal: (i.price || i.unitPrice || 0) * (i.quantity || i.qty || 1),
+      })),
+      subtotal: order?.subtotal || invoice?.subtotal || 0,
+      totalGst: order?.tax || invoice?.tax || 0,
+      grandTotal: order?.total || order?.totalAmount || invoice?.total || 0,
+    };
+    void thermalPrintReceipt(orderToPrint, user?.name || 'Staff');
+  };
+
   return (
     <>
       <ImpersonationBanner />
@@ -2513,10 +2542,10 @@ export function Pos() {
                         variant="outline"
                         type="button"
                         className="flex-1 min-w-[80px] h-12 rounded-xl border-[#e6d5b8] bg-white text-[#b89146] hover:bg-[#b89146]/5 hover:text-[#b89146] gap-1.5 font-bold transition-all active:scale-[0.98] text-xs sm:text-sm px-2"
-                        onClick={() => window.print()}
+                        onClick={handleThermalPrint}
                       >
                         <Printer className="h-4 w-4 shrink-0" />
-                        Print
+                        Print Thermal
                       </Button>
                       <Button
                         variant="outline"

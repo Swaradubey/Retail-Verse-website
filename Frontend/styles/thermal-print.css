@@ -1,0 +1,111 @@
+/**
+ * Global Direct Thermal Printing Stylesheet
+ * Optimized for POS 80mm & 58mm roll printers and continuous barcode sticker rolls.
+ */
+
+@media print {
+  /* Reset document root to eliminate any default A4 margins and forced headers/footers */
+  @page {
+    margin: 0 !important;
+    size: auto;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-smooth: never;
+    -webkit-font-smoothing: none;
+  }
+
+  /* Force pure black text and crisp borders across all printable thermal elements */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color: #000000 !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Hide everything on screen except isolated thermal print area when standard window.print() is called */
+  .no-print,
+  nav,
+  header,
+  footer,
+  aside,
+  button,
+  input,
+  select,
+  textarea,
+  [role="dialog"]:not(.thermal-print-dialog),
+  .toast,
+  .sonner-toast {
+    display: none !important;
+  }
+
+  /* Universal thermal printable container */
+  .thermal-print-area {
+    display: block !important;
+    width: 100% !important;
+    max-width: 72mm !important; /* Standard printable width for 80mm rolls */
+    margin: 0 auto !important;
+    padding: 2mm 3mm !important;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  /* 80mm roll profile */
+  .thermal-80mm {
+    width: 80mm !important;
+    max-width: 72mm !important;
+  }
+
+  /* 58mm roll profile */
+  .thermal-58mm {
+    width: 58mm !important;
+    max-width: 48mm !important;
+    font-size: 10px !important;
+    padding: 1.5mm 2mm !important;
+  }
+
+  /* Thermal barcode sticker roll profile */
+  .thermal-barcode-label {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    margin: 0 auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+
+  .thermal-barcode-label:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  /* Ensure barcode vectors and canvases render with crisp pixel-perfect lines on thermal print heads */
+  .thermal-barcode-svg,
+  .thermal-barcode-canvas {
+    shape-rendering: crispEdges !important;
+    image-rendering: pixelated !important;
+    max-width: 100% !important;
+    display: block !important;
+    margin: 0 auto !important;
+  }
+}
