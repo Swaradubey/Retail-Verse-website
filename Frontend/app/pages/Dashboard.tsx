@@ -55,8 +55,6 @@ import {
 } from '../components/ui/collapsible';
 import { Button } from '../components/ui/button';
 import { DashboardStats } from '../components/DashboardStats';
-import { DashboardCharts } from '../components/DashboardCharts';
-import { DashboardRecentTickets } from '../components/DashboardRecentTickets';
 import { DashboardQuickActions } from '../components/DashboardQuickActions';
 import { DashboardNavbar } from '../components/DashboardNavbar';
 import { Footer } from '../components/Footer';
@@ -90,7 +88,6 @@ const sidebarItems = [
   { title: "Track Order", icon: Truck, href: "/track-order", hideForInventoryManager: true, hideForSuperAdmin: true },
   { title: "Wishlist Activity", icon: Activity, href: "/dashboard/wishlist-activity", adminOnly: true, hideForSuperAdmin: true },
   { title: "Super Admin", icon: Shield, href: "/super-admin", superAdminOnly: true, hideForSuperAdmin: true },
-  { title: "Orders", icon: ShoppingCart, href: "/dashboard/orders", hideForUser: false, hideForSuperAdmin: true },
   { title: "Invoice", icon: Receipt, href: "/dashboard/invoices", superAdminOnly: true },
   { title: "Users & roles", icon: UserCog, href: "/dashboard/users", adminOnly: true },
   { title: "Clients", icon: Building2, href: "/super-admin/clients", superAdminOnly: true },
@@ -366,7 +363,6 @@ export function Dashboard() {
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
         item.href === '/dashboard/ai-voice-orders' ||
-        item.href === '/dashboard/orders' ||
         item.href === '/dashboard/invoices' ||
         item.href === '/dashboard/users' ||
         item.href === '/super-admin/custom-domain' ||
@@ -513,7 +509,7 @@ export function Dashboard() {
   return (
     <SidebarProvider>
       <div
-        className={`client-dashboard theme-${themeKey} flex flex-col min-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
+        className={`client-dashboard theme-${themeKey} flex flex-col min-h-0 flex-1 md:min-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
       >
         <ImpersonationBanner />
         <div className="flex min-h-0 flex-1 w-full">
@@ -595,11 +591,9 @@ export function Dashboard() {
                             asChild
                             isActive={isActive}
                             tooltip={
-                              item.title === 'Orders' && (isSuperAdminRole(user?.role) || isClientRole(user?.role))
-                                ? 'Sale'
-                                : item.title === 'Invoice'
-                                  ? 'Quotes and Invoice'
-                                  : item.title
+                              item.title === 'Invoice'
+                                ? 'Quotes and Invoice'
+                                : item.title
                             }
                             className={dashboardSidebarNavButtonClass(isActive)}
                           >
@@ -615,11 +609,9 @@ export function Dashboard() {
                             >
                               {item.icon && <item.icon className="w-5 h-5 shrink-0" />}
                               <span className="group-data-[collapsible=icon]:hidden flex-1 min-w-0 text-left text-[16px] font-semibold tracking-wide leading-snug">
-                                {item.title === 'Orders' && (isSuperAdminRole(user?.role) || isClientRole(user?.role))
-                                  ? 'Sale'
-                                  : item.title === 'Invoice'
-                                    ? 'Quotes and Invoice'
-                                    : item.title}
+                                {item.title === 'Invoice'
+                                  ? 'Quotes and Invoice'
+                                  : item.title}
                               </span>
 
                               {'badge' in item &&
@@ -656,7 +648,7 @@ export function Dashboard() {
 
           {/* Main Content Area */}
           <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-[#F8FAFC] text-[#0B1F3A]">
-            <DashboardNavbar premiumOverview={isOverview} />
+            <DashboardNavbar premiumOverview={isOverview} items={mainSidebarItems} />
 
             <main
               className={
@@ -764,23 +756,11 @@ export function Dashboard() {
                               }
                             />
                           </motion.div>
-                          {!isCustomerOverview && (
-                            <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
-                              <DashboardCharts
-                                analytics={overviewData}
-                                staffView={staff}
-                                revenueInInr={isSuperAdminRole(user?.role) || isClientRole(user?.role)}
-                              />
-                            </motion.div>
-                          )}
+
                           <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
                             <DashboardQuickActions onSync={handleDashboardSync} syncing={syncing} />
                           </motion.div>
-                          {(isSuperAdminRole(user?.role) || isClientRole(user?.role)) && (
-                            <motion.div variants={{ hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: [0.22, 1, 0.36, 1] } } }}>
-                              <DashboardRecentTickets />
-                            </motion.div>
-                          )}
+
                         </motion.div>
                       ) : (
                         <Outlet />

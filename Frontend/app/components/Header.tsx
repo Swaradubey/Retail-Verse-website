@@ -564,130 +564,172 @@ export function Header() {
           4. RESPONSIVE MOBILE DRAWER / MENU
       ────────────────────────────────────────────────────────────────── */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 top-[110px] z-50 flex flex-col bg-black/40 lg:hidden backdrop-blur-xs">
-          <div className="w-full max-h-[calc(100vh-110px)] overflow-y-auto bg-white border-b border-[#E5E7EB] shadow-2xl p-4 sm:p-6 animate-in slide-in-from-top-2 duration-200">
-            
-            {/* User Profile Card or Sign In Banner */}
-            <div className="mb-5 rounded-lg border border-[#E5E7EB] bg-gray-50 p-4">
-              {user ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#3665f3] font-bold text-white text-base">
-                      {user.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm text-[#111827]">{user.name}</p>
-                      <p className="text-xs text-[#707070]">{user.email}</p>
-                      <span className="inline-block mt-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#3665f3]">
-                        {accountRoleBadgeText(user.role) || 'User'}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
-                  >
-                    Log out
-                  </button>
+        <>
+          {/* Semi-transparent backdrop overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 z-40 lg:hidden transition-opacity duration-300"
+            onClick={closeMobileMenu}
+            aria-hidden="true"
+          />
+
+          {/* Mobile sidebar/menu overlay */}
+          <div className="fixed inset-y-0 left-0 z-50 w-72 sm:w-80 max-w-[85vw] h-full bg-white text-[#111827] shadow-2xl flex flex-col overflow-y-auto lg:hidden animate-in slide-in-from-left duration-300">
+            {/* Drawer Header with Brand & Close Button */}
+            <div className="flex items-center justify-between p-4 border-b border-[#E5E7EB] bg-white shrink-0 sticky top-0 z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-9 w-9 shrink-0 rounded-full bg-white/10 border border-[#2563EB]/50 overflow-hidden flex items-center justify-center shadow-xs">
+                  <img
+                    src={logoUrl ? getFullImageUrl(logoUrl) : '/logo.png'}
+                    alt={`${brandName} logo`}
+                    className="h-7 w-7 object-contain rounded-full"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).onerror = null;
+                      (e.target as HTMLImageElement).src = '/logo.png';
+                    }}
+                  />
                 </div>
-              ) : (
-                <div className="flex flex-col gap-2.5 text-center">
-                  <p className="text-sm font-semibold text-[#111827]">Welcome to Retailverse</p>
-                  <div className="flex gap-2">
-                    <Link
-                      to="/login"
-                      onClick={closeMobileMenu}
-                      className="flex-1 rounded-md bg-[#3665f3] py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#2b52cc]"
-                    >
-                      Sign In
-                    </Link>
-                    <Link
-                      to="/register"
-                      onClick={closeMobileMenu}
-                      className="flex-1 rounded-md border border-[#3665f3] bg-white py-2.5 text-sm font-bold text-[#3665f3] hover:bg-blue-50"
-                    >
-                      Register
-                    </Link>
-                  </div>
+                <div className="flex flex-col leading-tight truncate">
+                  <span className="text-base font-bold tracking-tight text-[#111827] truncate">
+                    {brandName}
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#2563EB]">
+                    {brandSubtitle}
+                  </span>
                 </div>
-              )}
+              </div>
+              <button
+                type="button"
+                onClick={closeMobileMenu}
+                className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors cursor-pointer shrink-0"
+                aria-label="Close menu"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Mobile Category Select */}
-            <div className="mb-4">
-              <label htmlFor="mobile-cat-select" className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-                Browse Categories
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {primaryNavCategories.map((cat) => (
+            <div className="p-4 sm:p-5 flex-1 flex flex-col">
+              {/* User Profile Card or Sign In Banner */}
+              <div className="mb-5 rounded-lg border border-[#E5E7EB] bg-gray-50 p-4">
+                {user ? (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#3665f3] font-bold text-white text-sm">
+                        {user.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-[#111827]">{user.name}</p>
+                        <p className="text-xs text-[#707070]">{user.email}</p>
+                        <span className="inline-block mt-0.5 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#3665f3]">
+                          {accountRoleBadgeText(user.role) || 'User'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2.5 text-center">
+                    <p className="text-sm font-semibold text-[#111827]">Welcome to Retailverse</p>
+                    <div className="flex gap-2">
+                      <Link
+                        to="/login"
+                        onClick={closeMobileMenu}
+                        className="flex-1 rounded-md bg-[#3665f3] py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#2b52cc]"
+                      >
+                        Sign In
+                      </Link>
+                      <Link
+                        to="/register"
+                        onClick={closeMobileMenu}
+                        className="flex-1 rounded-md border border-[#3665f3] bg-white py-2.5 text-sm font-bold text-[#3665f3] hover:bg-blue-50"
+                      >
+                        Register
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile Category Select */}
+              <div className="mb-4">
+                <span className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                  Browse Categories
+                </span>
+                <div className="grid grid-cols-1 gap-1.5">
+                  {primaryNavCategories.map((cat) => (
+                    <Link
+                      key={cat.name}
+                      to={cat.href}
+                      onClick={closeMobileMenu}
+                      className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-xs font-medium text-gray-800 hover:border-[#3665f3] hover:text-[#3665f3] hover:bg-blue-50/50"
+                    >
+                      <span>{cat.name}</span>
+                      {cat.isBadge && (
+                        <span className="rounded bg-red-100 px-1 text-[10px] font-bold text-red-600">
+                          HOT
+                        </span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Links */}
+              <div className="border-t border-[#E5E7EB] pt-4 mt-auto flex flex-col gap-2 text-sm text-gray-700">
+                <Link
+                  to="/account/wishlist"
+                  onClick={closeMobileMenu}
+                  className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
+                >
+                  <Heart className="h-4 w-4 text-[#707070]" />
+                  Watchlist & Saved Items
+                </Link>
+                <Link
+                  to={user ? "/dashboard" : "/login"}
+                  onClick={closeMobileMenu}
+                  className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
+                >
+                  <Tag className="h-4 w-4 text-[#707070]" />
+                  Sell on Retailverse
+                </Link>
+                <Link
+                  to="/contact"
+                  onClick={closeMobileMenu}
+                  className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
+                >
+                  <HelpCircle className="h-4 w-4 text-[#707070]" />
+                  Help & Contact
+                </Link>
+                {canOpenInventory && (
                   <Link
-                    key={cat.name}
-                    to={cat.href}
+                    to="/dashboard/inventory"
                     onClick={closeMobileMenu}
-                    className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-2 text-xs font-medium text-gray-800 hover:border-[#3665f3] hover:text-[#3665f3] hover:bg-blue-50/50"
+                    className="flex items-center gap-2.5 py-1.5 font-semibold text-[#3665f3]"
                   >
-                    <span>{cat.name}</span>
-                    {cat.isBadge && (
-                      <span className="rounded bg-red-100 px-1 text-[10px] font-bold text-red-600">
-                        HOT
-                      </span>
-                    )}
+                    <Package className="h-4 w-4" />
+                    Inventory Management
                   </Link>
-                ))}
+                )}
+                {user && !isCustomerAccountRole(user.role) && (
+                  <Link
+                    to="/pos"
+                    state={{ fromDashboard: pathname }}
+                    onClick={closeMobileMenu}
+                    className="flex items-center gap-2.5 py-1.5 font-semibold text-[#3665f3]"
+                  >
+                    <Store className="h-4 w-4" />
+                    POS Billing
+                  </Link>
+                )}
               </div>
             </div>
-
-            {/* Quick Links */}
-            <div className="border-t border-[#E5E7EB] pt-4 flex flex-col gap-2 text-sm text-gray-700">
-              <Link
-                to="/account/wishlist"
-                onClick={closeMobileMenu}
-                className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
-              >
-                <Heart className="h-4 w-4 text-[#707070]" />
-                Watchlist & Saved Items
-              </Link>
-              <Link
-                to={user ? "/dashboard" : "/login"}
-                onClick={closeMobileMenu}
-                className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
-              >
-                <Tag className="h-4 w-4 text-[#707070]" />
-                Sell on Retailverse
-              </Link>
-              <Link
-                to="/contact"
-                onClick={closeMobileMenu}
-                className="flex items-center gap-2.5 py-1.5 hover:text-[#3665f3]"
-              >
-                <HelpCircle className="h-4 w-4 text-[#707070]" />
-                Help & Contact
-              </Link>
-              {canOpenInventory && (
-                <Link
-                  to="/dashboard/inventory"
-                  onClick={closeMobileMenu}
-                  className="flex items-center gap-2.5 py-1.5 font-semibold text-[#3665f3]"
-                >
-                  <Package className="h-4 w-4" />
-                  Inventory Management
-                </Link>
-              )}
-              {user && !isCustomerAccountRole(user.role) && (
-                <Link
-                  to="/pos"
-                  state={{ fromDashboard: pathname }}
-                  onClick={closeMobileMenu}
-                  className="flex items-center gap-2.5 py-1.5 font-semibold text-[#3665f3]"
-                >
-                  <Store className="h-4 w-4" />
-                  POS Billing
-                </Link>
-              )}
-            </div>
           </div>
-        </div>
+        </>
       )}
     </header>
   );

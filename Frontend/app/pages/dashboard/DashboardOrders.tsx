@@ -75,9 +75,7 @@ export function DashboardOrders() {
     setError(null);
     try {
       const endpoint = isCustomer ? '/orders/my-tracking' : (isStaff ? '/orders' : '/orders/my-tracking');
-      console.log('[DEBUG Frontend Sale Page] API URL:', endpoint, 'User Role:', user?.role, 'ClientId:', user?.clientId);
-      const response = await ApiService.get(endpoint, { pageName: 'Sale' });
-      console.log('[DEBUG Frontend Sale Page] API response success:', response.success, 'Orders count:', response.data?.length);
+      const response = await ApiService.get(endpoint);
       if (response.success && response.data && Array.isArray(response.data)) {
         setOrders(response.data);
         if (response.stats) {

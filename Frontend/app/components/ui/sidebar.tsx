@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
 import { VariantProps, cva } from "class-variance-authority";
-import { PanelLeftIcon } from "lucide-react";
+import { PanelLeftIcon, X as XIcon } from "lucide-react";
 
 import { useIsMobile } from "./use-mobile";
 import { cn } from "./utils";
@@ -183,30 +183,38 @@ function Sidebar({
   }
 
   if (isMobile) {
-    const bannerTop = (style as any)?.top || 'var(--top-nav-height, 148px)';
-    const bannerHeight = (style as any)?.height || `calc(100dvh - ${bannerTop})`;
     return (
-      <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
+      <Sheet open={openMobile} onOpenChange={setOpenMobile}>
         <SheetContent
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden z-40"
-          style={
-            {
-              "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
-              top: bannerTop,
-              height: bannerHeight,
-            } as React.CSSProperties
-          }
-          overlayStyle={{ top: bannerTop }}
+          className="bg-[#0B1F3A] text-[#F8FAFC] w-[88vw] max-w-xs sm:max-w-sm p-0 z-50 border-r border-[#2563EB]/40 shadow-2xl flex flex-col h-full fixed inset-y-0 left-0"
+          overlayClassName="fixed inset-0 bg-black/50 z-40"
           side={side}
         >
-          <SheetHeader className="sr-only">
-            <SheetTitle>Sidebar</SheetTitle>
-            <SheetDescription>Displays the mobile sidebar.</SheetDescription>
+          <SheetHeader className="px-4 py-3.5 border-b border-[#2563EB]/25 flex flex-row items-center justify-between text-left space-y-0 shrink-0 bg-[#0B1F3A]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-[#2563EB] flex items-center justify-center font-black text-white shadow-xs text-xs tracking-wider">
+                RV
+              </div>
+              <div>
+                <SheetTitle className="text-sm font-bold text-[#F8FAFC] tracking-tight">Dashboard Menu</SheetTitle>
+                <SheetDescription className="text-[11px] text-[#F8FAFC]/65">Select an option to navigate</SheetDescription>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenMobile(false)}
+              className="p-1.5 rounded-lg text-[#F8FAFC]/70 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <XIcon className="w-5 h-5" />
+            </button>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#0B1F3A] text-[#F8FAFC] p-2 flex flex-col justify-between">
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     );
