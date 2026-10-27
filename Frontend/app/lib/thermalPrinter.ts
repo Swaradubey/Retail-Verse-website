@@ -149,7 +149,7 @@ class ThermalHardwareManager {
     }
 
     try {
-      // Common thermal printer USB Vendor IDs (Epson, Star, Xprinter, Rongta, Munbyn, TSC, POS-58, POS-80)
+      // Common thermal printer USB Vendor IDs (Epson, Star, Xprinter, Rongta, Munbyn, TSC, TVS, Zebra, POS-58, POS-80)
       const commonVendorFilters = [
         { classCode: 0x07 }, // USB Printer Class
         { vendorId: 0x04b8 }, // Epson
@@ -159,6 +159,19 @@ class ThermalHardwareManager {
         { vendorId: 0x1fc9 }, // NXP / Thermal printers
         { vendorId: 0x0483 }, // STMicroelectronics (Munbyn, ZJiang)
         { vendorId: 0x1a86 }, // QinHeng Electronics (CH340 USB-Serial Thermal)
+        { vendorId: 0x0dd4 }, // Custom / Gprinter
+        { vendorId: 0x1203 }, // TSC Auto ID
+        { vendorId: 0x20d1 }, // TVS / Posiflex
+        { vendorId: 0x0471 }, // TVS Electronics
+        { vendorId: 0x067b }, // Prolific PL2303 USB-Serial
+        { vendorId: 0x0403 }, // FTDI USB-Serial
+        { vendorId: 0x10c4 }, // Silicon Labs CP210x USB-Serial
+        { vendorId: 0x28e9 }, // GD32 Thermal Printers
+        { vendorId: 0x154f }, // Bixolon / TVS
+        { vendorId: 0x0a5f }, // Zebra Technologies
+        { vendorId: 0x04f9 }, // Brother
+        { vendorId: 0x03f0 }, // HP POS
+        {}, // Universal fallback: allows selecting any connected USB device
       ];
 
       const device = await navigator.usb.requestDevice({

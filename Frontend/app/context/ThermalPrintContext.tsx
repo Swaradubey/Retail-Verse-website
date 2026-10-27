@@ -182,12 +182,13 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         let labelsHtml = '';
         for (let i = 0; i < count; i++) {
           labelsHtml += `
-            <div class="sticker-card">
-              <div class="sticker-brand">${storeTag}</div>
-              <div class="sticker-name">${data.name}</div>
-              <div class="sticker-price">MRP: &#8377;${formattedPrice}</div>
-              <svg class="barcode-svg" id="barcode-target-${i}"></svg>
-              <div class="sticker-sku">${data.sku ? `SKU: ${data.sku}` : ''}</div>
+            <div class="thermal-sticker-card">
+              <div class="sticker-title">${data.name}</div>
+              <div class="sticker-barcode-container">
+                <svg class="barcode-svg" id="barcode-target-${i}"></svg>
+              </div>
+              <div class="sticker-number">${data.barcode}</div>
+              <div class="sticker-mrp">MRP: &#8377;${formattedPrice} (Incl. of all taxes)</div>
             </div>
           `;
         }
@@ -195,69 +196,77 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const iframeHtml = `
           <style>
             @page {
-              size: ${exactDimensions};
+              size: ${exactDimensions || '50mm 30mm'} !important;
               margin: 0 !important;
             }
-            body {
+            html, body {
               margin: 0 !important;
               padding: 0 !important;
-              background: #ffffff !important;
-              color: #000000 !important;
+              background: #fff !important;
+              -webkit-print-color-adjust: exact !important;
+              color: #000 !important;
               font-family: Arial, Helvetica, sans-serif !important;
             }
-            .sticker-card {
-              width: 100%;
-              height: 100%;
-              box-sizing: border-box;
-              padding: 1.5mm 2mm;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              justify-content: space-evenly;
-              text-align: center;
-              page-break-inside: avoid;
-              page-break-after: always;
-              overflow: hidden;
+            .thermal-sticker-card {
+              width: 48mm !important;
+              height: 28mm !important;
+              max-height: 28mm !important;
+              margin: 1mm auto !important;
+              padding: 1mm !important;
+              box-sizing: border-box !important;
+              display: flex !important;
+              flex-direction: column !important;
+              align-items: center !important;
+              justify-content: space-between !important;
+              text-align: center !important;
+              overflow: hidden !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+              break-after: page !important;
+              page-break-after: always !important;
             }
-            .sticker-card:last-child {
-              page-break-after: auto;
+            .thermal-sticker-card:last-child {
+              break-after: avoid !important;
+              page-break-after: avoid !important;
             }
-            .sticker-brand {
-              font-size: 8px;
-              font-weight: 800;
-              letter-spacing: 0.5px;
-              color: #000;
-              text-transform: uppercase;
-              line-height: 1;
-              white-space: nowrap;
+            .sticker-title {
+              font-size: 10px !important;
+              font-weight: 700 !important;
+              line-height: 1.1 !important;
+              white-space: nowrap !important;
+              overflow: hidden !important;
+              text-overflow: ellipsis !important;
+              max-width: 100% !important;
+              color: #000 !important;
             }
-            .sticker-name {
-              font-size: 9px;
-              font-weight: 700;
-              color: #000;
-              line-height: 1.15;
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              width: 100%;
+            .sticker-barcode-container {
+              display: flex !important;
+              justify-content: center !important;
+              align-items: center !important;
+              height: 12mm !important;
+              width: 100% !important;
+              overflow: hidden !important;
             }
-            .sticker-price {
-              font-size: 10px;
-              font-weight: 900;
-              color: #000;
-              line-height: 1;
-            }
+            .sticker-barcode-container svg,
             .barcode-svg {
-              width: 90%;
-              max-height: 14mm;
-              margin: 0 auto;
-              shape-rendering: crispEdges;
+              max-height: 12mm !important;
+              max-width: 95% !important;
+              image-rendering: pixelated !important;
+              shape-rendering: crispEdges !important;
             }
-            .sticker-sku {
-              font-size: 7.5px;
-              font-family: monospace;
-              color: #000;
-              line-height: 1;
+            .sticker-number {
+              font-size: 9px !important;
+              letter-spacing: 1px !important;
+              font-family: monospace !important;
+              line-height: 1 !important;
+              color: #000 !important;
+            }
+            .sticker-mrp {
+              font-size: 9px !important;
+              font-weight: 600 !important;
+              line-height: 1.1 !important;
+              white-space: nowrap !important;
+              color: #000 !important;
             }
           </style>
           <div class="sticker-container">
@@ -272,12 +281,10 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
                   try {
                     JsBarcode(el, "${data.barcode}", {
                       format: "CODE128",
-                      width: 1.4,
-                      height: 32,
-                      displayValue: true,
-                      fontSize: 10,
-                      font: "monospace",
-                      margin: 2,
+                      width: 1.3,
+                      height: 28,
+                      displayValue: false,
+                      margin: 0,
                       lineColor: "#000000"
                     });
                   } catch(e) {}

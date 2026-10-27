@@ -14,6 +14,8 @@ import {
   PackageCheck,
   Receipt,
   ScanLine,
+  Usb,
+  Settings2,
 } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
 import { Button } from '../ui/button';
@@ -125,25 +127,17 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     }
 
     @media print {
-      @page {
-        size: auto;
-        margin: 0;
-      }
-
       html, body {
-        background: #ffffff !important;
         margin: 0 !important;
         padding: 0 !important;
-        height: auto !important;
-        min-height: 0 !important;
-        width: 100% !important;
-        overflow: visible !important;
+        background: #fff !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+        overflow: visible !important;
       }
 
       /* Hide all UI elements, overlays, modals, and app roots */
-      body > *:not(#print-label-area) {
+      body > *:not(#print-label-area):not(.thermal-label-print-zone) {
         display: none !important;
       }
 
@@ -151,37 +145,123 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         visibility: hidden !important;
       }
 
+      .thermal-label-print-zone,
+      .thermal-label-print-zone *,
       #print-label-area,
       #print-label-area * {
         visibility: visible !important;
       }
 
+      .thermal-label-print-zone,
       #print-label-area {
-        position: absolute !important;
-        left: 0 !important;
-        top: 0 !important;
+        position: static !important;
         margin: 0 !important;
         padding: 0 !important;
         box-sizing: border-box !important;
         background: #ffffff !important;
+        width: 100% !important;
+        height: auto !important;
         display: block !important;
       }
 
+      /* Each single sticker unit */
+      .thermal-sticker-card,
+      .print-label-card {
+        width: 48mm !important;
+        height: 28mm !important;
+        max-height: 28mm !important;
+        margin: 1mm auto !important;
+        padding: 1mm !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        text-align: center !important;
+        overflow: hidden !important;
+        
+        /* Prevent splitting across pages */
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+        
+        /* Ensure the next sticker starts on a fresh label */
+        break-after: page !important;
+        page-break-after: always !important;
+      }
+
+      .thermal-sticker-card:last-child,
+      .print-label-card:last-child {
+        break-after: avoid !important;
+        page-break-after: avoid !important;
+      }
+
+      /* Product Title styling */
+      .sticker-title,
+      .print-label-name {
+        font-size: 10px !important;
+        font-weight: 700 !important;
+        line-height: 1.1 !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* Barcode SVG / Canvas container */
+      .sticker-barcode-container,
       .print-label-barcode-container {
         display: flex !important;
         justify-content: center !important;
         align-items: center !important;
+        height: 12mm !important;
+        max-height: 12mm !important;
         width: 100% !important;
-        background: #ffffff !important;
         overflow: hidden !important;
-        margin: 0.5mm 0 !important;
+        margin: 0 auto !important;
+        background: #ffffff !important;
       }
 
+      .sticker-barcode-container svg,
+      .sticker-barcode-container canvas,
+      .sticker-barcode-container img,
+      .print-label-barcode-container svg,
       .barcode-print-svg {
-        max-width: 100% !important;
-        display: block !important;
+        max-height: 12mm !important;
+        height: 12mm !important;
+        max-width: 95% !important;
+        image-rendering: pixelated !important;
         shape-rendering: crispEdges !important;
+        display: block !important;
+        margin: 0 auto !important;
         background: #ffffff !important;
+      }
+
+      /* SKU / Number & MRP styling */
+      .sticker-number,
+      .print-label-code-sku,
+      .print-label-barcode-num {
+        font-size: 9px !important;
+        letter-spacing: 1px !important;
+        font-family: monospace !important;
+        line-height: 1 !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      .sticker-mrp,
+      .print-label-mrp {
+        font-size: 9px !important;
+        font-weight: 600 !important;
+        line-height: 1.1 !important;
+        white-space: nowrap !important;
+        color: #000000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
       }
   `;
 
@@ -189,10 +269,11 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: auto;
-          margin: 0;
+          size: 50mm 30mm !important;
+          margin: 0 !important;
         }
 
+        .thermal-label-print-zone,
         #print-label-area {
           width: 50mm !important;
           margin: 0 auto !important;
@@ -200,12 +281,13 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           display: block !important;
         }
 
+        .thermal-sticker-card,
         .print-label-card {
-          width: 50mm !important;
-          min-height: 28mm !important;
-          max-height: 30mm !important;
-          margin: 0 !important;
-          padding: 1.5mm 1.5mm !important;
+          width: 48mm !important;
+          height: 28mm !important;
+          max-height: 28mm !important;
+          margin: 1mm auto !important;
+          padding: 1mm !important;
           box-sizing: border-box !important;
           border: 0.5px dashed #444444 !important;
           background: #ffffff !important;
@@ -213,7 +295,7 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
-          justify-content: space-evenly !important;
+          justify-content: space-between !important;
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
@@ -222,70 +304,10 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           overflow: hidden !important;
         }
 
+        .thermal-sticker-card:last-child,
         .print-label-card:last-child {
           page-break-after: auto !important;
           break-after: auto !important;
-        }
-
-        .print-label-brand {
-          font-size: 8px !important;
-          font-weight: 800 !important;
-          letter-spacing: 0.5px !important;
-          text-transform: uppercase !important;
-          color: #000000 !important;
-          line-height: 1 !important;
-          width: 100% !important;
-          overflow: hidden !important;
-          white-space: nowrap !important;
-          text-overflow: ellipsis !important;
-        }
-
-        .print-label-name {
-          font-size: 9.5px !important;
-          font-weight: 700 !important;
-          line-height: 1.15 !important;
-          color: #000000 !important;
-          margin-bottom: 0.5mm !important;
-          text-align: center !important;
-          max-height: 2.3em !important;
-          overflow: hidden !important;
-          display: -webkit-box !important;
-          -webkit-line-clamp: 2 !important;
-          -webkit-box-orient: vertical !important;
-          word-break: break-word !important;
-          width: 100% !important;
-        }
-
-        .print-label-code-sku {
-          display: flex !important;
-          justify-content: center !important;
-          align-items: center !important;
-          gap: 1.5mm !important;
-          width: 100% !important;
-          font-family: monospace !important;
-          font-size: 8px !important;
-          font-weight: 600 !important;
-          color: #000000 !important;
-          white-space: nowrap !important;
-          overflow: hidden !important;
-        }
-
-        .print-label-mrp {
-          font-size: 9px !important;
-          font-weight: 800 !important;
-          color: #000000 !important;
-          line-height: 1.1 !important;
-          white-space: nowrap !important;
-        }
-
-        .print-label-tax-note {
-          font-size: 7px !important;
-          font-weight: 500 !important;
-          color: #222222 !important;
-        }
-
-        .barcode-print-svg {
-          height: 32px !important;
         }
       }
     `;
@@ -295,31 +317,33 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: auto;
-          margin: 0;
+          size: 80mm 40mm !important;
+          margin: 0 !important;
         }
 
+        .thermal-label-print-zone,
         #print-label-area {
-          width: 72mm !important;
+          width: 76mm !important;
+          height: auto !important;
           margin: 0 auto !important;
           padding: 0 !important;
           display: block !important;
         }
 
+        .thermal-sticker-card,
         .print-label-card {
-          width: 72mm !important;
-          min-height: 38mm !important;
-          max-height: 40mm !important;
-          margin: 0 !important;
-          padding: 2mm 2mm !important;
+          width: 76mm !important;
+          height: 38mm !important;
+          max-height: 38mm !important;
+          margin: 1mm auto !important;
+          padding: 2mm !important;
           box-sizing: border-box !important;
-          border: 0.5px dashed #444444 !important;
           background: #ffffff !important;
           color: #000000 !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
-          justify-content: space-evenly !important;
+          justify-content: space-between !important;
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
@@ -328,9 +352,10 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           overflow: hidden !important;
         }
 
+        .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: auto !important;
-          break-after: auto !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
 
         .print-label-brand {
@@ -396,31 +421,33 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: auto;
-          margin: 0;
+          size: 40mm 30mm !important;
+          margin: 0 !important;
         }
 
+        .thermal-label-print-zone,
         #print-label-area {
           width: 38mm !important;
+          height: auto !important;
           margin: 0 auto !important;
           padding: 0 !important;
           display: block !important;
         }
 
+        .thermal-sticker-card,
         .print-label-card {
           width: 38mm !important;
-          min-height: 26mm !important;
+          height: 28mm !important;
           max-height: 28mm !important;
-          margin: 0 !important;
-          padding: 1mm 1mm !important;
+          margin: 1mm auto !important;
+          padding: 1mm !important;
           box-sizing: border-box !important;
-          border: 0.5px dashed #444444 !important;
           background: #ffffff !important;
           color: #000000 !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
-          justify-content: space-evenly !important;
+          justify-content: space-between !important;
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
@@ -429,9 +456,10 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           overflow: hidden !important;
         }
 
+        .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: auto !important;
-          break-after: auto !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
 
         .print-label-brand {
@@ -492,31 +520,33 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: auto;
-          margin: 0;
+          size: 100mm 150mm !important;
+          margin: 0 !important;
         }
 
+        .thermal-label-print-zone,
         #print-label-area {
-          width: 100mm !important;
+          width: 96mm !important;
+          height: auto !important;
           margin: 0 auto !important;
           padding: 0 !important;
           display: block !important;
         }
 
+        .thermal-sticker-card,
         .print-label-card {
-          width: 100mm !important;
-          min-height: 140mm !important;
-          max-height: 150mm !important;
-          margin: 0 !important;
-          padding: 6mm 6mm !important;
+          width: 96mm !important;
+          height: 146mm !important;
+          max-height: 146mm !important;
+          margin: 2mm auto !important;
+          padding: 6mm !important;
           box-sizing: border-box !important;
-          border: 1px dashed #444444 !important;
           background: #ffffff !important;
           color: #000000 !important;
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
-          justify-content: space-evenly !important;
+          justify-content: space-between !important;
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
@@ -525,9 +555,10 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           overflow: hidden !important;
         }
 
+        .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: auto !important;
-          break-after: auto !important;
+          page-break-after: avoid !important;
+          break-after: avoid !important;
         }
 
         .print-label-brand {
@@ -593,15 +624,18 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
   return `
     ${commonReset}
       @page {
-        size: A4 portrait;
-        margin: 8mm;
+        size: A4 portrait !important;
+        margin: 8mm !important;
       }
 
+      .thermal-label-print-zone,
       #print-label-area {
+        position: static !important;
         display: grid !important;
         grid-template-columns: repeat(3, 1fr) !important;
         gap: 3.5mm 4mm !important;
         width: 100% !important;
+        height: auto !important;
         margin: 0 !important;
         padding: 0 !important;
         box-sizing: border-box !important;
@@ -696,6 +730,8 @@ export interface PrintLabelSizeModalProps {
   onSelectSize: (size: LabelSizeId) => void;
   onConfirmPrint: () => void;
   storeName?: string;
+  usbDevice?: USBDevice | null;
+  onOpenHardwareModal?: () => void;
 }
 
 export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
@@ -711,6 +747,8 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
   onSelectSize,
   onConfirmPrint,
   storeName,
+  usbDevice,
+  onOpenHardwareModal,
 }) => {
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
 
@@ -726,7 +764,7 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
   const currentOption =
     LABEL_SIZE_OPTIONS.find((opt) => opt.id === selectedSize) || LABEL_SIZE_OPTIONS[0];
 
-  // Render Live Preview barcode on changes
+  // Render Live Preview barcode on changes (pure #000000 foreground on #ffffff background)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -736,7 +774,7 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
         const { width, height, margin } = currentOption.barcodeConfig;
         (JsBarcode as any)(previewSvgRef.current, trimmedCode, {
           format: 'CODE128',
-          lineColor: '#1e1b4b',
+          lineColor: '#000000',
           width: Math.max(1.1, width * 0.9),
           height: Math.max(22, height * 0.8),
           displayValue: false,
@@ -782,19 +820,39 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
                 <span className="text-[11px] font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">
                   CODE128
                 </span>
+                {usbDevice && (
+                  <span className="text-[10px] font-semibold bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Usb className="w-2.5 h-2.5" />
+                    Direct USB
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-indigo-100">
-                Select thermal roll or sticker sheet size for optimal scaling
+                {usbDevice
+                  ? `Connected to ${usbDevice.productName || 'USB Thermal Printer'} - Direct ESC/POS Driver Ready`
+                  : 'Select thermal roll or sticker sheet size for optimal scaling'}
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onOpenHardwareModal && (
+              <button
+                type="button"
+                onClick={onOpenHardwareModal}
+                title="Thermal Printer & Hardware Settings"
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+              >
+                <Settings2 className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Scrollable Body */}
@@ -963,7 +1021,7 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
             {/* Simulated sticker on surface */}
             <div className="p-4 bg-zinc-100 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center">
               <div
-                className={`bg-white text-black p-3.5 rounded-lg border border-zinc-300 shadow-md flex flex-col items-center justify-between transition-all ${
+                className={`thermal-sticker-card bg-white text-black p-3.5 rounded-lg border border-zinc-300 shadow-md flex flex-col items-center justify-between transition-all ${
                   selectedSize === '40x30'
                     ? 'w-60 min-h-[96px]'
                     : selectedSize === '58mm'
@@ -976,22 +1034,26 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
                 }`}
               >
                 {/* Product Name (Truncated if too long) */}
-                <p className="text-xs font-bold text-black text-center line-clamp-1 leading-tight mb-1 w-full">
+                <p className="sticker-title text-xs font-bold text-black text-center line-clamp-1 leading-tight mb-1 w-full">
                   {productName.trim() || 'Product Name (Preview)'}
                 </p>
 
-                {/* 3. Live Barcode SVG (Bars only) */}
-                <div className="w-full flex items-center justify-center bg-white py-0.5">
-                  <svg ref={previewSvgRef} className="max-w-full h-auto" />
+                {/* 3. Live Barcode SVG (Bars only - High Contrast Pure Black) */}
+                <div className="sticker-barcode-container w-full flex items-center justify-center bg-white py-0.5">
+                  <svg
+                    ref={previewSvgRef}
+                    className="max-w-full h-auto"
+                    style={{ shapeRendering: 'crispEdges', imageRendering: 'pixelated' }}
+                  />
                 </div>
 
                 {/* 4. Barcode Number */}
-                <div className="text-[10px] font-mono font-semibold text-zinc-700 flex items-center justify-center gap-1.5 mt-0.5">
+                <div className="sticker-number text-[10px] font-mono font-semibold text-zinc-700 flex items-center justify-center gap-1.5 mt-0.5">
                   <span>{barcode.trim() || '890123456789'}</span>
                 </div>
 
                 {/* 5. MRP: ₹XXX.XX (Incl. of all taxes) */}
-                <div className="text-[11px] font-extrabold text-black text-center mt-1">
+                <div className="sticker-mrp text-[11px] font-extrabold text-black text-center mt-1">
                   MRP: {displayPrice || '₹0.00'}{' '}
                   <span className="text-[9px] font-normal text-zinc-600">(Incl. of all taxes)</span>
                 </div>

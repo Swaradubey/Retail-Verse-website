@@ -43,15 +43,23 @@ import {
   generateDynamicPrintCss,
 } from './PrintLabelSizeModal';
 import { printViaIsolatedIframe } from '../../lib/thermalPrinter';
+import { useThermalPrinter } from '../../hooks/useThermalPrinter';
 import { broadcastProductSync } from '../../utils/posProductSync';
 
 interface AddProductModalProps {
   isOpen: boolean;
   onClose: () => void;
   onProductCreated?: (product: any) => void;
+  storeName?: string;
 }
 
-export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProductModalProps) {
+export function AddProductModal({ isOpen, onClose, onProductCreated, storeName: storeNameProp }: AddProductModalProps) {
+  const {
+    printBarcodeLabel,
+    settings: thermalSettings,
+    usbDevice,
+    openHardwareModal,
+  } = useThermalPrinter();
   // Form State
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
@@ -81,13 +89,14 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
   const [isLabelSizeModalOpen, setIsLabelSizeModalOpen] = useState(false);
 
   const storeName = React.useMemo(() => {
+    if (storeNameProp) return storeNameProp;
     try {
       const u = JSON.parse(localStorage.getItem('user') || '{}');
       return u.storeName || u.shopName || u.companyName || u.businessName || '';
     } catch {
       return '';
     }
-  }, []);
+  }, [storeNameProp]);
 
   // Compact size label format (e.g. "50×30mm", "72×40mm", or "A4 Sheet")
   const compactSizeLabel = React.useMemo(() => {
@@ -232,10 +241,10 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
           (JsBarcode as any)(svgElem, trimmedCode, {
             format: 'CODE128',
             lineColor: '#000000',
-            width,
-            height,
+            width: sizeId === '58mm' ? 1.3 : width,
+            height: sizeId === '58mm' ? 28 : height,
             displayValue: false,
-            margin,
+            margin: 0,
             background: '#ffffff',
           });
           successCount++;
@@ -263,7 +272,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
         try {
           (JsBarcode as any)(barcodeSvgRef.current, barcode.trim(), {
             format: 'CODE128',
-            lineColor: '#1e1b4b',
+            lineColor: '#000000',
             width: 1.8,
             height: 44,
             displayValue: true,
@@ -298,13 +307,45 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
     setIsLabelSizeModalOpen(true);
   };
 
-  // Immediate print execution via isolated iframe (eliminates browser A4 PDF dialog)
-  const executePrint = (targetSize: LabelSizeId = selectedLabelSize) => {
+  // Immediate print execution via isolated thermal engine (WebUSB or isolated iframe)
+  const executePrint = async (targetSize: LabelSizeId = selectedLabelSize) => {
     const exactBarcode = barcode.trim();
     if (!exactBarcode) {
       toast.error('Please enter or generate a barcode first to print labels.');
       barcodeInputRef.current?.focus();
       return;
+    }
+
+    const dimensionMap: Record<LabelSizeId, string> = {
+      '58mm': '50mm 30mm',
+      '80mm': '72mm 40mm',
+      '40x30': '40mm 30mm',
+      '100x150': '100mm 150mm',
+      'a4': 'A4 portrait',
+    };
+    const exactDim = dimensionMap[targetSize] || '50mm 30mm';
+
+    // 1. Direct WebUSB hardware driver if connected (bypasses browser dialog completely)
+    if (usbDevice && targetSize !== 'a4') {
+      try {
+        const res = await printBarcodeLabel(
+          {
+            name: name.trim() || 'Product',
+            sku: sku.trim(),
+            barcode: exactBarcode,
+            price: price,
+            storeName: storeName || thermalSettings.storeName,
+          },
+          printCopies,
+          exactDim
+        );
+        if (res.success) {
+          setIsLabelSizeModalOpen(false);
+          return;
+        }
+      } catch (usbErr) {
+        console.warn('[AddProductModal] WebUSB direct print failed, falling back to isolated iframe:', usbErr);
+      }
     }
 
     // Ensure all requested barcode label SVGs are rendered before printing
@@ -315,26 +356,42 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       }, 30);
     }
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const printArea = document.getElementById('print-label-area');
       if (printArea) {
-        const dimensionMap: Record<LabelSizeId, string> = {
-          '58mm': '50mm 30mm',
-          '80mm': '72mm 40mm',
-          '40x30': '40mm 30mm',
-          '100x150': '100mm 150mm',
-          'a4': 'A4 portrait',
-        };
-        const exactDim = dimensionMap[targetSize] || '50mm 30mm';
-        printViaIsolatedIframe({
-          html: `<div style="display:block !important;">${printArea.innerHTML}</div>`,
-          title: `Barcode Labels - ${exactBarcode}`,
-          exactDimensions: exactDim,
-        }).catch(() => {
-          window.print();
-        });
+        try {
+          await printViaIsolatedIframe({
+            html: `<div class="thermal-label-print-zone" style="display:block !important;">${printArea.innerHTML}</div>`,
+            title: `Barcode Labels - ${exactBarcode}`,
+            exactDimensions: exactDim,
+          });
+          toast.success(`Sent ${printCopies} barcode label${printCopies === 1 ? '' : 's'} to thermal printer`);
+          setIsLabelSizeModalOpen(false);
+        } catch (iframeErr: any) {
+          console.error('[AddProductModal] Isolated thermal iframe print failed:', iframeErr);
+          toast.error(`Thermal printing failed: ${iframeErr?.message || 'Print error'}`);
+        }
       } else {
-        window.print();
+        // Fallback to printBarcodeLabel engine
+        try {
+          const res = await printBarcodeLabel(
+            {
+              name: name.trim() || 'Product',
+              sku: sku.trim(),
+              barcode: exactBarcode,
+              price: price,
+              storeName: storeName || thermalSettings.storeName,
+            },
+            printCopies,
+            exactDim
+          );
+          if (res.success) {
+            setIsLabelSizeModalOpen(false);
+          }
+        } catch (err: any) {
+          console.error('[AddProductModal] Label print engine failed:', err);
+          toast.error(`Thermal print engine failed: ${err?.message || 'Error'}`);
+        }
       }
     }, 120);
   };
@@ -564,40 +621,38 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
       {/* Print Section strictly visible during print via #print-label-area */}
       <div
         id="print-label-area"
-        className={selectedLabelSize === 'a4' ? 'a4-grid' : 'thermal-roll'}
+        className={`thermal-label-print-zone ${selectedLabelSize === 'a4' ? 'a4-grid' : 'thermal-roll'}`}
       >
         {Array.from({ length: Math.max(1, printCopies) }).map((_, idx) => (
-          <div key={idx} className="print-label-card">
-            {/* Product Name (Truncated if too long) */}
-            {name && name.trim() ? (
-              <div className="print-label-name">
-                {name.trim()}
-              </div>
-            ) : null}
+          <div key={idx} className="thermal-sticker-card print-label-card">
+            {/* 1. Product Title */}
+            <div className="sticker-title print-label-name">
+              {name && name.trim() ? name.trim() : 'Product'}
+            </div>
 
-            {/* 3. Barcode SVG (Bars only) */}
-            <div className="print-label-barcode-container">
+            {/* 2. Barcode SVG Container */}
+            <div className="sticker-barcode-container print-label-barcode-container">
               <svg
                 id={idx === 0 ? 'barcode-print' : undefined}
                 ref={idx === 0 ? printBarcodeSvgRef : undefined}
                 className="barcode-print-svg"
+                style={{ shapeRendering: 'crispEdges', imageRendering: 'pixelated' }}
               />
             </div>
 
-            {/* 4. Barcode Number */}
-            <div className="print-label-code-sku">
-              <span className="print-label-barcode-num">{barcode.trim()}</span>
+            {/* 3. Barcode Number */}
+            <div className="sticker-number print-label-code-sku">
+              {barcode.trim()}
             </div>
 
-            {/* 5. MRP: ₹XXX.XX (Incl. of all taxes) */}
-            <div className="print-label-mrp">
+            {/* 4. MRP */}
+            <div className="sticker-mrp print-label-mrp">
               MRP: ₹{price !== '' && price !== undefined && !isNaN(Number(price))
                 ? Number(price).toLocaleString('en-IN', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2,
                   })
-                : '0.00'}{' '}
-              <span className="print-label-tax-note">(Incl. of all taxes)</span>
+                : '0.00'} (Incl. of all taxes)
             </div>
           </div>
         ))}
@@ -615,6 +670,8 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
         onCopiesChange={setPrintCopies}
         selectedSize={selectedLabelSize}
         storeName={storeName}
+        usbDevice={usbDevice}
+        onOpenHardwareModal={openHardwareModal}
         onSelectSize={(newSize) => {
           setSelectedLabelSize(newSize);
           renderPrintBarcode(barcode.trim(), newSize);
@@ -869,10 +926,14 @@ export function AddProductModal({ isOpen, onClose, onProductCreated }: AddProduc
                   </p>
                 )}
 
-                {/* Live SVG Barcode Preview */}
+                {/* Live SVG Barcode Preview (High Contrast Pure Black) */}
                 {barcode.trim() && (
                   <div className="mt-2 p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center">
-                    <svg ref={barcodeSvgRef} className="max-w-full h-auto" />
+                    <svg
+                      ref={barcodeSvgRef}
+                      className="max-w-full h-auto"
+                      style={{ shapeRendering: 'crispEdges', imageRendering: 'pixelated' }}
+                    />
                     <span className="text-[11px] font-mono text-zinc-500 mt-1">Live CODE128 Preview</span>
                   </div>
                 )}

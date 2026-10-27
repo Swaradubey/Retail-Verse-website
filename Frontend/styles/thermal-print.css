@@ -99,13 +99,105 @@
     break-after: auto !important;
   }
 
-  /* Ensure barcode vectors and canvases render with crisp pixel-perfect lines on thermal print heads */
-  .thermal-barcode-svg,
-  .thermal-barcode-canvas {
-    shape-rendering: crispEdges !important;
-    image-rendering: pixelated !important;
+  /* Thermal label print zone */
+  .thermal-label-print-zone,
+  .thermal-label-print-zone * {
+    visibility: visible !important;
+  }
+
+  .thermal-label-print-zone {
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Each single sticker unit */
+  .thermal-sticker-card {
+    width: 48mm !important;
+    height: 28mm !important;
+    max-height: 28mm !important;
+    margin: 1mm auto !important;
+    padding: 1mm !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    text-align: center !important;
+    overflow: hidden !important;
+    
+    /* Prevent splitting across pages */
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    
+    /* Ensure the next sticker starts on a fresh label */
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+
+  .thermal-sticker-card:last-child {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Product Title styling */
+  .sticker-title {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
     max-width: 100% !important;
+    color: #000000 !important;
+  }
+
+  /* Barcode SVG / Canvas container */
+  .sticker-barcode-container {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    height: 12mm !important;
+    max-height: 12mm !important;
+    width: 100% !important;
+    overflow: hidden !important;
+    margin: 0 auto !important;
+  }
+
+  .sticker-barcode-container svg,
+  .sticker-barcode-container canvas,
+  .sticker-barcode-container img,
+  .thermal-barcode-svg,
+  .thermal-barcode-canvas,
+  .barcode-print-svg {
+    max-height: 12mm !important;
+    max-width: 95% !important;
+    image-rendering: pixelated !important;
+    shape-rendering: crispEdges !important;
     display: block !important;
     margin: 0 auto !important;
+    background: #ffffff !important;
+  }
+
+  /* SKU / Number & MRP styling */
+  .sticker-number {
+    font-size: 9px !important;
+    letter-spacing: 1px !important;
+    font-family: monospace !important;
+    line-height: 1 !important;
+    color: #000000 !important;
+  }
+
+  .sticker-mrp {
+    font-size: 9px !important;
+    font-weight: 600 !important;
+    line-height: 1.1 !important;
+    white-space: nowrap !important;
+    color: #000000 !important;
   }
 }
