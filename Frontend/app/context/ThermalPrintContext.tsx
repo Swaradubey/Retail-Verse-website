@@ -273,27 +273,41 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         const iframeHtml = `
           <style>
             @page {
-              size: ${exactDimensions || '50mm 25mm'} !important;
-              margin: 0 !important;
+              size: auto;
+              margin: 5mm !important;
             }
             html, body {
               margin: 0 !important;
               padding: 0 !important;
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+              overflow: visible !important;
               background: #fff !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
               color: #000 !important;
-              font-family: Arial, Helvetica, sans-serif !important;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
             }
             .sticker-container {
               margin: 0 !important;
               padding: 0 !important;
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+              overflow: visible !important;
+              display: flex !important;
+              flex-wrap: wrap !important;
+              align-items: flex-start !important;
+              justify-content: flex-start !important;
+              gap: 3mm !important;
+              width: 100% !important;
             }
             .thermal-sticker-card {
               width: ${cardWidthMm}mm !important;
               height: ${cardHeightMm}mm !important;
               max-height: ${cardHeightMm}mm !important;
-              margin: 0.75mm auto !important;
+              margin: 0 !important;
               padding: 0.5mm 1mm !important;
               box-sizing: border-box !important;
               display: flex !important;
@@ -304,12 +318,12 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
               overflow: hidden !important;
               break-inside: avoid !important;
               page-break-inside: avoid !important;
-              break-after: page !important;
-              page-break-after: always !important;
+              break-after: auto !important;
+              page-break-after: auto !important;
             }
             .thermal-sticker-card:last-child {
-              break-after: avoid !important;
-              page-break-after: avoid !important;
+              break-after: auto !important;
+              page-break-after: auto !important;
             }
             .sticker-title {
               font-size: ${titleFontSize} !important;

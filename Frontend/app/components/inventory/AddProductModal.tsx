@@ -360,10 +360,11 @@ export function AddProductModal({ isOpen, onClose, onProductCreated, storeName: 
       const printArea = document.getElementById('print-label-area');
       if (printArea) {
         try {
+          const dynamicCss = generateDynamicPrintCss(targetSize);
           await printViaIsolatedIframe({
-            html: `<div class="thermal-label-print-zone" style="display:block !important;">${printArea.innerHTML}</div>`,
+            html: `<style>${dynamicCss}</style><div class="thermal-label-print-zone ${targetSize === 'a4' ? 'a4-grid' : 'thermal-roll'}" style="display:${targetSize === 'a4' ? 'grid' : 'flex'} !important;">${printArea.innerHTML}</div>`,
             title: `Barcode Labels - ${exactBarcode}`,
-            exactDimensions: exactDim,
+            exactDimensions: targetSize === 'a4' ? 'auto' : exactDim,
           });
           toast.success(`Sent ${printCopies} barcode label${printCopies === 1 ? '' : 's'} to thermal printer`);
           setIsLabelSizeModalOpen(false);

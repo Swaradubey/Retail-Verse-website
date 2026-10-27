@@ -161,7 +161,14 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         background: #ffffff !important;
         width: 100% !important;
         height: auto !important;
-        display: block !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: flex-start !important;
+        justify-content: flex-start !important;
+        gap: 3mm !important;
       }
 
       /* Each single sticker unit */
@@ -170,7 +177,7 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         width: 48mm !important;
         height: 28mm !important;
         max-height: 28mm !important;
-        margin: 1mm auto !important;
+        margin: 0 !important;
         padding: 1mm !important;
         box-sizing: border-box !important;
         display: flex !important;
@@ -184,15 +191,15 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         break-inside: avoid !important;
         page-break-inside: avoid !important;
         
-        /* Ensure the next sticker starts on a fresh label */
-        break-after: page !important;
-        page-break-after: always !important;
+        /* Flow continuously without forcing individual page breaks */
+        break-after: auto !important;
+        page-break-after: auto !important;
       }
 
       .thermal-sticker-card:last-child,
       .print-label-card:last-child {
-        break-after: avoid !important;
-        page-break-after: avoid !important;
+        break-after: auto !important;
+        page-break-after: auto !important;
       }
 
       /* Product Title styling */
@@ -299,8 +306,8 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          page-break-after: always !important;
-          break-after: page !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
           overflow: hidden !important;
         }
 
@@ -317,17 +324,24 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: 80mm 40mm !important;
-          margin: 0 !important;
+          size: auto !important;
+          margin: 5mm !important;
         }
 
         .thermal-label-print-zone,
         #print-label-area {
-          width: 76mm !important;
+          width: 100% !important;
           height: auto !important;
-          margin: 0 auto !important;
+          min-height: 0 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          margin: 0 !important;
           padding: 0 !important;
-          display: block !important;
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          gap: 3mm !important;
         }
 
         .thermal-sticker-card,
@@ -335,7 +349,7 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           width: 76mm !important;
           height: 38mm !important;
           max-height: 38mm !important;
-          margin: 1mm auto !important;
+          margin: 0 !important;
           padding: 2mm !important;
           box-sizing: border-box !important;
           background: #ffffff !important;
@@ -347,15 +361,15 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          page-break-after: always !important;
-          break-after: page !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
           overflow: hidden !important;
         }
 
         .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: avoid !important;
-          break-after: avoid !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
         }
 
         .print-label-brand {
@@ -421,17 +435,24 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: 40mm 30mm !important;
-          margin: 0 !important;
+          size: auto !important;
+          margin: 5mm !important;
         }
 
         .thermal-label-print-zone,
         #print-label-area {
-          width: 38mm !important;
+          width: 100% !important;
           height: auto !important;
-          margin: 0 auto !important;
+          min-height: 0 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          margin: 0 !important;
           padding: 0 !important;
-          display: block !important;
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          gap: 2.5mm !important;
         }
 
         .thermal-sticker-card,
@@ -439,7 +460,7 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           width: 38mm !important;
           height: 28mm !important;
           max-height: 28mm !important;
-          margin: 1mm auto !important;
+          margin: 0 !important;
           padding: 1mm !important;
           box-sizing: border-box !important;
           background: #ffffff !important;
@@ -451,15 +472,15 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          page-break-after: always !important;
-          break-after: page !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
           overflow: hidden !important;
         }
 
         .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: avoid !important;
-          break-after: avoid !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
         }
 
         .print-label-brand {
@@ -520,17 +541,24 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
     return `
       ${commonReset}
         @page {
-          size: 100mm 150mm !important;
-          margin: 0 !important;
+          size: auto !important;
+          margin: 5mm !important;
         }
 
         .thermal-label-print-zone,
         #print-label-area {
-          width: 96mm !important;
+          width: 100% !important;
           height: auto !important;
-          margin: 0 auto !important;
+          min-height: 0 !important;
+          max-height: none !important;
+          overflow: visible !important;
+          margin: 0 !important;
           padding: 0 !important;
-          display: block !important;
+          display: flex !important;
+          flex-wrap: wrap !important;
+          align-items: flex-start !important;
+          justify-content: flex-start !important;
+          gap: 3mm !important;
         }
 
         .thermal-sticker-card,
@@ -538,7 +566,7 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           width: 96mm !important;
           height: 146mm !important;
           max-height: 146mm !important;
-          margin: 2mm auto !important;
+          margin: 0 !important;
           padding: 6mm !important;
           box-sizing: border-box !important;
           background: #ffffff !important;
@@ -550,15 +578,15 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          page-break-after: always !important;
-          break-after: page !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
           overflow: hidden !important;
         }
 
         .thermal-sticker-card:last-child,
         .print-label-card:last-child {
-          page-break-after: avoid !important;
-          break-after: avoid !important;
+          page-break-after: auto !important;
+          break-after: auto !important;
         }
 
         .print-label-brand {
@@ -624,8 +652,8 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
   return `
     ${commonReset}
       @page {
-        size: A4 portrait !important;
-        margin: 8mm !important;
+        size: auto !important;
+        margin: 5mm !important;
       }
 
       .thermal-label-print-zone,
@@ -636,6 +664,9 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         gap: 3.5mm 4mm !important;
         width: 100% !important;
         height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
         margin: 0 !important;
         padding: 0 !important;
         box-sizing: border-box !important;
@@ -654,6 +685,8 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
         text-align: center !important;
         page-break-inside: avoid !important;
         break-inside: avoid !important;
+        page-break-after: auto !important;
+        break-after: auto !important;
         width: 100% !important;
         min-height: 28mm !important;
         max-height: 33mm !important;

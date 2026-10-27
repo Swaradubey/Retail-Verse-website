@@ -761,7 +761,14 @@ export function printViaIsolatedIframe({
         throw new Error('Unable to access thermal print iframe document.');
       }
 
-      const pageSizeRule = exactDimensions ? exactDimensions : `${rollWidth} auto`;
+      // Collect all stylesheets and style tags from parent document for production bundle support
+      const parentStyles = typeof document !== 'undefined'
+        ? Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+            .map((node) => node.outerHTML)
+            .join('\n')
+        : '';
+
+      const pageSizeRule = exactDimensions ? exactDimensions : 'auto';
 
       const wrappedHtml = `
         <!DOCTYPE html>
@@ -769,23 +776,53 @@ export function printViaIsolatedIframe({
           <head>
             <meta charset="utf-8" />
             <title>${title}</title>
+            ${parentStyles}
             <style>
               @page {
                 size: ${pageSizeRule};
-                margin: 0 !important;
+                margin: 5mm !important;
               }
               html, body {
                 margin: 0 !important;
                 padding: 0 !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
                 background: #ffffff !important;
                 color: #000000 !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
-                font-family: 'Courier New', Courier, monospace;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
               }
               * {
                 box-sizing: border-box !important;
                 color: #000000 !important;
+              }
+              /* Prevent parent container from locking 100vh or centering during print */
+              .thermal-label-print-zone,
+              .sticker-container,
+              #print-label-area {
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                overflow: visible !important;
+                display: flex !important;
+                flex-wrap: wrap !important;
+                align-items: flex-start !important;
+                justify-content: flex-start !important;
+                gap: 3mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+              }
+              /* Ensure label cards do not split, but flow continuously across sheet */
+              .thermal-sticker-card,
+              .print-label-card {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+                break-after: auto !important;
+                page-break-after: auto !important;
               }
               svg, canvas, img {
                 shape-rendering: crispEdges !important;
