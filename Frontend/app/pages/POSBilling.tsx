@@ -73,6 +73,7 @@ import {
   loadPosProductsCache,
 } from '../lib/posProductCache';
 import { subscribeToProductSync } from '../utils/posProductSync';
+import { printThermalReceipt } from '../utils/posPrintReceipt';
 
 // Audio feedback helper for POS barcode scan beep
 function playScanSound(type: 'success' | 'error' = 'success') {
@@ -205,7 +206,9 @@ export interface POSCartItem {
   barcode: string;
   name: string;
   unitPrice: number;
+  price?: number;
   quantity: number;
+  gst?: number;
   gstRate: number;
   stockLevel: number;
   imageUrl?: string;
@@ -900,6 +903,7 @@ export function POSBilling() {
           finalOrder.paymentStatus = 'PAID';
           finalOrder.isPaid = true;
           setCompletedOrder(finalOrder);
+          handlePrintReceipt(finalOrder);
           setPendingWhatsAppPayment(null);
           setUpiId('');
           setWhatsappPhone('');
@@ -1010,6 +1014,8 @@ export function POSBilling() {
         updated[existingIndex] = {
           ...updated[existingIndex],
           quantity: currentQty + 1,
+          unitPrice,
+          price: unitPrice,
           gst: itemGst,
           gstRate: itemGst,
           imageUrl: existingImage,
@@ -1047,6 +1053,7 @@ export function POSBilling() {
             barcode,
             name: product.name,
             unitPrice,
+            price: unitPrice,
             quantity: 1,
             gst: itemGst,
             gstRate: itemGst,
@@ -1541,15 +1548,17 @@ export function POSBilling() {
           { id: toastId }
         );
 
-        // 2. Open completed receipt modal so cashier can print receipt
-        setCompletedOrder({
+        // 2. Open completed receipt modal and automatically print receipt via hidden iframe
+        const finalOfflineOrder = {
           ...offlineOrderDoc,
           orderNumber: offlineInvoiceNum,
           isPaid: true,
           customerName: effectiveCustomerName,
           customerPhone: effectiveCustomerPhone,
           customerAddress: effectiveCustomerAddress,
-        });
+        };
+        setCompletedOrder(finalOfflineOrder);
+        handlePrintReceipt(finalOfflineOrder);
 
         // 3. Clear active cart & active draft & customer form
         setCart([]);
@@ -1708,12 +1717,14 @@ export function POSBilling() {
                   `Payment Complete! Invoice: ${res.invoiceNumber || orderData.invoiceNumber || orderData.orderId}`,
                   { id: verifyToastId }
                 );
-                setCompletedOrder({
+                const finalOrderData = {
                   ...orderData,
                   customerName: orderData.customerName || effectiveCustomerName,
                   customerPhone: orderData.customerPhone || effectiveCustomerPhone,
                   customerAddress: orderData.customerAddress || effectiveCustomerAddress,
-                });
+                };
+                setCompletedOrder(finalOrderData);
+                handlePrintReceipt(finalOrderData);
                 setCart([]);
                 setAppliedCoupon(null);
                 setCouponInput('');
@@ -1999,12 +2010,14 @@ export function POSBilling() {
           `Payment Complete! Invoice: ${res.invoiceNumber || orderData.invoiceNumber || orderData.orderId}`,
           { id: toastId }
         );
-        setCompletedOrder({
+        const finalOrderData = {
           ...orderData,
           customerName: orderData.customerName || effectiveCustomerName,
           customerPhone: orderData.customerPhone || effectiveCustomerPhone,
           customerAddress: orderData.customerAddress || effectiveCustomerAddress,
-        });
+        };
+        setCompletedOrder(finalOrderData);
+        handlePrintReceipt(finalOrderData);
         setCart([]);
         setAppliedCoupon(null);
         setCouponInput('');
@@ -2111,114 +2124,19 @@ export function POSBilling() {
     }
   };
 
-  // Print Invoice Thermal Receipt
+  // Print Invoice Thermal Receipt via hidden iframe (direct / silent 80mm dark thermal formatting)
   const handlePrintReceipt = (order: any) => {
-    const printWindow = window.open('', '_blank', 'width=420,height=600');
-    if (!printWindow) {
-      toast.error('Pop-up blocked. Allow pop-ups to print receipts.');
+    if (!order) {
+      toast.error('No order selected to print');
       return;
     }
-
-    const itemsHtml = (order.items || [])
-      .map(
-        (it: any) => `
-        <tr>
-          <td style="padding: 4px 0; font-size: 11px;">${it.name}<br/><span style="font-size: 9px; color: #555;">${it.barcode || ''}</span></td>
-          <td style="text-align: center; font-size: 11px;">${it.quantity}</td>
-          <td style="text-align: right; font-size: 11px;">&#8377;${Number(it.unitPrice || it.price).toFixed(2)}</td>
-          <td style="text-align: right; font-size: 11px; font-weight: bold;">&#8377;${Number(it.itemTotal || (it.unitPrice || it.price) * it.quantity).toFixed(2)}</td>
-        </tr>
-      `
-      )
-      .join('');
-
-    const discountAmt = Number(order.discountAmount) || 0;
-    const appliedCode = order.couponCode || 'SAVE1000';
-    const discountHtml =
-      discountAmt > 0
-        ? `
-        <div class="total-row" style="color: #15803d; font-weight: bold;">
-          <span>Coupon Discount (${appliedCode}):</span>
-          <span>-&#8377;${discountAmt.toFixed(2)}</span>
-        </div>
-        <div style="font-size: 8.5px; color: #15803d; text-align: left; padding: 1px 0 3px 0; font-weight: normal;">
-          Coupon Applied: &#8377;500 OFF on purchase of &#8377;3000+
-        </div>
-        `
-        : '';
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt - ${order.invoiceNumber || order.orderId}</title>
-          <style>
-            @page { size: 80mm auto; margin: 5mm; }
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              width: 72mm;
-              margin: 0 auto;
-              padding: 0;
-              color: #000;
-              background: #fff;
-            }
-            .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 6px; }
-            .store-name { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
-            .meta { font-size: 10px; margin-top: 4px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; border-bottom: 1px dashed #000; padding-bottom: 8px; }
-            th { font-size: 10px; text-transform: uppercase; border-bottom: 1px solid #000; padding: 4px 0; }
-            .totals { margin-top: 8px; font-size: 11px; }
-            .total-row { display: flex; justify-content: space-between; margin: 3px 0; }
-            .grand-total { font-size: 14px; font-weight: bold; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; }
-            .footer { text-align: center; font-size: 10px; margin-top: 12px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="store-name">RetailVerse POS</div>
-            <div class="meta">Invoice: ${order.invoiceNumber || order.orderId}</div>
-            <div class="meta">Date: ${new Date(order.createdAt || Date.now()).toLocaleString()}</div>
-            <div class="meta">Payment: ${order.paymentMethod || 'CASH'} (${order.paymentMethod === 'WHATSAPP' && order.paymentStatus !== 'PAID' ? 'LINK SENT' : 'PAID'})</div>
-            ${order.customerName && order.customerName !== 'Walk-in Customer' ? `<div class="meta">Customer: ${order.customerName}</div>` : ''}
-            ${order.customerPhone ? `<div class="meta">Phone: ${order.customerPhone}</div>` : ''}
-            ${order.customerAddress ? `<div class="meta">Address: ${order.customerAddress}</div>` : ''}
-            ${order.paymentDetails?.cardLast4 ? `<div class="meta">Card: **** **** **** ${order.paymentDetails.cardLast4} (${order.paymentDetails.cardNetwork || order.paymentDetails.cardBrand || 'Card'})</div>` : ''}
-            ${order.upiId || order.paymentDetails?.upiId ? `<div class="meta">UPI ID: ${order.upiId || order.paymentDetails?.upiId}</div>` : ''}
-            ${order.whatsappPhone || order.paymentDetails?.whatsappPhone ? `<div class="meta">WhatsApp: +${order.whatsappPhone || order.paymentDetails?.whatsappPhone}</div>` : ''}
-            ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl ? `<div class="meta" style="word-break: break-all;">Link: ${order.paymentLinkUrl || order.paymentDetails?.paymentLinkUrl}</div>` : ''}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="text-align: left;">Item</th>
-                <th>Qty</th>
-                <th style="text-align: right;">Price</th>
-                <th style="text-align: right;">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <div class="totals">
-            <div class="total-row"><span>Subtotal:</span><span>&#8377;${Number(order.subtotal || 0).toFixed(2)}</span></div>
-            ${discountHtml}
-            <div class="total-row"><span>Total GST Tax:</span><span>&#8377;${Number(order.totalGst || order.taxPrice || 0).toFixed(2)}</span></div>
-            <div class="total-row grand-total"><span>Grand Total:</span><span>&#8377;${Number(order.grandTotal || order.totalPrice || 0).toFixed(2)}</span></div>
-          </div>
-          <div class="footer">
-            <div>Thank You for Shopping with Us!</div>
-            <div>Powered by RetailVerse POS</div>
-          </div>
-          <script>
-            window.onload = function() {
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+    try {
+      printThermalReceipt(order, user?.name || 'Staff');
+      toast.success('Thermal receipt sent to printer');
+    } catch (err: any) {
+      console.error('Print receipt error:', err);
+      toast.error('Failed to trigger receipt printing');
+    }
   };
 
   return (
@@ -3340,6 +3258,7 @@ export function POSBilling() {
                       finalOrder.paymentStatus = 'PAID';
                       finalOrder.isPaid = true;
                       setCompletedOrder(finalOrder);
+                      handlePrintReceipt(finalOrder);
                       setPendingWhatsAppPayment(null);
                       setUpiId('');
                       setWhatsappPhone('');
@@ -3388,6 +3307,7 @@ export function POSBilling() {
                         finalOrder.paymentStatus = 'PAID';
                         finalOrder.isPaid = true;
                         setCompletedOrder(finalOrder);
+                        handlePrintReceipt(finalOrder);
                         setPendingWhatsAppPayment(null);
                         setUpiId('');
                         setWhatsappPhone('');
