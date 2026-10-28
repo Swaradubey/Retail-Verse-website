@@ -359,7 +359,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             <div className="p-6 bg-zinc-100 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center">
               {/* Simulated Thermal Sticker */}
               <div
-                className={`thermal-sticker-card bg-white text-black p-3 rounded-xl border border-zinc-400 shadow-md flex flex-col items-center justify-between text-center select-none transition-all ${
+                className={`label-card thermal-sticker-card bg-white text-black p-3 rounded-xl border border-zinc-400 shadow-md flex flex-col items-center justify-between text-center select-none transition-all ${
                   selectedPreset === '40x30'
                     ? 'w-56 min-h-[100px]'
                     : selectedPreset === '50x25'
@@ -394,10 +394,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 <div className="sticker-number text-[9px] font-mono font-bold text-black">
                   {product.barcode}
                   {includeSku && product.sku && <span className="ml-1 text-zinc-600 font-normal">| SKU: {product.sku}</span>}
-                </div>
-
-                <div className="sticker-mrp text-xs font-black text-black my-0.5">
-                  MRP: ₹{formattedPrice} <span className="text-[9px] font-normal">(Incl. of all taxes)</span>
                 </div>
               </div>
 

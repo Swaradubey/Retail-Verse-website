@@ -3,25 +3,25 @@
  * Optimized for POS 80mm & 58mm roll printers and continuous barcode sticker rolls.
  */
 
-@media print {
-  /* Reset document root to eliminate any default A4 margins and forced headers/footers */
-  @page {
-    margin: 0 !important;
-    size: auto;
-  }
+@page {
+  size: 50mm 30mm;
+  margin: 0;
+}
 
+@media print {
   html,
   body {
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    width: 100% !important;
+    width: 50mm !important;
     height: auto !important;
     min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
     overflow: visible !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     font-smooth: never;
     -webkit-font-smoothing: none;
   }
@@ -117,32 +117,27 @@
   }
 
   /* Each single sticker unit */
+  .label-card,
+  .print-label-card,
   .thermal-sticker-card {
-    width: 48mm !important;
-    height: 28mm !important;
-    max-height: 28mm !important;
-    margin: 1mm auto !important;
-    padding: 1mm !important;
-    box-sizing: border-box !important;
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    justify-content: space-between !important;
-    text-align: center !important;
-    overflow: hidden !important;
-    
-    /* Prevent splitting across pages */
+    width: 50mm !important;
+    height: 30mm !important;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 2mm;
     break-inside: avoid !important;
     page-break-inside: avoid !important;
-    
-    /* Ensure the next sticker starts on a fresh label */
-    break-after: page !important;
-    page-break-after: always !important;
   }
 
+  .label-card:last-child,
+  .print-label-card:last-child,
   .thermal-sticker-card:last-child {
-    break-after: avoid !important;
-    page-break-after: avoid !important;
+    break-after: auto !important;
+    page-break-after: auto !important;
   }
 
   /* Product Title styling */

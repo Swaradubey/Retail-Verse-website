@@ -274,12 +274,50 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
 
   if (sizeId === '58mm') {
     return `
-      ${commonReset}
-        @page {
-          size: 50mm 30mm !important;
+      @page {
+        size: 50mm 30mm;
+        margin: 0;
+      }
+      @media print {
+        html, body {
+          width: 50mm !important;
+          height: auto !important;
+          min-height: 0 !important;
+          max-height: none !important;
           margin: 0 !important;
+          padding: 0 !important;
+          overflow: visible !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
-
+        .label-card,
+        .thermal-sticker-card,
+        .print-label-card {
+          width: 50mm !important;
+          height: 30mm !important;
+          min-height: 30mm !important;
+          max-height: 30mm !important;
+          page-break-after: always !important;
+          break-after: page !important;
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-sizing: border-box !important;
+          padding: 2mm !important;
+          margin: 0 !important;
+          overflow: hidden !important;
+        }
+        .label-card:last-child,
+        .thermal-sticker-card:last-child,
+        .print-label-card:last-child {
+          page-break-after: auto !important;
+          break-after: auto !important;
+        }
+      }
+      ${commonReset}
         .thermal-label-print-zone,
         #print-label-area {
           width: 50mm !important;
@@ -288,13 +326,13 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           display: block !important;
         }
 
+        .label-card,
         .thermal-sticker-card,
         .print-label-card {
-          width: 48mm !important;
-          height: 28mm !important;
-          max-height: 28mm !important;
-          margin: 1mm auto !important;
-          padding: 1mm !important;
+          width: 50mm !important;
+          height: 30mm !important;
+          margin: 0 auto !important;
+          padding: 2mm !important;
           box-sizing: border-box !important;
           border: 0.5px dashed #444444 !important;
           background: #ffffff !important;
@@ -302,15 +340,16 @@ export function generateDynamicPrintCss(sizeId: LabelSizeId): string {
           display: flex !important;
           flex-direction: column !important;
           align-items: center !important;
-          justify-content: space-between !important;
+          justify-content: center !important;
           text-align: center !important;
           page-break-inside: avoid !important;
           break-inside: avoid !important;
-          page-break-after: auto !important;
-          break-after: auto !important;
+          page-break-after: always !important;
+          break-after: page !important;
           overflow: hidden !important;
         }
 
+        .label-card:last-child,
         .thermal-sticker-card:last-child,
         .print-label-card:last-child {
           page-break-after: auto !important;
@@ -1054,7 +1093,7 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
             {/* Simulated sticker on surface */}
             <div className="p-4 bg-zinc-100 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 flex flex-col items-center justify-center">
               <div
-                className={`thermal-sticker-card bg-white text-black p-3.5 rounded-lg border border-zinc-300 shadow-md flex flex-col items-center justify-between transition-all ${
+                className={`label-card thermal-sticker-card bg-white text-black p-3.5 rounded-lg border border-zinc-300 shadow-md flex flex-col items-center justify-between transition-all ${
                   selectedSize === '40x30'
                     ? 'w-60 min-h-[96px]'
                     : selectedSize === '58mm'
@@ -1083,12 +1122,6 @@ export const PrintLabelSizeModal: React.FC<PrintLabelSizeModalProps> = ({
                 {/* 4. Barcode Number */}
                 <div className="sticker-number text-[10px] font-mono font-semibold text-zinc-700 flex items-center justify-center gap-1.5 mt-0.5">
                   <span>{barcode.trim() || '890123456789'}</span>
-                </div>
-
-                {/* 5. MRP: ₹XXX.XX (Incl. of all taxes) */}
-                <div className="sticker-mrp text-[11px] font-extrabold text-black text-center mt-1">
-                  MRP: {displayPrice || '₹0.00'}{' '}
-                  <span className="text-[9px] font-normal text-zinc-600">(Incl. of all taxes)</span>
                 </div>
               </div>
 

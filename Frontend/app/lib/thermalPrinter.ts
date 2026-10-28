@@ -695,8 +695,6 @@ export function buildBarcodeLabelEscPos(
     builder.align('center');
     builder.bold(true).textLine((label.storeName || 'RETAILVERSE').toUpperCase());
     builder.size('normal').textLine(label.name.slice(0, 24));
-    builder.bold(true).textLine(`Rs. ${formattedPrice} (INCL. TAXES)`);
-    builder.bold(false);
 
     // Barcode CODE128
     if (label.barcode) {
@@ -768,7 +766,11 @@ export function printViaIsolatedIframe({
             .join('\n')
         : '';
 
-      const pageSizeRule = exactDimensions ? exactDimensions : 'auto';
+      const isA4 = exactDimensions === 'auto' || exactDimensions === 'A4 portrait';
+      const pageDim = isA4 ? 'auto' : (exactDimensions || '50mm 30mm');
+      const pageMargin = isA4 ? '5mm' : '0';
+      const widthVal = isA4 ? '100%' : '50mm';
+      const heightVal = isA4 ? 'auto' : '30mm';
 
       const wrappedHtml = `
         <!DOCTYPE html>
@@ -779,16 +781,63 @@ export function printViaIsolatedIframe({
             ${parentStyles}
             <style>
               @page {
-                size: ${pageSizeRule};
-                margin: 5mm !important;
+                size: ${pageDim};
+                margin: ${pageMargin};
+              }
+              @media print {
+                html, body {
+                  width: ${widthVal} !important;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                  -webkit-print-color-adjust: exact;
+                  print-color-adjust: exact;
+                }
+                .thermal-label-print-zone,
+                .sticker-container,
+                #print-label-area {
+                  display: ${isA4 ? 'grid' : 'block'} !important;
+                  width: ${widthVal} !important;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  overflow: visible !important;
+                }
+                .label-card,
+                .thermal-sticker-card,
+                .print-label-card {
+                  width: ${widthVal} !important;
+                  height: ${heightVal} !important;
+                  min-height: ${heightVal} !important;
+                  max-height: ${heightVal} !important;
+                  page-break-after: always !important;
+                  break-after: page !important;
+                  page-break-inside: avoid !important;
+                  break-inside: avoid !important;
+                  display: flex !important;
+                  flex-direction: column !important;
+                  align-items: center !important;
+                  justify-content: center !important;
+                  box-sizing: border-box !important;
+                  padding: 2mm !important;
+                  margin: 0 !important;
+                  overflow: hidden !important;
+                }
+                .label-card:last-child,
+                .thermal-sticker-card:last-child,
+                .print-label-card:last-child {
+                  page-break-after: auto !important;
+                  break-after: auto !important;
+                }
               }
               html, body {
                 margin: 0 !important;
                 padding: 0 !important;
-                height: auto !important;
-                min-height: 0 !important;
-                max-height: none !important;
-                overflow: visible !important;
                 background: #ffffff !important;
                 color: #000000 !important;
                 -webkit-print-color-adjust: exact !important;
@@ -807,22 +856,10 @@ export function printViaIsolatedIframe({
                 min-height: 0 !important;
                 max-height: none !important;
                 overflow: visible !important;
-                display: flex !important;
-                flex-wrap: wrap !important;
-                align-items: flex-start !important;
-                justify-content: flex-start !important;
-                gap: 3mm !important;
+                display: ${isA4 ? 'grid' : 'block'} !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                width: 100% !important;
-              }
-              /* Ensure label cards do not split, but flow continuously across sheet */
-              .thermal-sticker-card,
-              .print-label-card {
-                break-inside: avoid !important;
-                page-break-inside: avoid !important;
-                break-after: auto !important;
-                page-break-after: auto !important;
+                width: ${widthVal} !important;
               }
               svg, canvas, img {
                 shape-rendering: crispEdges !important;

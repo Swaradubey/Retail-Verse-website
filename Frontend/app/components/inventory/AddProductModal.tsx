@@ -360,9 +360,68 @@ export function AddProductModal({ isOpen, onClose, onProductCreated, storeName: 
       const printArea = document.getElementById('print-label-area');
       if (printArea) {
         try {
+          const isA4 = targetSize === 'a4';
+          const [dimW, dimH] = exactDim.split(' ');
+          const dedicatedStyle = `
+            @page {
+              size: ${isA4 ? 'auto' : exactDim};
+              margin: ${isA4 ? '5mm' : '0'};
+            }
+            @media print {
+              html, body {
+                width: ${isA4 ? '100%' : dimW} !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .thermal-label-print-zone,
+              .sticker-container,
+              #print-label-area {
+                display: ${isA4 ? 'grid' : 'block'} !important;
+                width: ${isA4 ? '100%' : dimW} !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+              }
+              .label-card,
+              .thermal-sticker-card,
+              .print-label-card {
+                width: ${isA4 ? '100%' : dimW} !important;
+                height: ${isA4 ? 'auto' : dimH} !important;
+                min-height: ${isA4 ? '28mm' : dimH} !important;
+                max-height: ${isA4 ? '35mm' : dimH} !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                box-sizing: border-box !important;
+                padding: 2mm !important;
+                margin: 0 !important;
+                overflow: hidden !important;
+              }
+              .label-card:last-child,
+              .thermal-sticker-card:last-child,
+              .print-label-card:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+              }
+            }
+          `;
           const dynamicCss = generateDynamicPrintCss(targetSize);
           await printViaIsolatedIframe({
-            html: `<style>${dynamicCss}</style><div class="thermal-label-print-zone ${targetSize === 'a4' ? 'a4-grid' : 'thermal-roll'}" style="display:${targetSize === 'a4' ? 'grid' : 'flex'} !important;">${printArea.innerHTML}</div>`,
+            html: `<style>${dedicatedStyle}\n${dynamicCss}</style><div class="thermal-label-print-zone ${targetSize === 'a4' ? 'a4-grid' : 'thermal-roll'}" style="display:${targetSize === 'a4' ? 'grid' : 'flex'} !important;">${printArea.innerHTML}</div>`,
             title: `Barcode Labels - ${exactBarcode}`,
             exactDimensions: targetSize === 'a4' ? 'auto' : exactDim,
           });
@@ -625,7 +684,7 @@ export function AddProductModal({ isOpen, onClose, onProductCreated, storeName: 
         className={`thermal-label-print-zone ${selectedLabelSize === 'a4' ? 'a4-grid' : 'thermal-roll'}`}
       >
         {Array.from({ length: Math.max(1, printCopies) }).map((_, idx) => (
-          <div key={idx} className="thermal-sticker-card print-label-card">
+          <div key={idx} className="label-card thermal-sticker-card print-label-card">
             {/* 1. Product Title */}
             <div className="sticker-title print-label-name">
               {name && name.trim() ? name.trim() : 'Product'}
@@ -644,16 +703,6 @@ export function AddProductModal({ isOpen, onClose, onProductCreated, storeName: 
             {/* 3. Barcode Number */}
             <div className="sticker-number print-label-code-sku">
               {barcode.trim()}
-            </div>
-
-            {/* 4. MRP */}
-            <div className="sticker-mrp print-label-mrp">
-              MRP: ₹{price !== '' && price !== undefined && !isNaN(Number(price))
-                ? Number(price).toLocaleString('en-IN', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })
-                : '0.00'} (Incl. of all taxes)
             </div>
           </div>
         ))}

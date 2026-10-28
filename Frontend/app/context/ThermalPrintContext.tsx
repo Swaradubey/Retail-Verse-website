@@ -259,13 +259,12 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         let labelsHtml = '';
         for (let i = 0; i < count; i++) {
           labelsHtml += `
-            <div class="thermal-sticker-card">
+            <div class="label-card thermal-sticker-card print-label-card">
               <div class="sticker-title">${data.name}</div>
               <div class="sticker-barcode-container">
                 ${svgContent}
               </div>
               <div class="sticker-number">${data.barcode}${data.sku ? ` | SKU: ${data.sku}` : ''}</div>
-              <div class="sticker-mrp">MRP: &#8377;${formattedPrice} (Incl. of all taxes)</div>
             </div>
           `;
         }
@@ -273,16 +272,59 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         const iframeHtml = `
           <style>
             @page {
-              size: auto;
-              margin: 5mm !important;
+              size: ${widthMm}mm ${heightMm}mm;
+              margin: 0;
+            }
+            @media print {
+              html, body {
+                width: ${widthMm}mm !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .sticker-container {
+                display: block !important;
+                width: ${widthMm}mm !important;
+                height: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+              }
+              .label-card,
+              .thermal-sticker-card,
+              .print-label-card {
+                width: ${widthMm}mm !important;
+                height: ${heightMm}mm !important;
+                min-height: ${heightMm}mm !important;
+                max-height: ${heightMm}mm !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                justify-content: center !important;
+                box-sizing: border-box !important;
+                padding: 1.5mm !important;
+                margin: 0 !important;
+                overflow: hidden !important;
+              }
+              .label-card:last-child,
+              .thermal-sticker-card:last-child,
+              .print-label-card:last-child {
+                page-break-after: auto !important;
+                break-after: auto !important;
+              }
             }
             html, body {
               margin: 0 !important;
               padding: 0 !important;
-              height: auto !important;
-              min-height: 0 !important;
-              max-height: none !important;
-              overflow: visible !important;
               background: #fff !important;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
@@ -296,34 +338,34 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
               min-height: 0 !important;
               max-height: none !important;
               overflow: visible !important;
-              display: flex !important;
-              flex-wrap: wrap !important;
-              align-items: flex-start !important;
-              justify-content: flex-start !important;
-              gap: 3mm !important;
-              width: 100% !important;
+              display: block !important;
+              width: ${widthMm}mm !important;
             }
-            .thermal-sticker-card {
-              width: ${cardWidthMm}mm !important;
-              height: ${cardHeightMm}mm !important;
-              max-height: ${cardHeightMm}mm !important;
+            .label-card,
+            .thermal-sticker-card,
+            .print-label-card {
+              width: ${widthMm}mm !important;
+              height: ${heightMm}mm !important;
+              max-height: ${heightMm}mm !important;
               margin: 0 !important;
-              padding: 0.5mm 1mm !important;
+              padding: 1.5mm !important;
               box-sizing: border-box !important;
               display: flex !important;
               flex-direction: column !important;
               align-items: center !important;
-              justify-content: space-between !important;
+              justify-content: center !important;
               text-align: center !important;
               overflow: hidden !important;
               break-inside: avoid !important;
               page-break-inside: avoid !important;
-              break-after: auto !important;
-              page-break-after: auto !important;
+              page-break-after: always !important;
+              break-after: page !important;
             }
-            .thermal-sticker-card:last-child {
-              break-after: auto !important;
+            .label-card:last-child,
+            .thermal-sticker-card:last-child,
+            .print-label-card:last-child {
               page-break-after: auto !important;
+              break-after: auto !important;
             }
             .sticker-title {
               font-size: ${titleFontSize} !important;
