@@ -744,13 +744,19 @@ export function buildReceiptEscPos(
 /**
  * Builds TSPL (TSC Page Description Language) binary text stream for thermal sticker roll printers.
  * Directly supported by TSC, Xprinter, Gprinter, Munbyn, Everycom, D110, POS label printers.
+ *
+ * Configured with:
+ * 1. Accurate Header: SIZE, GAP 2 mm,0, DIRECTION 1, REFERENCE 0,0, OFFSET 0 mm.
+ * 2. Per-label boundary reset: CLS and REFERENCE 0,0 per label copy to eliminate vertical drift.
+ * 3. Exact horizontal centering: Modules calculation for CODE128 and font width calculation.
+ * 4. Safe vertical layout: Content fits within die-cut sticker bounds with zero bleed into gap.
  */
 export function buildBarcodeLabelTspl(
   label: BarcodeLabelData,
   copies: number = 1,
   exactDimensions: string = '50mm 25mm'
 ): Uint8Array {
-  // Parse dimensions
+  // Parse dimensions (default: 50mm x 25mm)
   let widthMm = 50;
   let heightMm = 25;
   if (exactDimensions) {
@@ -768,46 +774,44 @@ export function buildBarcodeLabelTspl(
   const heightDots = Math.round(heightMm * dpi);
 
   const lines: string[] = [];
-  lines.push(`SIZE ${widthMm} mm, ${heightMm} mm`);
-  lines.push(`GAP 2 mm, 0 mm`);
+
+  // 1. Accurate Header Commands (Exact syntax without space after comma for standard TSPL firmware compliance)
+  lines.push(`SIZE ${widthMm} mm,${heightMm} mm`);
+  lines.push(`GAP 2 mm,0`);
   lines.push(`DIRECTION 1`);
   lines.push(`REFERENCE 0,0`);
   lines.push(`OFFSET 0 mm`);
-  lines.push(`CLS`);
 
-  let currentY = 14;
-
-  // 1. Store Name: ONLY if explicitly present and not 'RETAILVERSE'
+  // Prepare clean text fields
   const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
-  if (cleanStore) {
-    const storeText = cleanStore.toUpperCase();
-    const estCharWidth = 12;
-    const startX = Math.max(8, Math.round((widthDots - (storeText.length * estCharWidth)) / 2));
-    lines.push(`TEXT ${startX},${currentY},"2",0,1,1,"${storeText.replace(/"/g, '')}"`);
-    currentY += 24;
-  }
 
-  // 2. Product Name
-  if (label.name) {
-    const prodName = label.name.trim().slice(0, 26);
-    const estCharWidth = 10;
-    const startX = Math.max(8, Math.round((widthDots - (prodName.length * estCharWidth)) / 2));
-    lines.push(`TEXT ${startX},${currentY},"2",0,1,1,"${prodName.replace(/"/g, '')}"`);
-    currentY += 24;
-  }
+  // Calculate layout parameters based on label height
+  const isCompact = heightMm <= 26; // e.g. 50x25mm
+  const fontStore = '2'; // Font 2: 12x20 dots
+  const fontProd = '2';
+  const charWidthFont2 = 12;
+  const charWidthFont1 = 8;
 
-  // 3. Barcode CODE128
-  if (label.barcode) {
-    const barcodeHeight = heightMm <= 26 ? 34 : 46;
-    const narrow = widthMm <= 42 ? 1 : 2;
-    const wide = widthMm <= 42 ? 2 : 4;
-    const estBarcodeWidth = label.barcode.length * (narrow * 11);
-    const startX = Math.max(8, Math.round((widthDots - estBarcodeWidth) / 2));
-    lines.push(`BARCODE ${startX},${currentY},"128",${barcodeHeight},1,0,${narrow},${wide},"${label.barcode}"`);
-    currentY += barcodeHeight + 28;
-  }
+  // Maximum characters that fit on one line with side safety margins
+  const maxCharsStore = Math.max(10, Math.floor((widthDots - 16) / charWidthFont2));
+  const maxCharsProd = Math.max(10, Math.floor((widthDots - 16) / charWidthFont2));
 
-  // 4. SKU & Price
+  // Determine narrow bar width and calculate barcode dimensions
+  // CODE128: 11 modules per char + 35 start/stop/check/term modules
+  const rawBarcode = label.barcode ? label.barcode.trim() : '';
+  const barcodeModules = (rawBarcode.length + 3) * 11 + 2;
+
+  let narrow = widthMm <= 42 ? 1 : 2;
+  let wide = widthMm <= 42 ? 2 : 2;
+  if (barcodeModules * narrow > widthDots - 24) {
+    narrow = 1;
+    wide = 2;
+  }
+  const estBarcodeWidth = barcodeModules * narrow;
+  const barcodeStartX = Math.max(8, Math.round((widthDots - estBarcodeWidth) / 2));
+  const barcodeHeight = isCompact ? 34 : 46;
+
+  // 4. SKU & Price Line
   const infoParts: string[] = [];
   if (label.sku && label.sku.trim()) {
     infoParts.push(`SKU: ${label.sku.trim()}`);
@@ -818,18 +822,54 @@ export function buildBarcodeLabelTspl(
       infoParts.push(`Rs.${numPrice.toFixed(2)}`);
     }
   }
+  const infoText = infoParts.join(' | ');
 
-  if (infoParts.length > 0) {
-    const infoText = infoParts.join(' | ');
-    const startX = Math.max(8, Math.round((widthDots - (infoText.length * 9)) / 2));
-    lines.push(`TEXT ${startX},${currentY},"1",0,1,1,"${infoText.replace(/"/g, '')}"`);
+  // Per-label copy generation with boundary reset (CLS & REFERENCE 0,0 per label)
+  const count = Math.max(1, copies);
+  for (let c = 0; c < count; c++) {
+    lines.push(`CLS`);
+    lines.push(`REFERENCE 0,0`);
+
+    let currentY = isCompact ? (cleanStore ? 8 : 16) : (cleanStore ? 12 : 22);
+
+    // 1. Store Name (Centered)
+    if (cleanStore) {
+      const storeText = cleanStore.toUpperCase().slice(0, maxCharsStore);
+      const textWidth = storeText.length * charWidthFont2;
+      const startX = Math.max(8, Math.round((widthDots - textWidth) / 2));
+      lines.push(`TEXT ${startX},${currentY},"${fontStore}",0,1,1,"${storeText.replace(/"/g, '')}"`);
+      currentY += isCompact ? 22 : 24;
+    }
+
+    // 2. Product Name (Centered)
+    if (label.name) {
+      const prodName = label.name.trim().slice(0, maxCharsProd);
+      const textWidth = prodName.length * charWidthFont2;
+      const startX = Math.max(8, Math.round((widthDots - textWidth) / 2));
+      lines.push(`TEXT ${startX},${currentY},"${fontProd}",0,1,1,"${prodName.replace(/"/g, '')}"`);
+      currentY += isCompact ? 22 : 26;
+    }
+
+    // 3. Barcode CODE128 (Centered, human_readable=2 for centered text under barcode)
+    if (rawBarcode) {
+      lines.push(`BARCODE ${barcodeStartX},${currentY},"128",${barcodeHeight},2,0,${narrow},${wide},"${rawBarcode}"`);
+      currentY += barcodeHeight + (isCompact ? 22 : 26);
+    }
+
+    // 4. SKU & Price (Centered)
+    if (infoText) {
+      const maxCharsInfo = Math.max(12, Math.floor((widthDots - 16) / charWidthFont1));
+      const truncatedInfo = infoText.slice(0, maxCharsInfo);
+      const textWidth = truncatedInfo.length * charWidthFont1;
+      const startX = Math.max(8, Math.round((widthDots - textWidth) / 2));
+      lines.push(`TEXT ${startX},${currentY},"1",0,1,1,"${truncatedInfo.replace(/"/g, '')}"`);
+    }
+
+    // Print this label and feed exactly to the die-cut gap sensor
+    lines.push(`PRINT 1,1`);
   }
 
-  // 5. Quantity / Copies count parameter
-  const count = Math.max(1, copies);
-  lines.push(`PRINT ${count},1`);
   lines.push('');
-
   const commandStr = lines.join('\r\n');
   return new TextEncoder().encode(commandStr);
 }

@@ -265,48 +265,6 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Label Protocol Mode */}
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800">
-            <div>
-              <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
-                Command Stream Protocol
-              </span>
-              <span className="text-[11px] text-zinc-500">
-                {isBillPlusConnected ? (
-                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                    BillPlus printer detected — ESC/POS Raster mode active
-                  </span>
-                ) : (
-                  'TSPL for label roll printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls'
-                )}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
-              <button
-                type="button"
-                onClick={() => setProtocol('tspl')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                  protocol === 'tspl'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-                }`}
-              >
-                TSPL (Label)
-              </button>
-              <button
-                type="button"
-                onClick={() => setProtocol('escpos')}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
-                  protocol === 'escpos'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-                }`}
-              >
-                ESC/POS (Roll / BillPlus)
-              </button>
-            </div>
-          </div>
-
           {/* Label Size Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
