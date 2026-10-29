@@ -8,6 +8,8 @@ import {
   DEFAULT_PRINTER_SETTINGS,
   buildReceiptEscPos,
   buildBarcodeLabelEscPos,
+  buildBarcodeLabelTspl,
+  buildBarcodeLabelBuffer,
   printViaIsolatedIframe,
   BarcodeLabelData,
 } from '../lib/thermalPrinter';
@@ -55,7 +57,11 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
       if (saved) {
-        return { ...DEFAULT_PRINTER_SETTINGS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        if (parsed.storeName === 'RETAILVERSE') {
+          parsed.storeName = '';
+        }
+        return { ...DEFAULT_PRINTER_SETTINGS, ...parsed };
       }
     } catch (_) {}
     return DEFAULT_PRINTER_SETTINGS;
@@ -67,7 +73,7 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const isWebUsbSupported = thermalHardware.isSupported();
   const isBluetoothSupported = thermalBluetooth.isSupported();
 
-  // Try auto-reconnect to paired USB devices on mount
+  // Try auto-reconnect to paired USB and Bluetooth devices on mount
   useEffect(() => {
     let mounted = true;
     if (isWebUsbSupported) {
@@ -81,10 +87,21 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
         })
         .catch(() => {});
     }
+    if (isBluetoothSupported) {
+      thermalBluetooth
+        .reconnectPaired()
+        .then((dev) => {
+          if (mounted && dev) {
+            setBluetoothDevice(dev);
+            console.log('[ThermalPrintContext] Reconnected to Bluetooth thermal printer:', dev.name);
+          }
+        })
+        .catch(() => {});
+    }
     return () => {
       mounted = false;
     };
-  }, [isWebUsbSupported]);
+  }, [isWebUsbSupported, isBluetoothSupported]);
 
   const updateSettings = useCallback((newSettings: Partial<PrinterSettings>) => {
     setSettings((prev) => {
@@ -202,26 +219,44 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
       exactDimensions: string = '50mm 25mm'
     ) => {
       const count = Math.max(1, copies);
+      const commandMode = data.commandMode || settings.labelProtocol || 'tspl';
+      const cleanStoreName = data.storeName && data.storeName !== 'RETAILVERSE'
+        ? data.storeName
+        : (settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : '');
 
-      // 1. If WebUSB is connected, try raw ESC/POS
+      const normalizedData: BarcodeLabelData = {
+        ...data,
+        storeName: data.storeName !== undefined ? data.storeName : cleanStoreName,
+        commandMode,
+      };
+
+      // 1. If Bluetooth is connected, send direct binary TSPL / ESC-POS stream
+      if (thermalBluetooth.isConnected()) {
+        try {
+          const buffer = buildBarcodeLabelBuffer(normalizedData, count, exactDimensions, commandMode);
+          await thermalBluetooth.sendRaw(buffer);
+          toast.success(`Printed ${count} label${count === 1 ? '' : 's'} via Bluetooth (${commandMode.toUpperCase()})`);
+          return { success: true, method: 'bluetooth' as const };
+        } catch (btErr: any) {
+          console.error('[ThermalPrintContext] Bluetooth label print error:', btErr);
+          toast.error(`Bluetooth print failed: ${btErr?.message || 'Connection lost'}`);
+          return { success: false, method: 'bluetooth' as const, error: btErr?.message };
+        }
+      }
+
+      // 2. If WebUSB is connected, send raw binary buffer directly
       if (thermalHardware.getConnectedDevice()) {
         try {
-          const buffer = buildBarcodeLabelEscPos(
-            {
-              ...data,
-              storeName: data.storeName || settings.storeName,
-            },
-            count
-          );
+          const buffer = buildBarcodeLabelBuffer(normalizedData, count, exactDimensions, commandMode);
           await thermalHardware.sendRaw(buffer);
-          toast.success(`Printed ${count} barcode label${count === 1 ? '' : 's'} via USB`);
+          toast.success(`Printed ${count} barcode label${count === 1 ? '' : 's'} via USB (${commandMode.toUpperCase()})`);
           return { success: true, method: 'webusb' as const };
         } catch (usbErr) {
           console.warn('[ThermalPrintContext] USB label print failed, using isolated iframe:', usbErr);
         }
       }
 
-      // 2. Fallback: Isolated hidden <iframe> with exact sticker bounding box
+      // 3. Fallback: Isolated hidden <iframe> with exact sticker bounding box
       try {
         const formattedPrice = Number(data.price || 0).toLocaleString('en-IN', {
           minimumFractionDigits: 2,
@@ -260,6 +295,7 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         for (let i = 0; i < count; i++) {
           labelsHtml += `
             <div class="label-card thermal-sticker-card print-label-card">
+              ${normalizedData.storeName ? `<div class="sticker-store-name" style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; margin-bottom: 1px;">${normalizedData.storeName}</div>` : ''}
               <div class="sticker-title">${data.name}</div>
               <div class="sticker-barcode-container">
                 ${svgContent}
@@ -462,11 +498,12 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         sku: 'RTV-SHIRT-M',
         barcode: '890123456789',
         price: 1299.0,
+        storeName: settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : undefined,
       },
       1,
       '50mm 25mm'
     );
-  }, [printBarcodeLabel]);
+  }, [printBarcodeLabel, settings.storeName]);
 
   return (
     <ThermalPrintContext.Provider

@@ -27,7 +27,7 @@ interface EmployeeModalProps {
   onClose: () => void;
   onCreated: () => void;
   clientIdOverride?: string | null;
-  role?: 'employee' | 'staff' | 'seo_manager' | 'store_manager' | 'inventory_manager';
+  role?: 'employee' | 'staff' | 'seo_manager' | 'store_manager' | 'inventory_manager' | 'VENDOR' | 'vendor';
   title?: string;
   subtitle?: string;
   submitLabel?: string;

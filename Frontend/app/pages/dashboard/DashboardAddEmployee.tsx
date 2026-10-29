@@ -201,6 +201,7 @@ export function DashboardAddEmployee() {
                       <option value="seo_manager">SEO Manager</option>
                       <option value="inventory_manager">Inventory Manager</option>
                       <option value="employee">Employee</option>
+                      <option value="VENDOR">Vendor</option>
                     </select>
                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-muted-foreground group-focus-within:text-blue-500 transition-colors">
                       <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -8,6 +8,7 @@ import {
   Layers,
   Check,
   Usb,
+  Bluetooth,
   Settings2,
   Sparkles,
   Tag,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useThermalPrinter } from '../../hooks/useThermalPrinter';
+import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
 
 export interface BarcodePrintProduct {
@@ -78,18 +80,31 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   onClose,
   product,
 }) => {
+  const { user } = useAuth();
   const {
     printBarcodeLabel,
     settings,
     usbDevice,
+    bluetoothDevice,
+    connectBluetooth,
     openHardwareModal,
   } = useThermalPrinter();
+
+  // Dynamic store name without hardcoded 'RETAILVERSE'
+  const resolvedStoreName = (
+    (settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : '') ||
+    user?.businessName ||
+    (user as any)?.storeName ||
+    (user as any)?.shopName ||
+    ''
+  ).trim();
 
   const initialQuantity = Math.max(1, Number(product?.stockLevel) || 1);
   const [copies, setCopies] = useState<number>(initialQuantity);
   const [selectedPreset, setSelectedPreset] = useState<LabelDimensions>('50x25');
-  const [includeStoreName, setIncludeStoreName] = useState<boolean>(true);
+  const [includeStoreName, setIncludeStoreName] = useState<boolean>(Boolean(resolvedStoreName));
   const [includeSku, setIncludeSku] = useState<boolean>(true);
+  const [protocol, setProtocol] = useState<'tspl' | 'escpos'>(settings.labelProtocol || 'tspl');
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
 
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
@@ -101,6 +116,13 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
       setCopies(stock);
     }
   }, [product]);
+
+  // Sync includeStoreName when resolvedStoreName becomes available
+  useEffect(() => {
+    if (resolvedStoreName) {
+      setIncludeStoreName(true);
+    }
+  }, [resolvedStoreName]);
 
   // Render live preview SVG barcode
   useEffect(() => {
@@ -137,13 +159,15 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
   const handlePrint = async () => {
     setIsPrinting(true);
     try {
+      const storeNameToPrint = includeStoreName ? resolvedStoreName : '';
       await printBarcodeLabel(
         {
           name: product.name,
           sku: includeSku ? product.sku : '',
           barcode: product.barcode,
           price: product.price,
-          storeName: includeStoreName ? settings.storeName : undefined,
+          storeName: storeNameToPrint,
+          commandMode: protocol,
         },
         copies,
         currentPreset.exactRule
@@ -175,11 +199,26 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 Direct Thermal Barcode Printing
-                {usbDevice && (
+                {bluetoothDevice ? (
+                  <span className="text-[10px] font-semibold bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Bluetooth className="w-2.5 h-2.5" />
+                    Bluetooth Connected
+                  </span>
+                ) : usbDevice ? (
                   <span className="text-[10px] font-semibold bg-emerald-500/30 text-emerald-100 border border-emerald-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
                     <Usb className="w-2.5 h-2.5" />
                     Direct USB
                   </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={connectBluetooth}
+                    className="text-[10px] font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/30 px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition"
+                    title="Pair Bluetooth thermal printer"
+                  >
+                    <Bluetooth className="w-2.5 h-2.5" />
+                    Pair Bluetooth
+                  </button>
                 )}
               </h3>
               <p className="text-xs text-indigo-100">
@@ -209,6 +248,42 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Label Protocol Mode */}
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800">
+            <div>
+              <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 block">
+                Command Stream Protocol
+              </span>
+              <span className="text-[11px] text-zinc-500">
+                TSPL for label roll printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls
+              </span>
+            </div>
+            <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setProtocol('tspl')}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                  protocol === 'tspl'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                TSPL (Label)
+              </button>
+              <button
+                type="button"
+                onClick={() => setProtocol('escpos')}
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                  protocol === 'escpos'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                ESC/POS (Roll)
+              </button>
+            </div>
+          </div>
+
           {/* Label Size Selection */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -331,7 +406,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 onChange={(e) => setIncludeStoreName(e.target.checked)}
                 className="w-3.5 h-3.5 accent-indigo-600 rounded cursor-pointer"
               />
-              Show Store Name ({settings.storeName})
+              Show Store Name {resolvedStoreName ? `(${resolvedStoreName})` : ''}
             </label>
             <label className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 cursor-pointer">
               <input
@@ -369,9 +444,9 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                     : 'w-72 min-h-[140px]'
                 }`}
               >
-                {includeStoreName && (
+                {includeStoreName && resolvedStoreName && (
                   <div className="w-full text-[10px] text-black font-extrabold uppercase tracking-wider mb-0.5">
-                    {settings.storeName}
+                    {resolvedStoreName}
                   </div>
                 )}
 
@@ -398,7 +473,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               </div>
 
               <p className="text-[11px] text-zinc-500 mt-2 text-center">
-                Engine: {usbDevice ? 'WebUSB Raw ESC/POS' : 'Isolated Hidden iFrame (@page exact size, 0 margin)'}
+                Engine: {bluetoothDevice ? `Direct Bluetooth (${bluetoothDevice.name || 'Printer'}) · ${protocol.toUpperCase()}` : usbDevice ? `WebUSB Raw · ${protocol.toUpperCase()}` : 'Isolated Hidden iFrame (@page exact size, 0 margin)'}
               </p>
             </div>
           </div>
@@ -427,7 +502,11 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-600/25 px-5 font-semibold gap-2"
             >
               <Printer className="w-4 h-4" />
-              {isPrinting ? 'Printing...' : `Print ${copies} ${copies === 1 ? 'Label' : 'Labels'}`}
+              {isPrinting
+                ? 'Printing...'
+                : bluetoothDevice
+                ? `Print ${copies} ${copies === 1 ? 'Label' : 'Labels'} via Bluetooth`
+                : `Print ${copies} ${copies === 1 ? 'Label' : 'Labels'}`}
             </Button>
           </div>
         </div>

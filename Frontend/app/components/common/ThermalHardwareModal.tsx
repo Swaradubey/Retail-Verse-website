@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   X,
   Printer,
-  Usb,
   Bluetooth,
   Settings,
   CheckCircle2,
@@ -22,10 +21,10 @@ interface ThermalHardwareModalProps {
   onClose: () => void;
   settings: PrinterSettings;
   onSaveSettings: (newSettings: Partial<PrinterSettings>) => void;
-  isWebUsbSupported: boolean;
-  usbDevice: USBDevice | null;
-  onConnectUsb: () => Promise<void>;
-  onDisconnectUsb: () => Promise<void>;
+  isWebUsbSupported?: boolean;
+  usbDevice?: USBDevice | null;
+  onConnectUsb?: () => Promise<void>;
+  onDisconnectUsb?: () => Promise<void>;
   isBluetoothSupported?: boolean;
   bluetoothDevice?: any;
   onConnectBluetooth?: () => Promise<void>;
@@ -39,10 +38,6 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
   onClose,
   settings,
   onSaveSettings,
-  isWebUsbSupported,
-  usbDevice,
-  onConnectUsb,
-  onDisconnectUsb,
   isBluetoothSupported = true,
   bluetoothDevice,
   onConnectBluetooth,
@@ -52,13 +47,16 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'hardware' | 'store'>('hardware');
   const [formSettings, setFormSettings] = useState<PrinterSettings>(settings);
-  const [isConnecting, setIsConnecting] = useState(false);
   const [isConnectingBt, setIsConnectingBt] = useState(false);
   const [isPrintingTest, setIsPrintingTest] = useState(false);
 
   // Sync form state when settings prop updates
   React.useEffect(() => {
-    setFormSettings(settings);
+    const cleanSettings = { ...settings };
+    if (cleanSettings.storeName === 'RETAILVERSE') {
+      cleanSettings.storeName = '';
+    }
+    setFormSettings(cleanSettings);
   }, [settings]);
 
   if (!isOpen) return null;
@@ -67,15 +65,6 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
     e.preventDefault();
     onSaveSettings(formSettings);
     toast.success('Thermal printer settings saved successfully');
-  };
-
-  const handleConnectUsbClick = async () => {
-    setIsConnecting(true);
-    try {
-      await onConnectUsb();
-    } finally {
-      setIsConnecting(false);
-    }
   };
 
   const handleConnectBtClick = async () => {
@@ -138,7 +127,7 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                 : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
             }`}
           >
-            <Usb className="w-3.5 h-3.5" />
+            <Bluetooth className="w-3.5 h-3.5" />
             Hardware & Connection
           </button>
           <button
@@ -240,84 +229,6 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                 )}
               </div>
 
-              {/* WebUSB Hardware Status Card */}
-              <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                        usbDevice
-                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600'
-                          : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500'
-                      }`}
-                    >
-                      <Usb className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-zinc-900 dark:text-white">
-                        WebUSB Direct ESC/POS Hardware
-                      </h4>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                        Sends raw binary print jobs directly to physical USB printer
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {usbDevice ? (
-                      <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Connected ({usbDevice.productName || 'USB Printer'})
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-200/70 dark:bg-zinc-700/60 px-2 py-1 rounded-lg">
-                        Browser Thermal Engine (Ready)
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {isWebUsbSupported ? (
-                  <div className="flex items-center justify-between pt-1 border-t border-zinc-200 dark:border-zinc-700/60">
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {usbDevice
-                        ? 'Device paired and active for instant receipt and barcode output.'
-                        : 'Pair your physical USB receipt/label printer directly with Retailverse.'}
-                    </p>
-                    {usbDevice ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={onDisconnectUsb}
-                        className="rounded-xl text-xs text-rose-600 hover:text-rose-700 border-rose-200 dark:border-rose-900"
-                      >
-                        Disconnect USB
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleConnectUsbClick}
-                        disabled={isConnecting}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold px-4 gap-1.5"
-                      >
-                        <Usb className="w-3.5 h-3.5" />
-                        {isConnecting ? 'Detecting...' : 'Pair USB Printer'}
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-3 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <div>
-                      WebUSB is not enabled in this browser (available on Google Chrome, Edge, and Opera).
-                      The system seamlessly uses our isolated hidden &lt;iframe&gt; thermal print engine.
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Thermal Roll Profile Selection */}
               <div className="space-y-3">
                 <label className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 uppercase tracking-wider">
@@ -406,6 +317,48 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                 />
               </div>
 
+              {/* Thermal Sticker Command Protocol */}
+              <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/20 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-zinc-900 dark:text-white block">
+                    Barcode Sticker Protocol
+                  </span>
+                  <span className="text-[11px] text-zinc-500">
+                    TSPL for barcode label printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormSettings((prev) => ({ ...prev, labelProtocol: 'tspl' }));
+                      onSaveSettings({ labelProtocol: 'tspl' });
+                    }}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                      (formSettings.labelProtocol || 'tspl') === 'tspl'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    }`}
+                  >
+                    TSPL
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormSettings((prev) => ({ ...prev, labelProtocol: 'escpos' }));
+                      onSaveSettings({ labelProtocol: 'escpos' });
+                    }}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                      formSettings.labelProtocol === 'escpos'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+                    }`}
+                  >
+                    ESC/POS
+                  </button>
+                </div>
+              </div>
+
               {/* Hardware Test Prints */}
               <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 space-y-3">
                 <span className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wider">
@@ -472,7 +425,7 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                       setFormSettings({ ...formSettings, storeName: e.target.value })
                     }
                     className="w-full px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="RETAILVERSE"
+                    placeholder="e.g. My Store Name"
                   />
                 </div>
 
@@ -575,10 +528,8 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
               <span className="text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1">
                 <Bluetooth className="w-3.5 h-3.5" /> Direct Bluetooth Wireless Binary
               </span>
-            ) : usbDevice ? (
-              <span className="text-emerald-600 font-bold">Direct WebUSB Binary</span>
             ) : (
-              <span className="text-zinc-600 dark:text-zinc-400 font-bold">Zero-Margin Thermal iFrame</span>
+              <span className="text-zinc-600 dark:text-zinc-400 font-bold">Standard Thermal Engine</span>
             )}
           </div>
           <Button

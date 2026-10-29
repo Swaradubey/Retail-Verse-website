@@ -26,10 +26,31 @@ const employeeSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ["store_manager", "manager", "employee", "staff", "seo_manager", "inventory_manager", "counter_manager", "viewer"],
+        values: [
+          "store_manager",
+          "manager",
+          "employee",
+          "staff",
+          "seo_manager",
+          "inventory_manager",
+          "counter_manager",
+          "viewer",
+          "vendor",
+          "VENDOR",
+          "ADMIN",
+          "MANAGER",
+          "CASHIER",
+          "EMPLOYEE",
+        ],
         message: "{VALUE} is not a valid staff role",
       },
       required: true,
+    },
+    /** Optional reference to linked Vendor document for multi-tenant vendor linkage. */
+    vendorRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      default: null,
     },
     clientId: {
       type: mongoose.Schema.Types.ObjectId,

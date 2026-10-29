@@ -7,15 +7,16 @@ const { resolveStaffClientId, canAccessStaffRecord } = require("../utils/staffAc
 const { isValidObjectId } = require("../utils/tenantResolver");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const EMPLOYEE_MANAGED_ROLES = new Set(["employee", "staff", "seo_manager", "store_manager", "manager", "inventory_manager", "counter_manager", "user", "viewer", "admin", "super_admin"]);
-const EMPLOYEE_MANAGED_ROLES_ARRAY = ["employee", "staff", "seo_manager", "store_manager", "manager", "inventory_manager", "counter_manager", "user", "viewer", "admin", "super_admin"];
+const EMPLOYEE_MANAGED_ROLES = new Set(["employee", "staff", "seo_manager", "store_manager", "manager", "inventory_manager", "counter_manager", "user", "viewer", "admin", "super_admin", "vendor", "VENDOR"]);
+const EMPLOYEE_MANAGED_ROLES_ARRAY = ["employee", "staff", "seo_manager", "store_manager", "manager", "inventory_manager", "counter_manager", "user", "viewer", "admin", "super_admin", "vendor", "VENDOR"];
 // Roles that Admin (not Super Admin) is allowed to assign
-const ADMIN_CREATABLE_ROLES = new Set(["seo_manager", "store_manager", "counter_manager", "inventory_manager", "employee"]);
+const ADMIN_CREATABLE_ROLES = new Set(["seo_manager", "store_manager", "counter_manager", "inventory_manager", "employee", "vendor", "VENDOR"]);
 
 function normalizeEmployeeRole(rawRole) {
   if (!rawRole) return "employee";
-  const normalized = String(rawRole)
-    .trim()
+  const str = String(rawRole).trim();
+  if (str.toUpperCase() === "VENDOR") return "VENDOR";
+  const normalized = str
     .toLowerCase()
     .replace(/\s+/g, "_");
   
@@ -25,12 +26,14 @@ function normalizeEmployeeRole(rawRole) {
   if (normalized === "store_manager") return "store_manager";
   if (normalized === "counter_manager") return "counter_manager";
   if (normalized === "inventory_manager") return "inventory_manager";
+  if (normalized === "vendor") return "VENDOR";
   
-  return EMPLOYEE_MANAGED_ROLES.has(normalized) ? normalized : null;
+  return EMPLOYEE_MANAGED_ROLES.has(normalized) ? normalized : (EMPLOYEE_MANAGED_ROLES.has(str) ? str : null);
 }
 
 function roleToLegacyVariants(role) {
   if (role === "seo_manager") return ["seo_manager", "seo manager"];
+  if (role === "vendor" || role === "VENDOR") return ["VENDOR", "vendor"];
   return [role];
 }
 
@@ -150,13 +153,13 @@ const createEmployee = async (req, res) => {
   if (!targetRole) {
     return res.status(400).json({
       success: false,
-      message: "Role must be one of: employee, seo_manager, store_manager, inventory_manager, counter_manager",
+      message: "Role must be one of: employee, seo_manager, store_manager, inventory_manager, counter_manager, vendor, VENDOR",
     });
   }
 
   // Role-based creation permissions
   const EMPLOYEE_CREATABLE = new Set(["seo_manager", "store_manager", "inventory_manager", "counter_manager"]);
-  const CLIENT_CREATABLE   = new Set(["employee", "staff", "seo_manager", "store_manager", "inventory_manager", "counter_manager"]);
+  const CLIENT_CREATABLE   = new Set(["employee", "staff", "seo_manager", "store_manager", "inventory_manager", "counter_manager", "vendor", "VENDOR"]);
   if (req.user.role === "employee") {
     if (!EMPLOYEE_CREATABLE.has(targetRole)) {
       return res.status(403).json({
@@ -168,15 +171,15 @@ const createEmployee = async (req, res) => {
     if (!CLIENT_CREATABLE.has(targetRole)) {
       return res.status(403).json({
         success: false,
-        message: "Client accounts can only create: employee, staff, seo_manager, store_manager, inventory_manager",
+        message: "Client accounts can only create: employee, staff, seo_manager, store_manager, inventory_manager, vendor",
       });
     }
   } else if (req.user.role === "admin") {
-    // Admin can only assign these 5 roles — cannot create admin or super_admin
+    // Admin can only assign these roles — cannot create admin or super_admin
     if (!ADMIN_CREATABLE_ROLES.has(targetRole)) {
       return res.status(403).json({
         success: false,
-        message: "Admin accounts can only create: SEO Manager, Store Manager, Counter Manager, Inventory Manager, or Employee roles.",
+        message: "Admin accounts can only create: SEO Manager, Store Manager, Counter Manager, Inventory Manager, Employee, or Vendor roles.",
       });
     }
   } else if (req.user.role !== "super_admin") {
@@ -247,6 +250,9 @@ const createEmployee = async (req, res) => {
       });
     }
 
+    const rawVendorRef = req.body.vendorRef || req.body.vendorId || null;
+    const vendorRef = rawVendorRef && isValidObjectId(rawVendorRef) ? new mongoose.Types.ObjectId(String(rawVendorRef)) : null;
+
     const userPayload = {
       name,
       email,
@@ -258,6 +264,9 @@ const createEmployee = async (req, res) => {
     if (address) userPayload.address = address;
     if (mgr.managerUserId) {
       userPayload.managerId = mgr.managerUserId;
+    }
+    if (vendorRef) {
+      userPayload.vendorRef = vendorRef;
     }
     const user = await User.create(userPayload);
     createdUserId = user._id;
@@ -286,6 +295,7 @@ const createEmployee = async (req, res) => {
       createdBy: req.user._id,
       createdByRole: req.user.role,
       userId,
+      ...(vendorRef ? { vendorRef } : {}),
     });
 
     return res.status(201).json({

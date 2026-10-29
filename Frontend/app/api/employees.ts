@@ -13,6 +13,7 @@ export type EmployeeRow = {
   status?: string;
   createdBy?: string;
   userId?: string | null;
+  vendorRef?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -26,7 +27,8 @@ export type CreateEmployeePayload = {
   clientId?: string;
   managerId?: string;
   shopName?: string;
-  role?: 'user' | 'seo_manager' | 'store_manager' | 'counter_manager' | 'inventory_manager' | 'employee' | 'staff';
+  vendorRef?: string | null;
+  role?: 'user' | 'seo_manager' | 'store_manager' | 'counter_manager' | 'inventory_manager' | 'employee' | 'staff' | 'VENDOR' | 'vendor' | string;
 };
 
 export const employeesApi = {

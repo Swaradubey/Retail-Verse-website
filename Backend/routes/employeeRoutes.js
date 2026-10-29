@@ -44,9 +44,28 @@ const createValidators = [
   check("role")
     .optional()
     .trim()
-    .customSanitizer((value) => String(value || "").toLowerCase().replace(/\s+/g, "_"))
-    .isIn(["employee", "staff", "seo_manager", "store_manager", "manager", "inventory_manager", "counter_manager", "user", "viewer", "admin", "super_admin"])
-    .withMessage("Role must be one of: employee, staff, seo_manager, store_manager, manager, inventory_manager, counter_manager, user, viewer, admin, super_admin"),
+    .customSanitizer((value) => {
+      const s = String(value || "").trim();
+      if (s.toUpperCase() === "VENDOR") return "VENDOR";
+      return s.toLowerCase().replace(/\s+/g, "_");
+    })
+    .isIn([
+      "employee",
+      "staff",
+      "seo_manager",
+      "store_manager",
+      "manager",
+      "inventory_manager",
+      "counter_manager",
+      "user",
+      "viewer",
+      "admin",
+      "super_admin",
+      "vendor",
+      "VENDOR",
+    ])
+    .withMessage("Role must be one of: employee, staff, seo_manager, store_manager, manager, inventory_manager, counter_manager, user, viewer, admin, super_admin, VENDOR"),
+  check("vendorRef").optional().trim(),
 ];
 
 const updatePhoneOptional = check("phone")

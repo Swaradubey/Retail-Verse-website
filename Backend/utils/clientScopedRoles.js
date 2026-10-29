@@ -10,6 +10,7 @@ const CLIENT_SCOPED_ROLES = new Set([
   "seo_manager",
   "inventory_manager",
   "counter_manager",
+  "vendor",
 ]);
 
 function normalizeRole(role) {

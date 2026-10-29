@@ -19,6 +19,7 @@ const getQuotes = async (req, res) => {
   try {
     const isSuperAdmin = req.user && req.user.role === "super_admin";
     const isAdmin = req.user && (req.user.role === "admin" || req.user.role === "client");
+    const isVendor = req.user && (req.user.role === "vendor" || req.user.role === "VENDOR");
     const clientId = isSuperAdmin ? null : (req.user?.clientId || req.clientId || (await resolveClientId(req)));
 
     let query = {};
@@ -29,6 +30,9 @@ const getQuotes = async (req, res) => {
     } else if (isAdmin) {
       // Admin sees client-specific
       query = { clientId };
+    } else if (isVendor) {
+      // Vendor sees client requirements / quotes
+      query = clientId ? { clientId } : { userId: req.user._id };
     } else {
       // Regular user sees their own
       query = { userId: req.user._id };

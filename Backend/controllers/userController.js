@@ -16,6 +16,8 @@ const ASSIGNABLE_ROLES = [
   "employee",
   "user",
   "client",
+  "vendor",
+  "VENDOR",
 ];
 
 const getMe = async (req, res) => {
@@ -248,7 +250,7 @@ const updateUserRole = async (req, res) => {
         });
       }
 
-      const ADMIN_ALLOWED_ROLES = ["counter_manager", "seo_manager", "store_manager", "inventory_manager", "employee", "client", "user"];
+      const ADMIN_ALLOWED_ROLES = ["counter_manager", "seo_manager", "store_manager", "inventory_manager", "employee", "client", "user", "vendor", "VENDOR"];
       if (!ADMIN_ALLOWED_ROLES.includes(nextRole)) {
         return res.status(403).json({
           success: false,

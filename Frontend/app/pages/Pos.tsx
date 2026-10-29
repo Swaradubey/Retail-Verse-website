@@ -1836,7 +1836,10 @@ export function Pos() {
       totalGst: order?.tax || invoice?.tax || 0,
       grandTotal: order?.total || order?.totalAmount || invoice?.total || 0,
     };
-    void thermalPrintReceipt(orderToPrint, user?.name || 'Staff');
+    const dynamicStoreName = (business.name || user?.businessName || (user as any)?.storeName || '').trim();
+    void thermalPrintReceipt(orderToPrint, user?.name || 'Staff', {
+      storeName: dynamicStoreName,
+    });
   };
 
   return (

@@ -79,6 +79,7 @@ export function escapeHtml(str: string): string {
 
 /**
  * Generate formatted HTML document content for 80mm or 58mm thermal receipt rolls.
+ * Strictly matches Test Receipt clean compact thermal layout with monospaced tabular alignment.
  */
 export function generateThermalReceiptHtml(
   order: ThermalReceiptOrder,
@@ -88,9 +89,12 @@ export function generateThermalReceiptHtml(
   const rollWidth = options?.rollWidth || '80mm';
   const is58mm = rollWidth === '58mm';
   const printableWidth = is58mm ? '48mm' : '72mm';
-  const containerWidth = is58mm ? '58mm' : '80mm';
+  const cols = is58mm ? 32 : 42;
+  const dividerLine = '-'.repeat(cols);
 
-  const storeName = (options?.storeName || 'RETAILVERSE').toUpperCase();
+  // Dynamic store name without 'RETAILVERSE' hardcoded fallback
+  const rawStoreName = options?.storeName && options.storeName !== 'RETAILVERSE' ? options.storeName : '';
+  const storeName = rawStoreName.trim().toUpperCase();
   const storeTagline = options?.storeTagline || 'TAX INVOICE';
   const storeAddress = options?.storeAddress || '';
   const storePhone = options?.storePhone || '';
@@ -113,21 +117,17 @@ export function generateThermalReceiptHtml(
   const itemsHtml = items
     .map((item) => {
       const name = item.name || 'Item';
-      const code = item.barcode || item.sku || '';
       const qty = Number(item.quantity) || 1;
       const unitPrice = Number(item.unitPrice !== undefined ? item.unitPrice : item.price || 0);
       const lineTotal = Number(item.itemTotal !== undefined ? item.itemTotal : unitPrice * qty);
 
       return `
-        <tr>
-          <td style="padding: 2.5px 0; text-align: left; vertical-align: top;">
-            <div style="font-size: ${is58mm ? '9px' : '10.5px'}; line-height: 1.15; font-weight: bold;">${escapeHtml(name)}</div>
-            ${code ? `<div style="font-size: 8px; font-weight: normal; color: #000;">${escapeHtml(code)}</div>` : ''}
-          </td>
-          <td style="padding: 2.5px 0; text-align: center; vertical-align: top; font-size: ${is58mm ? '9px' : '10px'}; font-weight: bold;">${qty}</td>
-          <td style="padding: 2.5px 0; text-align: right; vertical-align: top; font-size: ${is58mm ? '9px' : '10px'}; font-weight: bold;">&#8377;${unitPrice.toFixed(2)}</td>
-          <td style="padding: 2.5px 0; text-align: right; vertical-align: top; font-size: ${is58mm ? '9px' : '10px'}; font-weight: bold;">&#8377;${lineTotal.toFixed(2)}</td>
-        </tr>
+        <div class="item-row">
+          <span class="col-item">${escapeHtml(name)}</span>
+          <span class="col-qty">${qty}</span>
+          <span class="col-rate">&#8377;${unitPrice.toFixed(2)}</span>
+          <span class="col-total">&#8377;${lineTotal.toFixed(2)}</span>
+        </div>
       `;
     })
     .join('');
@@ -140,7 +140,7 @@ export function generateThermalReceiptHtml(
     discountAmt > 0
       ? `
       <div class="row">
-        <span>COUPON DISCOUNT ${appliedCode ? `(${escapeHtml(appliedCode)})` : ''}:</span>
+        <span>DISCOUNT ${appliedCode ? `(${escapeHtml(appliedCode)})` : ''}:</span>
         <span>-&#8377;${discountAmt.toFixed(2)}</span>
       </div>
     `
@@ -164,9 +164,9 @@ export function generateThermalReceiptHtml(
   const customerHtml = hasCustomer
     ? `
     <div class="customer-section">
-      ${order.customerName && order.customerName !== 'Walk-in Customer' ? `<div>CUSTOMER : ${escapeHtml(order.customerName.toUpperCase())}</div>` : ''}
-      ${order.customerPhone ? `<div>PHONE    : ${escapeHtml(order.customerPhone)}</div>` : ''}
-      ${order.customerAddress ? `<div>ADDRESS  : ${escapeHtml(order.customerAddress.toUpperCase())}</div>` : ''}
+      ${order.customerName && order.customerName !== 'Walk-in Customer' ? `<div>CUST    : ${escapeHtml(order.customerName.toUpperCase())}</div>` : ''}
+      ${order.customerPhone ? `<div>PHONE   : ${escapeHtml(order.customerPhone)}</div>` : ''}
+      ${order.customerAddress ? `<div>ADDR    : ${escapeHtml(order.customerAddress.toUpperCase())}</div>` : ''}
     </div>
   `
     : '';
@@ -175,7 +175,7 @@ export function generateThermalReceiptHtml(
   const paymentDetailsHtml =
     order.paymentDetails?.cardLast4 || order.upiId || order.paymentDetails?.upiId
       ? `
-      <div style="font-size: 8.5px; padding: 2px 0;">
+      <div style="font-size: 8.5px; padding: 1.5px 0;">
         ${order.paymentDetails?.cardLast4 ? `<div>CARD: **** **** **** ${escapeHtml(order.paymentDetails.cardLast4)} (${escapeHtml(order.paymentDetails.cardNetwork || 'CARD')})</div>` : ''}
         ${order.upiId || order.paymentDetails?.upiId ? `<div>UPI ID: ${escapeHtml(order.upiId || order.paymentDetails?.upiId || '')}</div>` : ''}
       </div>
@@ -196,7 +196,7 @@ export function generateThermalReceiptHtml(
           width: 100%;
           max-width: ${printableWidth};
           margin: 0 auto;
-          padding: 2mm ${is58mm ? '1.5mm' : '3mm'};
+          padding: 2mm ${is58mm ? '1.5mm' : '2.5mm'};
           background: #ffffff;
           color: #000000;
           font-size: ${is58mm ? '9.5px' : '10.5px'};
@@ -204,125 +204,153 @@ export function generateThermalReceiptHtml(
         }
         .header {
           text-align: center;
-          border-bottom: 1px dashed #000000;
-          padding-bottom: 4px;
-          margin-bottom: 4px;
+          padding-bottom: 2px;
         }
         .store-name {
-          font-size: ${is58mm ? '15px' : '18px'};
+          font-size: ${is58mm ? '14px' : '17px'};
           font-weight: 900 !important;
-          letter-spacing: 1px;
+          letter-spacing: 0.5px;
           margin-bottom: 2px;
           text-transform: uppercase;
         }
         .tax-inv {
-          font-size: ${is58mm ? '10.5px' : '12px'};
+          font-size: ${is58mm ? '10px' : '11px'};
           letter-spacing: 0.5px;
           margin-bottom: 2px;
           font-weight: bold;
         }
         .store-sub {
-          font-size: 8.5px;
+          font-size: ${is58mm ? '8.5px' : '9px'};
           line-height: 1.2;
-          margin-bottom: 2px;
+          margin-bottom: 1px;
         }
         .pay-mode {
-          font-size: 10px;
+          font-size: ${is58mm ? '9px' : '10px'};
           font-weight: bold;
-          letter-spacing: 0.5px;
-          margin-bottom: 3px;
+          margin-bottom: 2px;
         }
         .meta-row {
           display: flex;
           justify-content: space-between;
           font-size: ${is58mm ? '8.5px' : '9.5px'};
-          line-height: 1.3;
-          font-weight: bold;
-        }
-        .customer-section {
-          border-top: 1px dashed #000000;
-          border-bottom: 1px dashed #000000;
-          padding: 3px 0;
-          margin: 3px 0;
-          font-size: ${is58mm ? '8.5px' : '9px'};
           line-height: 1.25;
           font-weight: bold;
         }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 3px;
-          border-top: 1px dashed #000000;
-          border-bottom: 1px dashed #000000;
+        .divider {
+          font-family: 'Courier New', Courier, monospace !important;
+          font-size: ${is58mm ? '9.5px' : '10.5px'};
+          letter-spacing: 0;
+          line-height: 1;
+          margin: 2px 0;
+          overflow: hidden;
+          white-space: pre;
+          user-select: none;
+          color: #000000 !important;
         }
-        th {
-          font-size: ${is58mm ? '8.5px' : '9.5px'};
-          padding: 3px 0;
-          border-bottom: 1px dashed #000000;
+        .customer-section {
+          padding: 2px 0;
+          font-size: ${is58mm ? '8.5px' : '9px'};
+          line-height: 1.2;
+          font-weight: bold;
+        }
+        .table-header {
+          display: flex;
+          justify-content: space-between;
           font-weight: 900 !important;
+          font-size: ${is58mm ? '8.5px' : '9.5px'};
+          padding: 1px 0;
+        }
+        .item-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: ${is58mm ? '8.5px' : '9.5px'};
+          line-height: 1.25;
+          padding: 1.5px 0;
+        }
+        .col-item {
+          flex: 1;
+          text-align: left;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          padding-right: 4px;
+          font-weight: bold;
+        }
+        .col-qty {
+          width: ${is58mm ? '24px' : '32px'};
+          text-align: center;
+          font-weight: bold;
+        }
+        .col-rate {
+          width: ${is58mm ? '48px' : '58px'};
+          text-align: right;
+          font-weight: bold;
+        }
+        .col-total {
+          width: ${is58mm ? '52px' : '64px'};
+          text-align: right;
+          font-weight: bold;
         }
         .totals {
-          margin-top: 4px;
-          font-size: ${is58mm ? '9.5px' : '10.5px'};
+          margin-top: 2px;
+          font-size: ${is58mm ? '9px' : '10px'};
           font-weight: bold;
         }
         .row {
           display: flex;
           justify-content: space-between;
-          padding: 1.5px 0;
+          padding: 1px 0;
         }
         .grand-total {
           font-size: ${is58mm ? '12px' : '13.5px'};
           font-weight: 900 !important;
-          border-top: 1px dashed #000000;
-          border-bottom: 1px dashed #000000;
-          padding: 3.5px 0;
-          margin-top: 3px;
+          padding: 2px 0;
         }
         .footer {
-          margin-top: 6px;
-          border-top: 1px dashed #000000;
-          padding-top: 5px;
+          margin-top: 4px;
           text-align: center;
           font-size: ${is58mm ? '8px' : '8.5px'};
-          line-height: 1.35;
+          line-height: 1.3;
           font-weight: bold;
         }
       </style>
 
       <div class="header">
-        <div class="store-name">${escapeHtml(storeName)}</div>
+        ${storeName ? `<div class="store-name">${escapeHtml(storeName)}</div>` : ''}
         <div class="tax-inv">${escapeHtml(storeTagline)}</div>
         ${storeAddress ? `<div class="store-sub">${escapeHtml(storeAddress)}</div>` : ''}
         ${storePhone ? `<div class="store-sub">Phone: ${escapeHtml(storePhone)}</div>` : ''}
         ${storeGstin ? `<div class="store-sub">${escapeHtml(storeGstin)}</div>` : ''}
-        <div class="pay-mode">PAYMENT: ${escapeHtml(paymentMethod)}</div>
+        <div class="divider">${dividerLine}</div>
         <div class="meta-row">
-          <span>BILL NO: ${escapeHtml(billNo)}</span>
+          <span>BILL: ${escapeHtml(billNo)}</span>
           <span>DATE: ${formattedDate}</span>
         </div>
         <div class="meta-row">
           <span>TIME: ${formattedTime}</span>
-          <span>CASHIER: ${escapeHtml(cashier)}</span>
+          <span>OP: ${escapeHtml(cashier)}</span>
+        </div>
+        <div class="meta-row">
+          <span>PAY MODE: ${escapeHtml(paymentMethod)}</span>
         </div>
       </div>
 
       ${customerHtml}
       ${paymentDetailsHtml}
+      <div class="divider">${dividerLine}</div>
 
-      <table>
-        <thead>
-          <tr>
-            <th style="text-align: left; width: 44%;">ITEM</th>
-            <th style="text-align: center; width: 14%;">QTY</th>
-            <th style="text-align: right; width: 21%;">PRICE</th>
-            <th style="text-align: right; width: 21%;">TOTAL</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemsHtml}
-        </tbody>
-      </table>
+      <div class="table-header">
+        <span class="col-item">ITEM</span>
+        <span class="col-qty">QTY</span>
+        <span class="col-rate">RATE</span>
+        <span class="col-total">TOTAL</span>
+      </div>
+      <div class="divider">${dividerLine}</div>
+
+      <div class="items-list">
+        ${itemsHtml}
+      </div>
+      <div class="divider">${dividerLine}</div>
 
       <div class="totals">
         <div class="row">
@@ -334,10 +362,12 @@ export function generateThermalReceiptHtml(
           <span>TOTAL GST:</span>
           <span>&#8377;${totalGst}</span>
         </div>
+        <div class="divider">${dividerLine}</div>
         <div class="row grand-total">
           <span>GRAND TOTAL:</span>
           <span>&#8377;${grandTotal}</span>
         </div>
+        <div class="divider">${dividerLine}</div>
       </div>
 
       <div class="footer">
@@ -352,7 +382,7 @@ export function generateThermalReceiptHtml(
 
 /**
  * Primary thermal receipt print execution.
- * First checks for an active direct WebUSB printer connection (bypassing browser dialogs).
+ * First checks for an active direct Bluetooth or WebUSB printer connection (bypassing browser dialogs).
  * Seamlessly falls back to isolated hidden <iframe> printing targeting exact 80mm/58mm roll width.
  */
 export async function printThermalReceipt(
@@ -366,10 +396,16 @@ export async function printThermalReceipt(
   }
 
   const rollWidth = options?.rollWidth || '58mm';
+  const rawStore = options?.storeName && options.storeName !== 'RETAILVERSE' ? options.storeName : '';
+  const fallbackStore = DEFAULT_PRINTER_SETTINGS.storeName && DEFAULT_PRINTER_SETTINGS.storeName !== 'RETAILVERSE'
+    ? DEFAULT_PRINTER_SETTINGS.storeName
+    : '';
+  const resolvedStoreName = rawStore || fallbackStore;
+
   const settings: PrinterSettings = {
     ...DEFAULT_PRINTER_SETTINGS,
     rollWidth: rollWidth,
-    storeName: options?.storeName || DEFAULT_PRINTER_SETTINGS.storeName,
+    storeName: resolvedStoreName,
     storeTagline: options?.storeTagline || DEFAULT_PRINTER_SETTINGS.storeTagline,
     storeAddress: options?.storeAddress || DEFAULT_PRINTER_SETTINGS.storeAddress,
     storePhone: options?.storePhone || DEFAULT_PRINTER_SETTINGS.storePhone,

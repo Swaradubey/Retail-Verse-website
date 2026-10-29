@@ -13,6 +13,8 @@ export const STAFF_ROLES = [
   'counter_manager',
   'viewer',
   'user',
+  'vendor',
+  'VENDOR',
 ] as const;
 
 /**
@@ -78,6 +80,12 @@ export function isStoreManagerRole(role: string | undefined): boolean {
   return normalizeRole(role) === 'store_manager';
 }
 
+export function isVendorRole(role: string | undefined): boolean {
+  if (!role) return false;
+  const normalized = normalizeRole(role);
+  return normalized === 'vendor' || role.toUpperCase() === 'VENDOR';
+}
+
 export function isRestrictedInventoryDashboardRole(role: string | undefined): boolean {
   const normalized = normalizeRole(role);
   return (
@@ -116,6 +124,8 @@ const ROLE_LABEL: Record<string, string> = {
   employee: 'Employee',
   customer: 'Customer',
   user: 'User',
+  vendor: 'Vendor',
+  VENDOR: 'Vendor',
 };
 
 /** Compact badge label for header/nav (null = no badge). */
@@ -144,6 +154,13 @@ function isAllowedUserDashboardPath(path: string): boolean {
 /** Where to send the user after a successful login. */
 export function resolvePostLoginPath(role: string | undefined, fromPath: string): string {
   const normalized = normalizeRole(role);
+  if (isVendorRole(role)) {
+    const blocked = fromPath.startsWith('/login') || fromPath.startsWith('/register');
+    if (!blocked && fromPath.startsWith('/vendor')) {
+      return fromPath;
+    }
+    return '/vendor/dashboard';
+  }
   if (isRestrictedInventoryDashboardRole(normalized)) {
     const blocked = fromPath.startsWith('/login') || fromPath.startsWith('/register');
     

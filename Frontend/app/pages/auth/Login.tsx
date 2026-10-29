@@ -64,7 +64,11 @@ export function Login() {
         requestedRedirect !== '/login' &&
         requestedRedirect !== '/register';
       if (isSafeInternalRedirect) {
-        navigate(requestedRedirect, { replace: true });
+        if ((data.role?.toUpperCase() === 'VENDOR' || data.role?.toLowerCase() === 'vendor') && !requestedRedirect.startsWith('/vendor')) {
+          navigate('/vendor/dashboard', { replace: true });
+        } else {
+          navigate(requestedRedirect, { replace: true });
+        }
       } else {
         navigate(resolvePostLoginPath(data.role, '/'), { replace: true });
       }

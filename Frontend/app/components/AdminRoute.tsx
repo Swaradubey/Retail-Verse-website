@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router';
 import { useAuth } from '../context/AuthContext';
-import { isStaffRole } from '../utils/staffRoles';
+import { isStaffRole, isVendorRole } from '../utils/staffRoles';
 
 type AdminRouteProps = {
   children: React.ReactNode;
@@ -22,6 +22,10 @@ export function AdminRoute({ children, blockedRoles }: AdminRouteProps) {
 
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (isVendorRole(user.role)) {
+    return <Navigate to="/vendor/dashboard" replace />;
   }
 
   if (!isStaffRole(user.role)) {

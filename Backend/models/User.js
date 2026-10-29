@@ -153,6 +153,12 @@ const userSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    /** For `vendor` role — optional linkage to Vendor document. */
+    vendorRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      default: null,
+    },
     /** Denormalized from linked Client / Employee when available (see utils/syncUserOnLogin). */
     phone: {
       type: String,

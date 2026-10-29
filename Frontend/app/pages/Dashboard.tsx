@@ -71,6 +71,7 @@ import {
   isStaffRole,
   isStoreManagerRole,
   isSuperAdminRole,
+  isVendorRole,
   normalizeRole,
 } from '../utils/staffRoles';
 import { fetchAdminAnalytics, fetchUserAnalytics, fetchSuperAdminOverview, type AdminAnalyticsData, type UserAnalyticsData } from '../api/analytics';
@@ -119,6 +120,10 @@ export function Dashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+
+  if (isVendorRole(user?.role)) {
+    return <Navigate to="/vendor/dashboard" replace />;
+  }
 
   const restrictedInventoryDashboardRole = isRestrictedInventoryDashboardRole(user?.role);
   const staff = isStaffRole(user?.role);

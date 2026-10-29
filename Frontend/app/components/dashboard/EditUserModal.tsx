@@ -26,9 +26,11 @@ const ASSIGNABLE_ROLES = [
   'employee',
   'user',
   'client',
+  'vendor',
+  'VENDOR',
 ];
 
-const ADMIN_ALLOWED_ROLES = ['admin', 'counter_manager', 'seo_manager', 'store_manager', 'inventory_manager', 'employee', 'user', 'client'];
+const ADMIN_ALLOWED_ROLES = ['admin', 'counter_manager', 'seo_manager', 'store_manager', 'inventory_manager', 'employee', 'user', 'client', 'vendor', 'VENDOR'];
 
 export function EditUserModal({ isOpen, onClose, user, onUpdate, isSuperAdmin }: EditUserModalProps) {
   const [formData, setFormData] = useState({

@@ -60,17 +60,19 @@ export interface PrinterSettings {
   storePhone?: string;
   storeGstin?: string;
   footerNote?: string;
+  labelProtocol?: 'tspl' | 'escpos';
 }
 
 export const DEFAULT_PRINTER_SETTINGS: PrinterSettings = {
   rollWidth: '80mm',
   autoCut: true,
-  storeName: 'RETAILVERSE',
+  storeName: '',
   storeTagline: 'TAX INVOICE',
-  storeAddress: '123 COMMERCE BOULEVARD',
-  storePhone: '+91 98765 43210',
-  storeGstin: 'GSTIN: 27AAAAA0000A1Z5',
-  footerNote: 'THANKS FOR YOUR VISIT! GOODS ONCE SOLD CANNOT BE RETURNED',
+  storeAddress: '',
+  storePhone: '',
+  storeGstin: '',
+  footerNote: 'THANKS FOR YOUR VISIT!',
+  labelProtocol: 'tspl',
 };
 
 export interface OrderItem {
@@ -125,6 +127,7 @@ export interface BarcodeLabelData {
   storeName?: string;
   copies?: number;
   labelSize?: '50x25' | '50x30' | '40x30' | '72x40';
+  commandMode?: 'tspl' | 'escpos' | 'bitmap';
 }
 
 // ─── WEBUSB HARDWARE LAYER ───────────────────────────────────────────────────
@@ -431,6 +434,39 @@ class ThermalBluetoothManager {
     }
   }
 
+  /**
+   * Attempt auto-reconnection to previously authorized Bluetooth devices (Chromium 85+).
+   */
+  public async reconnectPaired(): Promise<any> {
+    if (!this.isSupported()) return null;
+    const navBt = (navigator as any).bluetooth;
+    if (!navBt?.getDevices) return null;
+
+    try {
+      const devices = await navBt.getDevices();
+      if (devices && devices.length > 0) {
+        const savedRaw = localStorage.getItem('retailverse_bt_printer');
+        let target = devices[0];
+
+        if (savedRaw) {
+          try {
+            const saved = JSON.parse(savedRaw);
+            const found = devices.find((d: any) => d.id === saved.id);
+            if (found) target = found;
+          } catch (_) {}
+        }
+
+        if (target && !this.isConnected()) {
+          await this.connectDevice(target);
+          return target;
+        }
+      }
+    } catch (err) {
+      console.warn('[ThermalBluetoothManager] Auto-reconnect failed:', err);
+    }
+    return null;
+  }
+
   public async disconnect(): Promise<void> {
     if (this.activeDevice && this.activeDevice.gatt?.connected) {
       try {
@@ -569,6 +605,7 @@ export class EscPosBuilder {
 
 /**
  * Builds binary ESC/POS byte sequence for thermal receipt.
+ * Strictly aligned with Test Receipt format: clean dotted dividers, monospaced columns, dynamic store name.
  */
 export function buildReceiptEscPos(
   order: ReceiptData,
@@ -581,14 +618,17 @@ export function buildReceiptEscPos(
   const builder = new EscPosBuilder();
   builder.init();
 
-  // Store Header
-  builder.align('center').bold(true).size('double-height').textLine(settings.storeName.toUpperCase());
-  builder.size('normal').bold(false);
-  if (settings.storeTagline) builder.textLine(settings.storeTagline);
-  if (settings.storeAddress) builder.textLine(settings.storeAddress);
-  if (settings.storePhone) builder.textLine(`Ph: ${settings.storePhone}`);
-  if (settings.storeGstin) builder.textLine(settings.storeGstin);
-  builder.divider(cols, '=');
+  // Store Header (Dynamic Store Name, No hardcoded 'RETAILVERSE')
+  const cleanStore = (settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : '').trim();
+  if (cleanStore) {
+    builder.align('center').bold(true).size('double-height').textLine(cleanStore.toUpperCase());
+    builder.size('normal').bold(false);
+  }
+  if (settings.storeTagline) builder.align('center').textLine(settings.storeTagline);
+  if (settings.storeAddress) builder.align('center').textLine(settings.storeAddress);
+  if (settings.storePhone) builder.align('center').textLine(`Ph: ${settings.storePhone}`);
+  if (settings.storeGstin) builder.align('center').textLine(settings.storeGstin);
+  builder.divider(cols, '-');
 
   // Metadata
   const billNo = order.invoiceNumber || order.orderNumber || order.orderId || order._id || 'N/A';
@@ -609,29 +649,42 @@ export function buildReceiptEscPos(
 
   // Table Header
   if (is58mm) {
-    builder.bold(true).twoColumn('ITEM (QTY x RATE)', 'TOTAL', cols).bold(false);
+    builder.bold(true).textLine('ITEM                QTY RATE   TOTAL');
   } else {
-    builder.bold(true).textLine('ITEM                QTY    PRICE     TOTAL').bold(false);
+    builder.bold(true).textLine('ITEM                 QTY      RATE     TOTAL');
   }
-  builder.divider(cols, '-');
+  builder.bold(false).divider(cols, '-');
 
   // Items
   const items = order.items || [];
   for (const item of items) {
-    const name = (item.name || 'Item').slice(0, is58mm ? 20 : 18);
+    const name = item.name || 'Item';
     const qty = Number(item.quantity) || 1;
     const price = Number(item.unitPrice !== undefined ? item.unitPrice : item.price || 0);
     const total = Number(item.itemTotal !== undefined ? item.itemTotal : price * qty);
 
     if (is58mm) {
-      builder.textLine(name);
-      builder.twoColumn(`  ${qty} x Rs.${price.toFixed(2)}`, `Rs.${total.toFixed(2)}`, cols);
+      // 58mm = 32 cols: ITEM(15) QTY(3) RATE(6) TOTAL(8)
+      if (name.length <= 15) {
+        const colItem = name.padEnd(15, ' ');
+        const colQty = String(qty).padStart(3, ' ');
+        const colRate = price.toFixed(0).padStart(6, ' ');
+        const colTotal = total.toFixed(0).padStart(8, ' ');
+        builder.textLine(`${colItem}${colQty}${colRate}${colTotal}`);
+      } else {
+        builder.textLine(name.slice(0, 30));
+        builder.twoColumn(`  ${qty} x ${price.toFixed(2)}`, total.toFixed(2), cols);
+      }
     } else {
-      const colItem = name.padEnd(18, ' ');
+      // 80mm = 42 cols: ITEM(20) QTY(4) RATE(8) TOTAL(10)
+      const colItem = name.slice(0, 20).padEnd(20, ' ');
       const colQty = String(qty).padStart(4, ' ');
       const colPrice = price.toFixed(2).padStart(8, ' ');
-      const colTotal = total.toFixed(2).padStart(9, ' ');
-      builder.textLine(`${colItem} ${colQty} ${colPrice} ${colTotal}`);
+      const colTotal = total.toFixed(2).padStart(10, ' ');
+      builder.textLine(`${colItem}${colQty}${colPrice}${colTotal}`);
+      if (name.length > 20) {
+        builder.textLine(`  ${name.slice(20, 40)}`);
+      }
     }
   }
 
@@ -654,21 +707,23 @@ export function buildReceiptEscPos(
     builder.twoColumn(`DISCOUNT${order.couponCode ? ` (${order.couponCode})` : ''}:`, `-Rs.${discountAmt.toFixed(2)}`, cols);
   }
   builder.twoColumn('TOTAL GST:', `Rs.${totalGst}`, cols);
-  builder.divider(cols, '=');
+  builder.divider(cols, '-');
 
   builder.bold(true).size('double-height');
   builder.twoColumn('GRAND TOTAL:', `Rs.${grandTotal}`, cols);
   builder.size('normal').bold(false);
-  builder.divider(cols, '=');
+  builder.divider(cols, '-');
 
   // Footer & Cut
   builder.align('center');
+  builder.textLine('PRICES ARE INCLUSIVE OF GST');
   if (settings.footerNote) {
     builder.textLine(settings.footerNote);
   } else {
-    builder.textLine('THANK YOU FOR SHOPPING WITH US!');
-    builder.textLine('NO RETURN / NO EXCHANGE');
+    builder.textLine('THANKS FOR YOUR VISIT!');
   }
+  builder.textLine('NO RETURN / NO EXCHANGE');
+  builder.textLine('GOODS ONCE SOLD CANNOT BE TAKEN BACK');
 
   if (settings.autoCut) {
     builder.cut(true);
@@ -680,35 +735,172 @@ export function buildReceiptEscPos(
 }
 
 /**
+ * Builds TSPL (TSC Page Description Language) binary text stream for thermal sticker roll printers.
+ * Directly supported by TSC, Xprinter, Gprinter, Munbyn, Everycom, D110, POS label printers.
+ */
+export function buildBarcodeLabelTspl(
+  label: BarcodeLabelData,
+  copies: number = 1,
+  exactDimensions: string = '50mm 25mm'
+): Uint8Array {
+  // Parse dimensions
+  let widthMm = 50;
+  let heightMm = 25;
+  if (exactDimensions) {
+    const parts = exactDimensions.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const parsedW = parseFloat(parts[0]);
+      const parsedH = parseFloat(parts[1]);
+      if (!isNaN(parsedW) && parsedW > 0) widthMm = parsedW;
+      if (!isNaN(parsedH) && parsedH > 0) heightMm = parsedH;
+    }
+  }
+
+  const dpi = 8; // 203 DPI = 8 dots/mm
+  const widthDots = Math.round(widthMm * dpi);
+  const heightDots = Math.round(heightMm * dpi);
+
+  const lines: string[] = [];
+  lines.push(`SIZE ${widthMm} mm, ${heightMm} mm`);
+  lines.push(`GAP 2 mm, 0 mm`);
+  lines.push(`DIRECTION 1`);
+  lines.push(`REFERENCE 0,0`);
+  lines.push(`OFFSET 0 mm`);
+  lines.push(`CLS`);
+
+  let currentY = 14;
+
+  // 1. Store Name: ONLY if explicitly present and not 'RETAILVERSE'
+  const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
+  if (cleanStore) {
+    const storeText = cleanStore.toUpperCase();
+    const estCharWidth = 12;
+    const startX = Math.max(8, Math.round((widthDots - (storeText.length * estCharWidth)) / 2));
+    lines.push(`TEXT ${startX},${currentY},"2",0,1,1,"${storeText.replace(/"/g, '')}"`);
+    currentY += 24;
+  }
+
+  // 2. Product Name
+  if (label.name) {
+    const prodName = label.name.trim().slice(0, 26);
+    const estCharWidth = 10;
+    const startX = Math.max(8, Math.round((widthDots - (prodName.length * estCharWidth)) / 2));
+    lines.push(`TEXT ${startX},${currentY},"2",0,1,1,"${prodName.replace(/"/g, '')}"`);
+    currentY += 24;
+  }
+
+  // 3. Barcode CODE128
+  if (label.barcode) {
+    const barcodeHeight = heightMm <= 26 ? 34 : 46;
+    const narrow = widthMm <= 42 ? 1 : 2;
+    const wide = widthMm <= 42 ? 2 : 4;
+    const estBarcodeWidth = label.barcode.length * (narrow * 11);
+    const startX = Math.max(8, Math.round((widthDots - estBarcodeWidth) / 2));
+    lines.push(`BARCODE ${startX},${currentY},"128",${barcodeHeight},1,0,${narrow},${wide},"${label.barcode}"`);
+    currentY += barcodeHeight + 28;
+  }
+
+  // 4. SKU & Price
+  const infoParts: string[] = [];
+  if (label.sku && label.sku.trim()) {
+    infoParts.push(`SKU: ${label.sku.trim()}`);
+  }
+  if (label.price !== undefined && label.price !== '') {
+    const numPrice = Number(label.price);
+    if (!isNaN(numPrice) && numPrice > 0) {
+      infoParts.push(`Rs.${numPrice.toFixed(2)}`);
+    }
+  }
+
+  if (infoParts.length > 0) {
+    const infoText = infoParts.join(' | ');
+    const startX = Math.max(8, Math.round((widthDots - (infoText.length * 9)) / 2));
+    lines.push(`TEXT ${startX},${currentY},"1",0,1,1,"${infoText.replace(/"/g, '')}"`);
+  }
+
+  // 5. Quantity / Copies count parameter
+  const count = Math.max(1, copies);
+  lines.push(`PRINT ${count},1`);
+  lines.push('');
+
+  const commandStr = lines.join('\r\n');
+  return new TextEncoder().encode(commandStr);
+}
+
+/**
  * Builds binary ESC/POS byte sequence for barcode sticker rolls.
  */
 export function buildBarcodeLabelEscPos(
   label: BarcodeLabelData,
-  copies: number = 1
+  copies: number = 1,
+  exactDimensions: string = '50mm 25mm'
 ): Uint8Array {
   const builder = new EscPosBuilder();
   builder.init();
 
-  const formattedPrice = Number(label.price || 0).toFixed(2);
+  let heightMm = 25;
+  if (exactDimensions) {
+    const parts = exactDimensions.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const h = parseFloat(parts[1]);
+      if (!isNaN(h) && h > 0) heightMm = h;
+    }
+  }
+
+  // Calculate feed lines based on sticker height (approx 8 lines per inch = 0.31 lines per mm)
+  const feedLines = Math.max(1, Math.min(6, Math.round(heightMm / 10)));
+  const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
 
   for (let i = 0; i < copies; i++) {
     builder.align('center');
-    builder.bold(true).textLine((label.storeName || 'RETAILVERSE').toUpperCase());
-    builder.size('normal').textLine(label.name.slice(0, 24));
+
+    // Store Name: Only print if present and not 'RETAILVERSE'
+    if (cleanStore) {
+      builder.bold(true).textLine(cleanStore.toUpperCase());
+    }
+
+    if (label.name) {
+      builder.size('normal').bold(false).textLine(label.name.slice(0, 24));
+    }
 
     // Barcode CODE128
     if (label.barcode) {
-      builder.barcode(label.barcode, 45, 2);
+      const barcodeH = heightMm <= 26 ? 35 : 45;
+      builder.barcode(label.barcode, barcodeH, 2);
     }
 
-    if (label.sku) {
-      builder.textLine(`SKU: ${label.sku}`);
+    const details: string[] = [];
+    if (label.sku) details.push(`SKU: ${label.sku}`);
+    if (label.price) {
+      const p = Number(label.price);
+      if (!isNaN(p) && p > 0) details.push(`Rs.${p.toFixed(2)}`);
     }
 
-    builder.lf(2);
+    if (details.length > 0) {
+      builder.textLine(details.join(' | '));
+    }
+
+    builder.lf(feedLines);
   }
 
   return builder.build();
+}
+
+/**
+ * Dispatcher to build raw binary stream for thermal sticker printing.
+ * Supports TSPL (default for label printers) or ESC/POS (receipt/continuous sticker rolls).
+ */
+export function buildBarcodeLabelBuffer(
+  label: BarcodeLabelData,
+  copies: number = 1,
+  exactDimensions: string = '50mm 25mm',
+  protocol: 'tspl' | 'escpos' = 'tspl'
+): Uint8Array {
+  const mode = label.commandMode || protocol;
+  if (mode === 'escpos') {
+    return buildBarcodeLabelEscPos(label, copies, exactDimensions);
+  }
+  return buildBarcodeLabelTspl(label, copies, exactDimensions);
 }
 
 // ─── ISOLATED HIDDEN IFRAME PRINT ENGINE (ZERO A4 SAVE-DIALOG FALLBACK) ───────

@@ -9,6 +9,7 @@ import { SuperAdminOrClientRoute } from './components/SuperAdminOrClientRoute';
 import { FullAdminOnlyRoute } from './components/FullAdminOnlyRoute';
 import { HelpCenterRoute } from './components/HelpCenterRoute';
 import { SupportRoute } from './components/SupportRoute';
+import { RoleProtectedRoute } from './components/RoleProtectedRoute';
 // Home and Login are eagerly loaded — they are the most navigated-to screens
 import { Home } from './pages/Home';
 import { Login } from './pages/auth/Login';
@@ -95,6 +96,7 @@ const SuperAdminVoiceOrders = lazy(() => import('./pages/super-admin/SuperAdminV
 const DashboardMarketplaces = lazy(() => import('./pages/dashboard/DashboardMarketplaces').then(m => ({ default: m.DashboardMarketplaces })));
 const MarketplaceDetail = lazy(() => import('./pages/dashboard/MarketplaceDetail').then(m => ({ default: m.MarketplaceDetail })));
 const DashboardMarketplaceLogs = lazy(() => import('./pages/dashboard/DashboardMarketplaceLogs').then(m => ({ default: m.DashboardMarketplaceLogs })));
+const VendorDashboard = lazy(() => import('./pages/vendor/VendorDashboard').then(m => ({ default: m.VendorDashboard })));
 
 // Minimal loading fallback — a tiny spinner that doesn't block the visible UI
 function PageLoader() {
@@ -149,6 +151,26 @@ export const router = createBrowserRouter([
       { path: 'privacy-policy', element: withSuspense(<PrivacyPolicy />) },
       { path: 'terms-of-service', element: withSuspense(<TermsOfService />) },
       { path: 'delete-account', element: withSuspense(<DeleteAccount />) },
+      {
+        path: 'vendor',
+        element: <Navigate to="/vendor/dashboard" replace />,
+      },
+      {
+        path: 'vendor/dashboard',
+        element: withSuspense(
+          <RoleProtectedRoute allowedRoles={['VENDOR', 'vendor', 'admin', 'super_admin']}>
+            <VendorDashboard />
+          </RoleProtectedRoute>
+        ),
+      },
+      {
+        path: 'vendor/requirements',
+        element: withSuspense(
+          <RoleProtectedRoute allowedRoles={['VENDOR', 'vendor', 'admin', 'super_admin']}>
+            <VendorDashboard />
+          </RoleProtectedRoute>
+        ),
+      },
       {
         path: 'pos',
         element: withSuspense(

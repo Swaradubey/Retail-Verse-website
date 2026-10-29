@@ -1639,12 +1639,12 @@ export function POSBilling() {
           key: keyId,
           amount: rzpOrder.amount || amountInPaise,
           currency: rzpOrder.currency || 'INR',
-          name: 'Retailverse POS',
+          name: user?.businessName || (user as any)?.storeName || user?.name || 'Store POS',
           description: `POS Bill #${Date.now().toString().slice(-6)}`,
           order_id: orderId,
           prefill: {
             name: effectiveCustomerName,
-            email: 'pos@retailverse.com',
+            email: user?.email || 'pos@store.local',
             contact: effectiveCustomerPhone || '9999999999',
           },
           theme: {
@@ -2137,14 +2137,24 @@ export function POSBilling() {
     }
   };
 
-  // Print Invoice Thermal Receipt via WebUSB or isolated hidden iframe
+  // Print Invoice Thermal Receipt via Bluetooth, WebUSB or isolated hidden iframe
   const handlePrintReceipt = async (order: any) => {
     if (!order) {
       toast.error('No order selected to print');
       return;
     }
     try {
-      await thermalPrintReceipt(order, user?.name || 'Staff');
+      const dynamicStoreName = (
+        (printerSettings.storeName && printerSettings.storeName !== 'RETAILVERSE' ? printerSettings.storeName : '') ||
+        user?.businessName ||
+        (user as any)?.storeName ||
+        (user as any)?.shopName ||
+        ''
+      ).trim();
+
+      await thermalPrintReceipt(order, user?.name || 'Staff', {
+        storeName: dynamicStoreName,
+      });
     } catch (err: any) {
       console.error('Print receipt error:', err);
       toast.error('Failed to trigger receipt printing');
