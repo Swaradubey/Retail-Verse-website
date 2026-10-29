@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import { PrinterSettings } from '../../lib/thermalPrinter';
+import { PrinterSettings, isBillPlusDevice } from '../../lib/thermalPrinter';
 
 interface ThermalHardwareModalProps {
   isOpen: boolean;
@@ -324,7 +324,13 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                     Barcode Sticker Protocol
                   </span>
                   <span className="text-[11px] text-zinc-500">
-                    TSPL for barcode label printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls
+                    {isBillPlusDevice(bluetoothDevice) ? (
+                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                        BillPlus printer detected — ESC/POS Raster mode recommended
+                      </span>
+                    ) : (
+                      'TSPL for barcode label printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls'
+                    )}
                   </span>
                 </div>
                 <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">

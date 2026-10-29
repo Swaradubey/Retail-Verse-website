@@ -6,6 +6,7 @@
  * 2. ESC/POS command builders (Init, Text styling, Alignment, Barcodes, Line feeds, Paper cut).
  * 3. Graceful fallback to isolated hidden <iframe> DOM @media print engine.
  */
+import JsBarcode from 'jsbarcode';
 
 // ─── ESC/POS BYTE CONSTANTS ───────────────────────────────────────────────────
 export const ESC_POS = {
@@ -581,7 +582,13 @@ export class EscPosBuilder {
     this.raw(ESC_POS.BARCODE_TEXT_BELOW);
 
     // CODE128 format B: GS k 73 [len] [bytes]
-    const codeBytes = this.encoder.encode(code);
+    // In standard ESC/POS CODE128 (GS k 73), the first characters must specify code set {A, {B, or {C.
+    // If not prefixed, default to '{B' (ASCII 32..127) for reliable decoding.
+    let codeStr = code;
+    if (!codeStr.startsWith('{A') && !codeStr.startsWith('{B') && !codeStr.startsWith('{C')) {
+      codeStr = '{B' + codeStr;
+    }
+    const codeBytes = this.encoder.encode(codeStr);
     const header = new Uint8Array([0x1D, 0x6B, 73, codeBytes.length]);
     this.raw(header);
     this.raw(codeBytes);
@@ -828,9 +835,246 @@ export function buildBarcodeLabelTspl(
 }
 
 /**
- * Builds binary ESC/POS byte sequence for barcode sticker rolls.
+ * Detects if a device or device name corresponds to a BillPlus thermal printer.
+ * BillPlus portable printers are standard ESC/POS receipt/sticker printers and do not support TSPL.
  */
-export function buildBarcodeLabelEscPos(
+export function isBillPlusDevice(deviceOrName?: any): boolean {
+  if (!deviceOrName) return false;
+  const name = typeof deviceOrName === 'string'
+    ? deviceOrName
+    : (deviceOrName.name || deviceOrName.productName || '');
+  return /billplus|bill\s*plus/i.test(name);
+}
+
+/**
+ * Detects if a device or device name is an ESC/POS only thermal printer
+ * (BillPlus, POS-58, MPT, PT-210, etc.) which fails or drops raw TSPL packets.
+ */
+export function isEscPosDevice(deviceOrName?: any): boolean {
+  if (!deviceOrName) return false;
+  const name = typeof deviceOrName === 'string'
+    ? deviceOrName
+    : (deviceOrName.name || deviceOrName.productName || '');
+  return /billplus|bill\s*plus|pos-?58|innerprinter|bluetooth\s*printer|pt-?210|mpt-?ii|rpp/i.test(name);
+}
+
+/**
+ * Renders a high-contrast barcode sticker onto an offscreen canvas.
+ * Perfectly calibrated for 203 DPI (8 dots/mm) 50mm / 58mm thermal rolls.
+ */
+export function renderBarcodeLabelToCanvas(
+  label: BarcodeLabelData,
+  exactDimensions: string = '50mm 25mm'
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+
+  let widthMm = 50;
+  let heightMm = 25;
+  if (exactDimensions) {
+    const parts = exactDimensions.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const w = parseFloat(parts[0]);
+      const h = parseFloat(parts[1]);
+      if (!isNaN(w) && w > 0) widthMm = w;
+      if (!isNaN(h) && h > 0) heightMm = h;
+    }
+  }
+
+  // 203 DPI = 8 dots/mm
+  // Standard 58mm printer printable width is 48mm = 384 dots (48 bytes per line).
+  // 50mm label fits comfortably in 384 dots width without clipping.
+  let targetWidthDots = 384;
+  if (widthMm <= 42) {
+    targetWidthDots = 320; // 40mm x 8 = 320 dots (40 bytes)
+  } else if (widthMm >= 70) {
+    targetWidthDots = 576; // 72mm x 8 = 576 dots (72 bytes for 80mm roll)
+  }
+  const widthDots = targetWidthDots;
+  const heightDots = Math.max(160, Math.round(heightMm * 8));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = widthDots;
+  canvas.height = heightDots;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // Solid white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, widthDots, heightDots);
+
+  ctx.fillStyle = '#000000';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  let currentY = 8;
+
+  // 1. Store Name (if present and not 'RETAILVERSE')
+  const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
+  if (cleanStore) {
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(cleanStore.toUpperCase(), widthDots / 2, currentY);
+    currentY += 20;
+  }
+
+  // 2. Product Title
+  if (label.name) {
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const maxChars = widthDots <= 320 ? 20 : 26;
+    const nameStr = label.name.length > maxChars ? label.name.slice(0, maxChars) : label.name;
+    ctx.fillText(nameStr, widthDots / 2, currentY);
+    currentY += 18;
+  }
+
+  // 3. Barcode CODE128
+  if (label.barcode) {
+    const remainingHeight = heightDots - currentY - 26;
+    const barcodeHeight = Math.max(30, Math.min(65, remainingHeight));
+    const barWidth = widthDots <= 320 ? 1.4 : (label.barcode.length > 13 ? 1.5 : 1.8);
+
+    try {
+      const bcCanvas = document.createElement('canvas');
+      (JsBarcode as any)(bcCanvas, label.barcode, {
+        format: 'CODE128',
+        width: barWidth,
+        height: barcodeHeight,
+        displayValue: false, // Custom rendered text below for crisp alignment
+        margin: 0,
+        lineColor: '#000000',
+        background: '#ffffff',
+      });
+      const bX = Math.max(4, Math.round((widthDots - bcCanvas.width) / 2));
+      ctx.drawImage(bcCanvas, bX, currentY);
+      currentY += bcCanvas.height + 4;
+    } catch (bcErr) {
+      console.warn('[renderBarcodeLabelToCanvas] JsBarcode canvas error:', bcErr);
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(label.barcode, widthDots / 2, currentY);
+      currentY += 20;
+    }
+  }
+
+  // 4. Barcode number, SKU & Price Line
+  const infoParts: string[] = [label.barcode];
+  if (label.sku && label.sku.trim()) {
+    infoParts.push(`SKU: ${label.sku.trim()}`);
+  }
+  if (label.price !== undefined && label.price !== '') {
+    const numPrice = Number(label.price);
+    if (!isNaN(numPrice) && numPrice > 0) {
+      infoParts.push(`Rs.${numPrice.toFixed(0)}`);
+    }
+  }
+
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(infoParts.join(' | '), widthDots / 2, currentY);
+
+  return canvas;
+}
+
+/**
+ * Converts a 2D HTML Canvas to ESC/POS Raster bit image format (GS v 0 0 xL xH yL yH data).
+ * 1-bit monochrome data (1 = black dot, 0 = white dot), 8 dots packed per byte MSB first.
+ */
+export function canvasToEscPosRaster(canvas: HTMLCanvasElement): Uint8Array {
+  const width = canvas.width;
+  const height = canvas.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new Uint8Array(0);
+
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+
+  // Horizontal bytes (must be aligned to byte boundaries)
+  const widthBytes = Math.ceil(width / 8);
+  const xL = widthBytes % 256;
+  const xH = Math.floor(widthBytes / 256);
+  const yL = height % 256;
+  const yH = Math.floor(height / 256);
+
+  // GS v 0 0 xL xH yL yH (ESC/POS raster bit image command)
+  const header = new Uint8Array([0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH]);
+  const rasterBytes = new Uint8Array(widthBytes * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const a = data[idx + 3];
+
+      // Luminosity threshold for pitch-black thermal contrast
+      const isBlack = a > 128 && (r * 0.299 + g * 0.587 + b * 0.114 < 180);
+
+      if (isBlack) {
+        const byteIndex = y * widthBytes + Math.floor(x / 8);
+        const bitPos = 7 - (x % 8);
+        rasterBytes[byteIndex] |= (1 << bitPos);
+      }
+    }
+  }
+
+  const result = new Uint8Array(header.length + rasterBytes.length);
+  result.set(header, 0);
+  result.set(rasterBytes, header.length);
+  return result;
+}
+
+/**
+ * Method B (Recommended): Convert barcode sticker preview canvas to 1-bit monochrome bitmap
+ * and print using ESC/POS raster bit image command (GS v 0 0 xL xH yL yH data).
+ * Guarantees exact visual alignment and eliminates firmware barcode font dependency on BillPlus / POS-58.
+ */
+export function buildBarcodeLabelRasterEscPos(
+  label: BarcodeLabelData,
+  copies: number = 1,
+  exactDimensions: string = '50mm 25mm'
+): Uint8Array {
+  const canvas = renderBarcodeLabelToCanvas(label, exactDimensions);
+  if (!canvas) {
+    return buildBarcodeLabelNativeEscPos(label, copies, exactDimensions);
+  }
+
+  const rasterCommand = canvasToEscPosRaster(canvas);
+  const chunks: Uint8Array[] = [];
+
+  // Initialize printer
+  chunks.push(ESC_POS.INIT);
+  chunks.push(ESC_POS.ALIGN_CENTER);
+
+  // Print requested number of copies with feed & separation
+  const count = Math.max(1, copies);
+  for (let i = 0; i < count; i++) {
+    // 1. Send raster bit image data
+    chunks.push(rasterCommand);
+
+    // 2. Feed & Separation: ESC d 2 lines so consecutive stickers don't overlap
+    chunks.push(ESC_POS.FEED_LINES(2));
+  }
+
+  // Flush buffer
+  chunks.push(ESC_POS.LF);
+
+  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+/**
+ * Method A: Native ESC/POS Barcode commands:
+ * - GS h [n] (set barcode height: 0x1D, 0x68, 0x50)
+ * - GS w [n] (set barcode width: 0x1D, 0x77, 0x02)
+ * - GS H 2 (HRI characters below barcode: 0x1D, 0x48, 0x02)
+ * - GS k 73 [n] [data] (CODE128 barcode: 0x1D, 0x6B, 0x49, ...)
+ * - Store name, product title, and SKU as centered text lines before and after barcode.
+ * - Feed & Separation: ESC d 2 after each sticker copy.
+ */
+export function buildBarcodeLabelNativeEscPos(
   label: BarcodeLabelData,
   copies: number = 1,
   exactDimensions: string = '50mm 25mm'
@@ -847,31 +1091,32 @@ export function buildBarcodeLabelEscPos(
     }
   }
 
-  // Calculate feed lines based on sticker height (approx 8 lines per inch = 0.31 lines per mm)
-  const feedLines = Math.max(1, Math.min(6, Math.round(heightMm / 10)));
   const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
+  const count = Math.max(1, copies);
 
-  for (let i = 0; i < copies; i++) {
+  for (let i = 0; i < count; i++) {
     builder.align('center');
 
-    // Store Name: Only print if present and not 'RETAILVERSE'
+    // 1. Store Name (centered)
     if (cleanStore) {
-      builder.bold(true).textLine(cleanStore.toUpperCase());
+      builder.bold(true).size('normal').textLine(cleanStore.toUpperCase());
     }
 
+    // 2. Product Title (centered)
     if (label.name) {
-      builder.size('normal').bold(false).textLine(label.name.slice(0, 24));
+      builder.bold(false).textLine(label.name.slice(0, 24));
     }
 
-    // Barcode CODE128
+    // 3. CODE128 Barcode via Native GS k 73
     if (label.barcode) {
-      const barcodeH = heightMm <= 26 ? 35 : 45;
+      const barcodeH = heightMm <= 26 ? 50 : 64; // GS h [n]
       builder.barcode(label.barcode, barcodeH, 2);
     }
 
+    // 4. SKU & Price Line (centered)
     const details: string[] = [];
     if (label.sku) details.push(`SKU: ${label.sku}`);
-    if (label.price) {
+    if (label.price !== undefined && label.price !== '') {
       const p = Number(label.price);
       if (!isNaN(p) && p > 0) details.push(`Rs.${p.toFixed(2)}`);
     }
@@ -880,15 +1125,46 @@ export function buildBarcodeLabelEscPos(
       builder.textLine(details.join(' | '));
     }
 
-    builder.lf(feedLines);
+    // 5. Feed & Separation: ESC d 2 so consecutive stickers don't overlap
+    builder.raw(ESC_POS.FEED_LINES(2));
   }
+
+  // Flush buffer
+  builder.lf(1);
 
   return builder.build();
 }
 
 /**
+ * Builds binary ESC/POS byte sequence for barcode sticker rolls.
+ * Uses Method B (Raster bitmap) by default for direct visual match on BillPlus & 58mm printers,
+ * with graceful fallback to Method A (Native ESC/POS commands).
+ */
+export function buildBarcodeLabelEscPos(
+  label: BarcodeLabelData,
+  copies: number = 1,
+  exactDimensions: string = '50mm 25mm'
+): Uint8Array {
+  // If native commands are explicitly requested, use Method A
+  if ((label.commandMode as any) === 'escpos-native') {
+    return buildBarcodeLabelNativeEscPos(label, copies, exactDimensions);
+  }
+
+  // Default to Method B (Raster Bit Image) for guaranteed pixel-perfect printing on BillPlus
+  if (typeof document !== 'undefined') {
+    try {
+      return buildBarcodeLabelRasterEscPos(label, copies, exactDimensions);
+    } catch (err) {
+      console.warn('[buildBarcodeLabelEscPos] Raster render failed, falling back to Native ESC/POS:', err);
+    }
+  }
+
+  return buildBarcodeLabelNativeEscPos(label, copies, exactDimensions);
+}
+
+/**
  * Dispatcher to build raw binary stream for thermal sticker printing.
- * Supports TSPL (default for label printers) or ESC/POS (receipt/continuous sticker rolls).
+ * Supports TSPL (default for label printers) or ESC/POS (receipt/continuous sticker rolls & BillPlus).
  */
 export function buildBarcodeLabelBuffer(
   label: BarcodeLabelData,
@@ -897,7 +1173,7 @@ export function buildBarcodeLabelBuffer(
   protocol: 'tspl' | 'escpos' = 'tspl'
 ): Uint8Array {
   const mode = label.commandMode || protocol;
-  if (mode === 'escpos') {
+  if (mode === 'escpos' || mode === 'bitmap') {
     return buildBarcodeLabelEscPos(label, copies, exactDimensions);
   }
   return buildBarcodeLabelTspl(label, copies, exactDimensions);

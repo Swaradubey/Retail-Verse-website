@@ -12,6 +12,8 @@ import {
   buildBarcodeLabelBuffer,
   printViaIsolatedIframe,
   BarcodeLabelData,
+  isBillPlusDevice,
+  isEscPosDevice,
 } from '../lib/thermalPrinter';
 import {
   ThermalReceiptOrder,
@@ -94,6 +96,15 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
           if (mounted && dev) {
             setBluetoothDevice(dev);
             console.log('[ThermalPrintContext] Reconnected to Bluetooth thermal printer:', dev.name);
+            if (isBillPlusDevice(dev) || isEscPosDevice(dev)) {
+              setSettings((prev) => {
+                const updated = { ...prev, labelProtocol: 'escpos' as const };
+                try {
+                  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(updated));
+                } catch (_) {}
+                return updated;
+              });
+            }
           }
         })
         .catch(() => {});
@@ -141,13 +152,18 @@ export const ThermalPrintProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const dev = await thermalBluetooth.requestDevice();
       if (dev) {
         setBluetoothDevice(dev);
-        toast.success(`Connected to ${dev.name || 'Bluetooth Thermal Printer'}`);
+        if (isBillPlusDevice(dev) || isEscPosDevice(dev)) {
+          updateSettings({ labelProtocol: 'escpos' });
+          toast.success(`Connected to ${dev.name || 'Bluetooth Printer'} (ESC/POS Auto-configured)`);
+        } else {
+          toast.success(`Connected to ${dev.name || 'Bluetooth Thermal Printer'}`);
+        }
       }
     } catch (err: any) {
       console.error('[ThermalPrintContext] Connect Bluetooth error:', err);
       toast.error(err?.message || 'Failed to connect Bluetooth thermal printer');
     }
-  }, []);
+  }, [updateSettings]);
 
   const disconnectBluetooth = useCallback(async () => {
     try {
@@ -219,10 +235,20 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
       exactDimensions: string = '50mm 25mm'
     ) => {
       const count = Math.max(1, copies);
-      const commandMode = data.commandMode || settings.labelProtocol || 'tspl';
+      let commandMode = data.commandMode || settings.labelProtocol || 'tspl';
       const cleanStoreName = data.storeName && data.storeName !== 'RETAILVERSE'
         ? data.storeName
         : (settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : '');
+
+      // Check if connected Bluetooth device is a BillPlus or ESC/POS-only printer
+      const activeBtDev = bluetoothDevice || thermalBluetooth.getConnectedDevice();
+      const isBtBillPlus = Boolean(activeBtDev && (isBillPlusDevice(activeBtDev) || isEscPosDevice(activeBtDev)));
+
+      // Auto-fallback to ESC/POS for BillPlus printers so TSPL packets are never silently dropped
+      if (isBtBillPlus && commandMode === 'tspl') {
+        console.log(`[ThermalPrintContext] BillPlus printer detected (${activeBtDev?.name}). Auto-switching label protocol from TSPL to ESC/POS.`);
+        commandMode = 'escpos';
+      }
 
       const normalizedData: BarcodeLabelData = {
         ...data,
@@ -235,7 +261,8 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         try {
           const buffer = buildBarcodeLabelBuffer(normalizedData, count, exactDimensions, commandMode);
           await thermalBluetooth.sendRaw(buffer);
-          toast.success(`Printed ${count} label${count === 1 ? '' : 's'} via Bluetooth (${commandMode.toUpperCase()})`);
+          const modeStr = isBtBillPlus ? 'ESC/POS' : commandMode.toUpperCase();
+          toast.success(`Printed ${count} label${count === 1 ? '' : 's'} via Bluetooth (${modeStr})`);
           return { success: true, method: 'bluetooth' as const };
         } catch (btErr: any) {
           console.error('[ThermalPrintContext] Bluetooth label print error:', btErr);
@@ -492,6 +519,8 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
   }, [printReceipt, settings.rollWidth]);
 
   const testPrintLabel = useCallback(async () => {
+    const activeBtDev = bluetoothDevice || thermalBluetooth.getConnectedDevice();
+    const isBtBillPlus = Boolean(activeBtDev && (isBillPlusDevice(activeBtDev) || isEscPosDevice(activeBtDev)));
     await printBarcodeLabel(
       {
         name: 'Classic Linen Shirt - Blue',
@@ -499,11 +528,12 @@ function generateBarcodeSvgString(barcode: string, barWidth = 1.3, barHeight = 2
         barcode: '890123456789',
         price: 1299.0,
         storeName: settings.storeName && settings.storeName !== 'RETAILVERSE' ? settings.storeName : undefined,
+        commandMode: isBtBillPlus ? 'escpos' : (settings.labelProtocol || 'tspl'),
       },
       1,
       '50mm 25mm'
     );
-  }, [printBarcodeLabel, settings.storeName]);
+  }, [printBarcodeLabel, settings.storeName, settings.labelProtocol, bluetoothDevice]);
 
   return (
     <ThermalPrintContext.Provider

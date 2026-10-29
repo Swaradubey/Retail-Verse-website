@@ -18,6 +18,7 @@ import { Button } from '../ui/button';
 import { useThermalPrinter } from '../../hooks/useThermalPrinter';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
+import { isBillPlusDevice, isEscPosDevice } from '../../lib/thermalPrinter';
 
 export interface BarcodePrintProduct {
   name: string;
@@ -99,13 +100,29 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
     ''
   ).trim();
 
+  const isBillPlusConnected = Boolean(
+    bluetoothDevice && (isBillPlusDevice(bluetoothDevice) || isEscPosDevice(bluetoothDevice))
+  );
+
   const initialQuantity = Math.max(1, Number(product?.stockLevel) || 1);
   const [copies, setCopies] = useState<number>(initialQuantity);
   const [selectedPreset, setSelectedPreset] = useState<LabelDimensions>('50x25');
   const [includeStoreName, setIncludeStoreName] = useState<boolean>(Boolean(resolvedStoreName));
   const [includeSku, setIncludeSku] = useState<boolean>(true);
-  const [protocol, setProtocol] = useState<'tspl' | 'escpos'>(settings.labelProtocol || 'tspl');
+  const [protocol, setProtocol] = useState<'tspl' | 'escpos'>(() => {
+    if (bluetoothDevice && (isBillPlusDevice(bluetoothDevice) || isEscPosDevice(bluetoothDevice))) {
+      return 'escpos';
+    }
+    return settings.labelProtocol || 'tspl';
+  });
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
+
+  // Auto-detect and switch to ESC/POS when BillPlus or portable thermal printer is connected
+  useEffect(() => {
+    if (bluetoothDevice && (isBillPlusDevice(bluetoothDevice) || isEscPosDevice(bluetoothDevice))) {
+      setProtocol('escpos');
+    }
+  }, [bluetoothDevice]);
 
   const previewSvgRef = useRef<SVGSVGElement | null>(null);
 
@@ -255,7 +272,13 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                 Command Stream Protocol
               </span>
               <span className="text-[11px] text-zinc-500">
-                TSPL for label roll printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls
+                {isBillPlusConnected ? (
+                  <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                    BillPlus printer detected — ESC/POS Raster mode active
+                  </span>
+                ) : (
+                  'TSPL for label roll printers (TSC, Xprinter) · ESC/POS for receipt sticker rolls'
+                )}
               </span>
             </div>
             <div className="flex items-center gap-1 bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-700">
@@ -279,7 +302,7 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
                     : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
                 }`}
               >
-                ESC/POS (Roll)
+                ESC/POS (Roll / BillPlus)
               </button>
             </div>
           </div>
@@ -473,7 +496,20 @@ export const BarcodePrintModal: React.FC<BarcodePrintModalProps> = ({
               </div>
 
               <p className="text-[11px] text-zinc-500 mt-2 text-center">
-                Engine: {bluetoothDevice ? `Direct Bluetooth (${bluetoothDevice.name || 'Printer'}) · ${protocol.toUpperCase()}` : usbDevice ? `WebUSB Raw · ${protocol.toUpperCase()}` : 'Isolated Hidden iFrame (@page exact size, 0 margin)'}
+                Engine:{' '}
+                {bluetoothDevice ? (
+                  <>
+                    Direct Bluetooth ({bluetoothDevice.name || 'Printer'}) ·{' '}
+                    <strong className="text-zinc-700 dark:text-zinc-300">
+                      {protocol === 'escpos' ? 'ESC/POS' : 'TSPL'}
+                      {isBillPlusConnected ? ' (BillPlus Auto-detected)' : ''}
+                    </strong>
+                  </>
+                ) : usbDevice ? (
+                  `WebUSB Raw · ${protocol.toUpperCase()}`
+                ) : (
+                  'Isolated Hidden iFrame (@page exact size, 0 margin)'
+                )}
               </p>
             </div>
           </div>
