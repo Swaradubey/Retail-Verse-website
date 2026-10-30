@@ -7,6 +7,7 @@ import {
   RefreshCw,
   AlertTriangle,
   Printer,
+  Truck,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { InventoryStats, type InventoryStatsValues } from '../components/inventory/InventoryStats';
@@ -20,6 +21,8 @@ import { ProductDetailModal } from '../components/inventory/ProductDetailModal';
 import { StoreManagerModal } from '../components/inventory/StoreManagerModal';
 import { EmployeeModal } from '../components/inventory/EmployeeModal';
 import { LowStockAlertModal } from '../components/inventory/LowStockAlertModal';
+import { MultiVendorAllocationModal } from '../components/inventory/MultiVendorAllocationModal';
+import { VendorAllocationsTrackerModal } from '../components/inventory/VendorAllocationsTrackerModal';
 import { BarcodePrintModal, type BarcodePrintProduct } from '../components/inventory/BarcodePrintModal';
 import { useThermalPrinter } from '../hooks/useThermalPrinter';
 import { SortConfig, type InventoryItem } from '../types/inventory';
@@ -213,6 +216,9 @@ export function Inventory() {
   const [assignableClients, setAssignableClients] = useState<ClientRow[]>([]);
 
   const [isLowStockModalOpen, setIsLowStockModalOpen] = useState(false);
+  const [isVendorAllocationsOpen, setIsVendorAllocationsOpen] = useState(false);
+  const [isSplitAllocationOpen, setIsSplitAllocationOpen] = useState(false);
+  const [productToAllocate, setProductToAllocate] = useState<Product | null>(null);
   const [employeeModalOpen, setEmployeeModalOpen] = useState(false);
   const [staffModalOpen, setStaffModalOpen] = useState(false);
   const [seoManagerModalOpen, setSeoManagerModalOpen] = useState(false);
@@ -612,7 +618,7 @@ export function Inventory() {
         <div className="absolute bottom-[-15%] right-[20%] h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle_at_center,rgba(219,234,254,0.5)_0%,transparent_58%)] blur-2xl dark:bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.08)_0%,transparent_55%)]" />
       </div>
 
-      <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 sm:py-10 lg:py-12">
+      <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 pt-3 pb-8 sm:pt-4 sm:pb-10 lg:pt-5 lg:pb-12">
         <AnimatePresence mode="wait">
           {isLoading ? (
             <motion.div key="skeleton" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -661,6 +667,16 @@ export function Inventory() {
                   >
                     <Printer className="h-4 w-4" />
                     <span className="ml-2 hidden text-sm font-semibold sm:inline">Thermal Printer</span>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => setIsVendorAllocationsOpen(true)}
+                    title="Track Multi-Vendor Allocations & Read-Receipts"
+                    className="h-11 rounded-2xl border-indigo-200/80 bg-white/80 px-4 text-sm font-semibold text-indigo-900 shadow-[0_2px_8px_-2px_rgba(79,70,229,0.12)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-white dark:border-indigo-500/30 dark:bg-indigo-950/40 dark:text-indigo-100"
+                  >
+                    <Truck className="h-4 w-4" />
+                    <span className="ml-2 hidden text-sm font-semibold sm:inline">Vendor Allocations</span>
                   </Button>
                   {allowAdd && (
                     <Button
@@ -718,10 +734,18 @@ export function Inventory() {
                         <Button
                           variant="outline"
                           type="button"
-                          onClick={() => setStockStatus(stockStatus === 'low-stock' ? 'all' : 'low-stock')}
+                          onClick={() => setIsLowStockModalOpen(true)}
                           className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 cursor-pointer dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
                         >
                           View Alerts
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => setIsVendorAllocationsOpen(true)}
+                          className="h-10 rounded-xl bg-orange-600 hover:bg-orange-700 px-4 text-xs font-bold text-white shadow-sm transition-all duration-300 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Truck className="w-3.5 h-3.5" />
+                          Vendor Allocations
                         </Button>
                       </div>
                     </div>
@@ -846,6 +870,41 @@ export function Inventory() {
         isOpen={isLowStockModalOpen}
         items={lowStockItems}
         onClose={() => setIsLowStockModalOpen(false)}
+        onAllocate={(prod) => {
+          setProductToAllocate(prod);
+          setIsSplitAllocationOpen(true);
+        }}
+      />
+
+      <MultiVendorAllocationModal
+        isOpen={isSplitAllocationOpen}
+        onClose={() => {
+          setIsSplitAllocationOpen(false);
+          setProductToAllocate(null);
+        }}
+        product={productToAllocate}
+        onAllocationSuccess={() => {
+          void fetchAllProducts(true);
+        }}
+      />
+
+      <VendorAllocationsTrackerModal
+        isOpen={isVendorAllocationsOpen}
+        onClose={() => setIsVendorAllocationsOpen(false)}
+        onStockUpdated={() => {
+          void fetchAllProducts(true);
+        }}
+        onOpenSplitModal={(prodId) => {
+          if (prodId) {
+            const found = products.find((p) => p._id === prodId);
+            if (found) setProductToAllocate(found);
+          } else if (lowStockItems.length > 0) {
+            setProductToAllocate(lowStockItems[0]);
+          } else if (products.length > 0) {
+            setProductToAllocate(products[0]);
+          }
+          setIsSplitAllocationOpen(true);
+        }}
       />
 
       <BarcodePrintModal

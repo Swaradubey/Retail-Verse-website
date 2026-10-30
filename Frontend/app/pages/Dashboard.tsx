@@ -75,7 +75,7 @@ import {
   normalizeRole,
 } from '../utils/staffRoles';
 import { fetchAdminAnalytics, fetchUserAnalytics, fetchSuperAdminOverview, type AdminAnalyticsData, type UserAnalyticsData } from '../api/analytics';
-import { fetchUserDashboardOverview, type UserDashboardOverviewData } from '../api/orders';
+import { fetchUserDashboardOverview, prefetchOrders, type UserDashboardOverviewData } from '../api/orders';
 import { prefetchProductsForRole } from '../api/products';
 import { ImpersonationBanner } from '../components/ImpersonationBanner';
 import { toast } from 'sonner';
@@ -247,15 +247,26 @@ export function Dashboard() {
   }, [loadOverview]);
 
   useEffect(() => {
-    const handleOrderDeleted = () => {
-      console.log('[Dashboard] Order deleted event received, refetching overview stats...');
+    const handleMetricEntityDeleted = () => {
+      console.log('[Dashboard] Metric entity deleted (order/invoice/quote), refetching overview stats...');
+      try {
+        sessionStorage.removeItem(`agy_dashboard_overview_${userCacheKey}`);
+        sessionStorage.removeItem(`agy_dashboard_user_overview_${userCacheKey}`);
+        sessionStorage.removeItem(`agy_dashboard_user_analytics_${userCacheKey}`);
+      } catch {
+        // ignore
+      }
       void loadOverview({ silent: true, force: true });
     };
-    window.addEventListener('order-deleted', handleOrderDeleted);
+    window.addEventListener('order-deleted', handleMetricEntityDeleted);
+    window.addEventListener('invoice-deleted', handleMetricEntityDeleted);
+    window.addEventListener('quote-deleted', handleMetricEntityDeleted);
     return () => {
-      window.removeEventListener('order-deleted', handleOrderDeleted);
+      window.removeEventListener('order-deleted', handleMetricEntityDeleted);
+      window.removeEventListener('invoice-deleted', handleMetricEntityDeleted);
+      window.removeEventListener('quote-deleted', handleMetricEntityDeleted);
     };
-  }, [loadOverview]);
+  }, [loadOverview, userCacheKey]);
 
   useEffect(() => {
     if (!isCustomerAccountRole(user?.role) || location.pathname !== '/dashboard') {
@@ -303,9 +314,12 @@ export function Dashboard() {
     }
   }, [user?.role, location.pathname, navigate]);
 
-  // Background pre-fetch products immediately on mounting Dashboard for instant navigation
+  // Background pre-fetch products and orders immediately on mounting Dashboard for instant navigation
   useEffect(() => {
     prefetchProductsForRole(user);
+    prefetchOrders(user);
+    // Prefetch DashboardOrders component bundle in idle time
+    import('./dashboard/DashboardOrders').catch(() => {});
   }, [user]);
 
   const handleDashboardSync = useCallback(async () => {
@@ -367,7 +381,6 @@ export function Dashboard() {
         item.href === '/dashboard' ||
         item.href === '/dashboard/products' ||
         item.href === '/dashboard/inventory' ||
-        item.href === '/dashboard/ai-voice-orders' ||
         item.href === '/dashboard/invoices' ||
         item.href === '/dashboard/users' ||
         item.href === '/super-admin/custom-domain' ||
@@ -659,15 +672,15 @@ export function Dashboard() {
               className={
                 isOverview
                   ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade bg-[#F8FAFC] text-[#0B1F3A]'
-                  : location.pathname.startsWith('/dashboard/products')
+                  : location.pathname.startsWith('/dashboard/products') || location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders')
                     ? 'flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
                     : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
               }
               style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}
             >
-              <div className="w-full max-w-[1600px] mx-auto space-y-8 sm:space-y-10 min-w-0">
+              <div className={`w-full max-w-[1600px] mx-auto min-w-0 ${location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders') ? '' : 'space-y-8 sm:space-y-10'}`}>
                 {/* Welcome Section */}
-                {location.pathname !== '/dashboard/products' && !location.pathname.startsWith('/dashboard/marketplaces') && !location.pathname.startsWith('/admin/marketplaces') && (
+                {location.pathname !== '/dashboard/products' && !location.pathname.startsWith('/dashboard/inventory') && !location.pathname.startsWith('/inventory') && !location.pathname.startsWith('/dashboard/invoices') && !location.pathname.startsWith('/dashboard/users') && !location.pathname.startsWith('/dashboard/add-employee') && !location.pathname.startsWith('/dashboard/ai-voice-orders') && !location.pathname.startsWith('/dashboard/marketplaces') && !location.pathname.startsWith('/admin/marketplaces') && (
                   <motion.div
                     initial={{ opacity: 0, y: -16 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -693,24 +706,26 @@ export function Dashboard() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="flex -space-x-2">
-                        {[1, 2, 3, 4].map(i => (
-                          <div
-                            key={i}
-                            className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#F8FAFC] overflow-hidden shadow-md"
-                          >
-                            <img src={`https://i.pravatar.cc/150?u=${i + 10}`} alt="user" className="w-full h-full object-cover" />
+                    {location.pathname === '/dashboard' && !location.pathname.includes('inventory') && (
+                      <div className="flex items-center gap-3">
+                        <div className="flex -space-x-2">
+                          {[1, 2, 3, 4].map(i => (
+                            <div
+                              key={i}
+                              className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#F8FAFC] overflow-hidden shadow-md"
+                            >
+                              <img src={`https://i.pravatar.cc/150?u=${i + 10}`} alt="user" className="w-full h-full object-cover" />
+                            </div>
+                          ))}
+                          <div className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#2563EB] text-[#F8FAFC] flex items-center justify-center text-[10px] font-bold shadow-md">
+                            +12
                           </div>
-                        ))}
-                        <div className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#2563EB] text-[#F8FAFC] flex items-center justify-center text-[10px] font-bold shadow-md">
-                          +12
                         </div>
+                        <span className="text-xs text-[#2563EB] font-semibold underline-offset-4 hover:underline hover:text-[#FF6B00] cursor-pointer transition-colors duration-200">
+                          Live Customers
+                        </span>
                       </div>
-                      <span className="text-xs text-[#2563EB] font-semibold underline-offset-4 hover:underline hover:text-[#FF6B00] cursor-pointer transition-colors duration-200">
-                        Live Customers
-                      </span>
-                    </div>
+                    )}
                   </motion.div>
                 )}
 

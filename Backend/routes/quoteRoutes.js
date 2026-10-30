@@ -7,7 +7,8 @@ const {
   sendCounterOffer,
   acceptQuote,
   rejectQuote,
-  convertToInvoice
+  convertToInvoice,
+  deleteQuote,
 } = require("../controllers/quoteController");
 const { protect, allowRoles } = require("../middleware/authMiddleware");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
@@ -21,7 +22,8 @@ router.route("/")
   .post(tenantMiddleware, createQuote);
 
 router.route("/:id")
-  .get(tenantMiddleware, getQuoteById);
+  .get(tenantMiddleware, getQuoteById)
+  .delete(allowRoles("super_admin", "admin", "client", "store_manager"), tenantMiddleware, deleteQuote);
 
 // Bargaining actions
 router.patch("/:id/counter", allowRoles("super_admin", "admin", "client", "store_manager"), tenantMiddleware, sendCounterOffer);

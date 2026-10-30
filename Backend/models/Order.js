@@ -457,6 +457,11 @@ orderSchema.index({ orderStatus: 1, isDeleted: 1, createdAt: -1 });
 orderSchema.index({ paymentStatus: 1, isDeleted: 1, createdAt: -1 });
 orderSchema.index({ offlineOrderId: 1 }, { sparse: true });
 orderSchema.index({ clientId: 1, status: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ clientId: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ clientId: 1, isDeleted: 1, invoiceDate: -1, status: 1 });
+orderSchema.index({ isDeleted: 1, createdAt: -1 });
+orderSchema.index({ user: 1, isDeleted: 1, createdAt: -1 });
+orderSchema.index({ createdAt: -1 });
 
 orderSchema.pre("save", function (next) {
   if (this.invoiceNumber && !this.orderId) {

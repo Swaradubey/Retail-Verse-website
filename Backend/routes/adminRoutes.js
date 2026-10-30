@@ -14,6 +14,11 @@ const {
   getCustomerById,
 } = require("../controllers/adminCustomerController");
 const { getAdminAnalytics } = require("../controllers/adminAnalyticsController");
+const vendorAllocationController = require("../controllers/vendorAllocationController");
+
+// @route   GET /api/admin/vendors
+router.get("/vendors", protect, vendorAllocationController.getVendors);
+router.get("/vendors/list", protect, vendorAllocationController.getVendors);
 
 // @route   GET /api/admin/wishlists?sort=latest
 router.get("/wishlists", protect, allowRoles("super_admin", "admin"), getAdminWishlists);

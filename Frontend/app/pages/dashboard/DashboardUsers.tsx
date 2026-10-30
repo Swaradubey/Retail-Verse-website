@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { motion } from 'framer-motion';
-import { ExternalLink, Search, Save, Shield, Phone, UserCheck, UserX, Lock, Clock, User as UserIcon, Trash2 } from 'lucide-react';
+import { ExternalLink, Search, Save, Shield, Phone, UserCheck, UserX, Lock, Clock, User as UserIcon, Trash2, Loader2 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -21,9 +21,19 @@ import { userApi, type PlatformUserRow } from '../../api/user';
 import { superadminApi } from '../../api/superadmin';
 import { useAuth, IMPERSONATION_SUPER_TOKEN_BACKUP_KEY } from '../../context/AuthContext';
 import { getRoleOpenPanelConfig, roleDisplayName } from '../../utils/roleOpenPanelConfig';
-import { isSuperAdminRole } from '../../utils/staffRoles';
+import { isSuperAdminRole, normalizeRole } from '../../utils/staffRoles';
 import { toast } from 'sonner';
 import { EditUserModal } from '../../components/dashboard/EditUserModal';
+
+export const AVAILABLE_ROLES = [
+  "Counter Manager",
+  "SEO Manager",
+  "Store Manager",
+  "Inventory Manager",
+  "Employee",
+  "Client",
+  "Vendor"
+] as const;
 
 const ASSIGNABLE_ROLES = [
   'super_admin',
@@ -35,6 +45,7 @@ const ASSIGNABLE_ROLES = [
   'employee',
   'user',
   'client',
+  'vendor',
 ] as const;
 
 export function DashboardUsers() {
@@ -135,7 +146,7 @@ export function DashboardUsers() {
   const handleSaveRole = async (u: PlatformUserRow) => {
     const id = u._id;
     const next = pendingRole[id] ?? u.role;
-    if (next === u.role) {
+    if (next === u.role || (normalizeRole(next) === normalizeRole(u.role) && next.toLowerCase() === (u.role || '').toLowerCase())) {
       toast.message('No role change');
       return;
     }
@@ -152,9 +163,10 @@ export function DashboardUsers() {
         updatedUser.clientId = (res as any).store._id;
       }
       
-      toast.success(res.message || 'Role updated');
+      const roleName = normalizeRole(next) === 'vendor' ? 'Vendor' : roleDisplayName(next);
+      toast.success(res.message || `Role updated to ${roleName} successfully`);
       setUsers((prev) =>
-        prev.map((row) => (String(row._id) === String(updatedUser._id) ? { ...row, ...updatedUser } : row)),
+        prev.map((row) => (String(row._id) === String(updatedUser._id) ? { ...row, ...updatedUser, role: updatedUser.role || next } : row)),
       );
       setPendingRole((prev) => {
         const nextMap = { ...prev };
@@ -250,7 +262,7 @@ export function DashboardUsers() {
 
   return (
 
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 sm:px-6 md:px-8 pt-2 sm:pt-4 pb-8">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -357,8 +369,14 @@ export function DashboardUsers() {
                     const safeRole = u.role || 'Unknown Role';
                     const safeName = u.name || u.email || 'Unnamed User';
                     const current = pendingRole[id] ?? safeRole;
+                    const isCurrentVendor = normalizeRole(current) === 'vendor';
+                    const isSafeVendor = normalizeRole(safeRole) === 'vendor';
+                    const hasRoleChanged =
+                      pendingRole[id] !== undefined &&
+                      (isCurrentVendor !== isSafeVendor ||
+                        (!isCurrentVendor && current !== safeRole));
                     const isAdmin = user?.role === "admin" || user?.role === "Admin";
-                    const ADMIN_ALLOWED_ROLES = ['counter_manager', 'seo_manager', 'store_manager', 'inventory_manager', 'employee', 'user', 'client'];
+                    const ADMIN_ALLOWED_ROLES = ['counter_manager', 'seo_manager', 'store_manager', 'inventory_manager', 'employee', 'user', 'client', 'vendor', 'Vendor', 'VENDOR'];
 
                     let roleOptions: string[] = [];
                     if (safeRole === 'super_admin') {
@@ -369,20 +387,20 @@ export function DashboardUsers() {
                       // Tenant Admins (Admin, Client, etc.)
                       if (isAdmin) {
                         // Global Admin can manage employees and users
-                        roleOptions = ADMIN_ALLOWED_ROLES;
+                        roleOptions = ADMIN_ALLOWED_ROLES.filter(r => r !== 'Vendor' && r !== 'VENDOR');
                       } else {
                         // Other managers
-                        roleOptions = ADMIN_ALLOWED_ROLES.filter(r => r !== 'user');
+                        roleOptions = ADMIN_ALLOWED_ROLES.filter(r => r !== 'user' && r !== 'Vendor' && r !== 'VENDOR');
                       }
                       roleOptions = roleOptions.filter(r => r !== 'admin' && r !== 'super_admin');
                     } else {
                       // Super Admin can assign all roles
-                      roleOptions = [...ASSIGNABLE_ROLES].filter(r => r !== 'admin' && r !== 'super_admin');
+                      roleOptions = [...ASSIGNABLE_ROLES].filter(r => r !== 'admin' && r !== 'super_admin' && r !== 'Vendor' && r !== 'VENDOR');
                     }
 
                     // "client" and all standard roles are known — only treat as isOldRole if it's a truly unknown custom value
-                    const ALL_KNOWN_ROLES = [...ASSIGNABLE_ROLES, ...ADMIN_ALLOWED_ROLES];
-                    const isOldRole = safeRole !== 'super_admin' && !ALL_KNOWN_ROLES.includes(safeRole as any);
+                    const ALL_KNOWN_ROLES = [...ASSIGNABLE_ROLES, ...ADMIN_ALLOWED_ROLES, 'vendor', 'Vendor', 'VENDOR'];
+                    const isOldRole = safeRole !== 'super_admin' && !ALL_KNOWN_ROLES.includes(safeRole as any) && !ALL_KNOWN_ROLES.includes(normalizeRole(safeRole) as any);
 
                     const panelCfg = getRoleOpenPanelConfig(safeRole);
                     return (
@@ -410,12 +428,12 @@ export function DashboardUsers() {
                           ) : (
  <select
    className="rounded-lg border border-gray-200 dark:border-white/15 bg-white dark:bg-zinc-900 px-3 py-2.5 text-[16px] font-medium h-10"
-   value={current}
+   value={normalizeRole(current) === 'vendor' ? 'Vendor' : current}
    disabled={safeRole === 'super_admin' || safeRole === 'admin'}
    onChange={(e) => setPendingRole((prev) => ({ ...prev, [id]: e.target.value }))}
  >
  {roleOptions.map((r) => (
-   <option key={r} value={r} className="text-[16px] font-medium">
+   <option key={r} value={r === 'vendor' || r === 'Vendor' || r === 'VENDOR' ? 'Vendor' : r} className="text-[16px] font-medium">
      {roleDisplayName(r)}
    </option>
  ))}
@@ -519,12 +537,21 @@ export function DashboardUsers() {
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className={`h-9 px-3.5 ${current !== safeRole ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/10' : ''}`}
-                              disabled={savingId === id || current === safeRole}
+                              className={`h-9 px-3.5 ${hasRoleChanged ? 'bg-blue-50 text-blue-600 dark:bg-blue-500/10' : ''}`}
+                              disabled={savingId === id || !hasRoleChanged}
                               onClick={() => void handleSaveRole(u)}
                             >
-                              <Save className="w-4 h-4 mr-1.5" />
-                              Save
+                              {savingId === id ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                                  Saving…
+                                </>
+                              ) : (
+                                <>
+                                  <Save className="w-4 h-4 mr-1.5" />
+                                  Save
+                                </>
+                              )}
                             </Button>
                           ) : (
                             <span className="text-[11px] font-bold uppercase text-muted-foreground">Protected</span>

@@ -107,7 +107,7 @@ export function DashboardAddEmployee() {
   };
 
   return (
-    <div className="relative min-h-[calc(100vh-120px)] flex flex-col items-center justify-center py-10 px-4">
+    <div className="relative min-h-[calc(100vh-120px)] flex flex-col items-center justify-start pt-2 sm:pt-4 pb-12 px-4">
       {/* Premium Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[10%] left-[5%] w-72 h-72 bg-blue-400/10 rounded-full blur-[120px] animate-pulse" />

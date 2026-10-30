@@ -83,6 +83,19 @@ async function updateInventory({
   // 3. Temporary Structured Logging
   console.log(`[INVENTORY_UPDATE] localProductId=${productId} SKU=${sku} previousQuantity=${previousQuantity} newQuantity=${numericQuantity} tenantId=${effectiveTenantId} updateSource=${source} timestamp=${updateTimestamp.toISOString()}`);
 
+  // 3b. Non-blocking automated low stock multi-vendor check
+  try {
+    const { emitStockChanged } = require('./lowStockEventBus');
+    emitStockChanged({
+      productId: product._id,
+      newStock: numericQuantity,
+      tenantId: effectiveTenantId,
+      oldStock: previousQuantity
+    });
+  } catch (busErr) {
+    console.warn(`[INVENTORY_UPDATE] Low stock event emission warning: ${busErr.message}`);
+  }
+
   // 4. Trigger Shopify Sync for all connected Shopify marketplace integrations for this product/tenant
   const shopifyResults = [];
   try {

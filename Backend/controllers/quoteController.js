@@ -2,6 +2,7 @@ const Quote = require("../models/Quote");
 const Invoice = require("../models/Invoice");
 const Product = require("../models/Product");
 const { resolveClientId, isValidObjectId } = require("../utils/tenantResolver");
+const { invalidateDashboardCache } = require("../utils/dashboardCache");
 const mongoose = require("mongoose");
 
 const generateQuoteNumber = () => {
@@ -19,26 +20,29 @@ const getQuotes = async (req, res) => {
   try {
     const isSuperAdmin = req.user && req.user.role === "super_admin";
     const isAdmin = req.user && (req.user.role === "admin" || req.user.role === "client");
-    const isVendor = req.user && (req.user.role === "vendor" || req.user.role === "VENDOR");
+    const isVendor = req.user && (req.user.role === "vendor" || req.user.role === "VENDOR" || req.user.role === "Vendor" || req.user.role?.toLowerCase() === "vendor");
     const clientId = isSuperAdmin ? null : (req.user?.clientId || req.clientId || (await resolveClientId(req)));
 
-    let query = {};
+    let query = {
+      isDeleted: { $ne: true },
+      status: { $ne: "deleted" },
+    };
 
     if (isSuperAdmin) {
       // Super Admin sees all
-      query = {};
     } else if (isAdmin) {
       // Admin sees client-specific
-      query = { clientId };
+      query.clientId = clientId;
     } else if (isVendor) {
       // Vendor sees client requirements / quotes
-      query = clientId ? { clientId } : { userId: req.user._id };
+      if (clientId) query.clientId = clientId;
+      else query.userId = req.user._id;
     } else {
       // Regular user sees their own
-      query = { userId: req.user._id };
+      query.userId = req.user._id;
     }
 
-    // Keep base scope query for calculating overall stats
+    // Keep base scope query for calculating overall stats (excluding deleted records)
     const baseScopeQuery = { ...query };
 
     // Dynamic search filtering (quoteNumber, customerName, customerEmail)
@@ -85,7 +89,13 @@ const getQuotes = async (req, res) => {
     const [quotes, statsResult, filterCount] = await Promise.all([
       queryChain,
       Quote.aggregate([
-        { $match: baseScopeQuery },
+        {
+          $match: {
+            ...baseScopeQuery,
+            isDeleted: { $ne: true },
+            status: { $ne: "deleted" }
+          }
+        },
         {
           $project: {
             status: 1,
@@ -348,12 +358,81 @@ const convertToInvoice = async (req, res) => {
       totalAmount: quote.finalPrice,
       paymentStatus: "paid",
       clientId: quote.clientId,
+      status: "active",
+      isDeleted: false,
     });
+
+    // Invalidate dashboard caches so converted invoice is immediately counted
+    invalidateDashboardCache();
 
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {
     console.error("[quoteController] convertToInvoice error:", error.message);
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Delete quote
+// @route   DELETE /api/quotes/:id
+// @access  Private (SuperAdmin/Admin/Client with ownership)
+const deleteQuote = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const role = req.user?.role || req.user?.userRole || req.user?.accountType;
+    const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
+    const isAdmin = ["admin"].includes(String(role).toLowerCase());
+    const isClient = ["client", "store_manager", "client_admin"].includes(String(role).toLowerCase());
+
+    if (!isSuperAdmin && !isAdmin && !isClient) {
+      return res.status(403).json({ success: false, message: "Access denied. Only authorized users can delete quotes." });
+    }
+
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid quote ID format." });
+    }
+
+    const quote = await Quote.findById(id);
+    if (!quote) {
+      return res.status(404).json({ success: false, message: "Quote not found" });
+    }
+
+    // Client-scoped roles must own this quote
+    if (isClient) {
+      const userClientId = String(req.user?.clientId || req.clientId || "");
+      const quoteClientId = quote.clientId ? String(quote.clientId) : "";
+      if (!userClientId || !quoteClientId || userClientId !== quoteClientId) {
+        return res.status(403).json({ success: false, message: "Access denied. You can only delete your own quotes." });
+      }
+    }
+
+    const useSoftDelete = req.query.hard !== "true";
+    if (useSoftDelete) {
+      await Quote.findByIdAndUpdate(id, {
+        $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" },
+      });
+
+      // If a corresponding invoice exists for this quoteNumber, soft-delete it too
+      if (quote.quoteNumber) {
+        await Invoice.updateMany(
+          { orderId: quote.quoteNumber },
+          { $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" } }
+        );
+      }
+    } else {
+      await Quote.findByIdAndDelete(id);
+      if (quote.quoteNumber) {
+        await Invoice.deleteMany({ orderId: quote.quoteNumber });
+      }
+    }
+
+    // Invalidate dashboard metric caches immediately
+    invalidateDashboardCache();
+
+    console.log(`[quoteController] deleteQuote - Quote ${id} (${quote.quoteNumber}) (${useSoftDelete ? 'soft' : 'hard'} deleted) by ${req.user?.email} (${role})`);
+    return res.json({ success: true, message: "Quote deleted successfully" });
+  } catch (error) {
+    console.error("[quoteController] deleteQuote error:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -365,5 +444,6 @@ module.exports = {
   acceptQuote,
   rejectQuote,
   convertToInvoice,
+  deleteQuote,
 };
 

@@ -5,6 +5,13 @@ const Product = require("../models/Product");
 const User = require("../models/User");
 const TrackOrder = require("../models/TrackOrder");
 const Invoice = require("../models/Invoice");
+const Quote = require("../models/Quote");
+const {
+  invalidateDashboardCache,
+  getCachedOrders,
+  setCachedOrders,
+  invalidateOrdersCache,
+} = require("../utils/dashboardCache");
 const shiprocketService = require("../services/shiprocketService");
 const { 
   resolveClientId, 
@@ -982,6 +989,16 @@ const createOrder = async (req, res) => {
             if (updatedProduct.stock <= 10) {
               console.warn(`[LOW STOCK] Product: ${item.name} (${stockId}), New Stock: ${updatedProduct.stock} — below threshold 10.`);
             }
+
+            // Non-blocking automated low stock trigger
+            try {
+              const { emitStockChanged } = require('../services/lowStockEventBus');
+              emitStockChanged({
+                productId: updatedProduct._id,
+                newStock: updatedProduct.stock,
+                tenantId: clientId || updatedProduct.clientId
+              });
+            } catch (evErr) {}
           }
         }
       } catch (stockError) {
@@ -1095,6 +1112,9 @@ const createOrder = async (req, res) => {
         orderData.business = business;
       }
 
+      invalidateDashboardCache();
+      invalidateOrdersCache();
+
       res.status(201).json({
         success: true,
         message: "Order placed successfully",
@@ -1184,8 +1204,20 @@ const getOrders = async (req, res) => {
       applyScope(query, scopeQuery);
     }
 
-    // Fetch orders with sort latest first
+    const forceRefresh = req.query?.refresh === "true" || req.headers["x-force-refresh"] === "true";
+    const cacheKey = `orders_${normalizedRole}_${String(req.user?._id || '')}_${JSON.stringify(scopeQuery)}`;
+    if (!forceRefresh) {
+      const cached = getCachedOrders(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+    }
+
+    // High-performance lean query with selective projection and covered indexes
     const orders = await Order.find(query)
+      .select(
+        "_id orderId customerName customerEmail items totalPrice totalAmount grandTotal payableAmount pricing payment subtotal discountAmount couponCode paymentMethod paymentStatus orderStatus status trackingStatus trackingId currentStage isDelivered isPaid isCancelled createdAt shippingAddress clientId user offlineOrderId orderSource stages"
+      )
       .sort({ createdAt: -1 })
       .populate("user", "name email")
       .populate({
@@ -1247,6 +1279,7 @@ const getOrders = async (req, res) => {
     console.log("[DEBUG getOrders] API Response Shape:", Object.keys(response).join(", "));
     console.log("-----------------------------------------");
 
+    setCachedOrders(cacheKey, response);
     res.json(response);
   } catch (error) {
     console.error("[DEBUG getOrders] CRITICAL ERROR:", error);
@@ -1443,7 +1476,7 @@ const getMyOrdersTracking = async (req, res) => {
     const clientId = req.user?.clientId || req.clientId || resolvedClientId;
     const isAdmin = req.user && ["admin", "super_admin", "manager", "staff", "inventory_manager", "cashier"].includes(req.user.role);
     
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
     if (!isAdmin) {
       query.user = req.user._id;
     } else if (isValidObjectId(clientId)) {
@@ -1452,14 +1485,32 @@ const getMyOrdersTracking = async (req, res) => {
     
     const limit = isAdmin ? 20 : 50;
 
+    const cacheKey = `my_orders_${String(req.user?._id || '')}_${String(clientId || '')}_${limit}`;
+    const forceRefresh = req.query?.refresh === "true" || req.headers["x-force-refresh"] === "true";
+    if (!forceRefresh) {
+      const cached = getCachedOrders(cacheKey);
+      if (cached) {
+        return res.json(cached);
+      }
+    }
+
     const orders = await Order.find(query)
+      .select(
+        "_id orderId customerName customerEmail items totalPrice totalAmount grandTotal payableAmount pricing payment subtotal discountAmount couponCode paymentMethod paymentStatus orderStatus status trackingStatus trackingId currentStage isDelivered isPaid isCancelled createdAt shippingAddress clientId user offlineOrderId orderSource stages"
+      )
       .sort({ createdAt: -1 })
       .limit(limit)
       .populate("user", "name email")
-      .populate("clientId", "name businessName email logo")
+      .populate({
+        path: "clientId",
+        select: "name businessName email logo",
+        options: { strictPopulate: false }
+      })
       .lean();
     const data = orders.map((doc) => enrichOrderTracking(doc));
-    res.json({ success: true, count: data.length, data });
+    const response = { success: true, count: data.length, data };
+    setCachedOrders(cacheKey, response);
+    res.json(response);
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -1632,6 +1683,8 @@ const patchOrderTracking = async (req, res) => {
     }
 
     await order.save();
+    invalidateDashboardCache();
+    invalidateOrdersCache();
     res.json({ success: true, data: enrichOrderTracking(order) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1683,10 +1736,20 @@ const deleteOrder = async (req, res) => {
 
     // Clean up related invoice record if exists
     try {
-      await Invoice.deleteOne({ orderId: oid });
+      await Invoice.deleteMany({ orderId: oid });
     } catch (invErr) {
       console.error(`[OrderDelete] Failed to delete invoice for ${oid}:`, invErr.message);
     }
+
+    // Clean up related quote record if exists
+    try {
+      await Quote.updateMany({ quoteNumber: oid }, { $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" } });
+    } catch (quoteErr) {
+      console.error(`[OrderDelete] Failed to update quote for ${oid}:`, quoteErr.message);
+    }
+
+    // Invalidate dashboard caches immediately
+    invalidateDashboardCache();
 
     return res.json({ success: true, message: "Order deleted successfully", deletedId: mongoId });
   } catch (error) {
@@ -1864,6 +1927,8 @@ const patchOrderTrackingStatus = async (req, res) => {
     });
 
     await order.save();
+    invalidateDashboardCache();
+    invalidateOrdersCache();
     res.json({ success: true, message: "Tracking updated", data: enrichOrderTracking(order) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -1957,6 +2022,14 @@ const cancelOrder = async (req, res) => {
     });
 
     await order.save();
+
+    try {
+      await Invoice.updateMany({ orderId: order.orderId }, { $set: { status: "cancelled", paymentStatus: "cancelled" } });
+    } catch (invErr) {
+      console.warn(`[cancelOrder] Could not cancel invoice for order ${order.orderId}:`, invErr.message);
+    }
+
+    invalidateDashboardCache();
 
     res.json({
       success: true,
@@ -2246,6 +2319,16 @@ const checkoutOrder = async (req, res) => {
         pItem,
         remainingStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
       });
+
+      // Non-blocking automated low stock check
+      try {
+        const { emitStockChanged } = require('../services/lowStockEventBus');
+        emitStockChanged({
+          productId: updated._id,
+          newStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
+          tenantId: updated.clientId
+        });
+      } catch (evErr) {}
     }
 
     // 3. Create Order document

@@ -10,7 +10,7 @@ const {
   resolveProductUpdatePayload,
   isTitleDescriptionOnlyUpdate,
 } = require("../utils/productFieldPermissions");
-const { formatProductWithClient } = require("../utils/formatInventoryProduct");
+const { formatProductWithClient, getFullImageUrl } = require("../utils/formatInventoryProduct");
 const { isClientScopedRole, normalizeRole } = require("../utils/clientScopedRoles");
 const { 
   resolveClientId, 
@@ -40,6 +40,9 @@ function processBase64ImageAsync(rawImg) {
     const filename = `product-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
     const filePath = path.join(productsUploadDir, filename);
     const publicUrl = `/uploads/products/${filename}`;
+    if (!fs.existsSync(productsUploadDir)) {
+      fs.mkdirSync(productsUploadDir, { recursive: true });
+    }
     fs.promises.writeFile(filePath, buffer).catch((err) => {
       console.error("[productController] Async image write failed:", err.message);
     });
@@ -281,6 +284,19 @@ const getProducts = async (req, res) => {
         return pObj;
       });
     }
+
+    productsWithListings = productsWithListings.map((p) => {
+      const rawImg = p.imageUrl || p.image || "";
+      const fullUrl = getFullImageUrl(rawImg);
+      p.imageUrl = fullUrl || "";
+      p.image = fullUrl || p.image || "";
+      if (Array.isArray(p.images) && p.images.length > 0) {
+        p.images = p.images.map((img) => (typeof img === "string" ? getFullImageUrl(img) : img));
+      } else if (fullUrl) {
+        p.images = [fullUrl];
+      }
+      return p;
+    });
 
     const responsePayload = {
       success: true,

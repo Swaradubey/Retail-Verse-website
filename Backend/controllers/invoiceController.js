@@ -3,6 +3,7 @@ const Order = require("../models/Order");
 const SupportTicket = require("../models/SupportTicket");
 const User = require("../models/User");
 const { isValidObjectId, resolveClientId } = require("../utils/tenantResolver");
+const { invalidateDashboardCache } = require("../utils/dashboardCache");
 
 // In-memory cache for resolved business profiles to eliminate N+1 DB lookups
 const businessProfileCache = new Map();
@@ -110,14 +111,17 @@ const getInvoices = async (req, res) => {
     const isSuperAdmin = ["superadmin", "super_admin"].includes(String(role).toLowerCase());
     const clientId = isSuperAdmin ? null : (req.user?.clientId || req.clientId || (await resolveClientId(req)));
 
-    const query = {};
+    const query = {
+      isDeleted: { $ne: true },
+      status: { $nin: ["deleted", "cancelled"] },
+    };
     if (isSuperAdmin) {
       // Super Admin sees all invoices globally without unindexed $exists scan
     } else if (clientId) {
       query.clientId = clientId;
     }
 
-    // Keep base scope query for tenant-wide stats
+    // Keep base scope query for tenant-wide stats (strictly exclude soft-deleted records)
     const baseScopeQuery = { ...query };
 
     // Dynamic search filtering (invoiceNumber, orderId, customerName, customerEmail)
@@ -178,7 +182,13 @@ const getInvoices = async (req, res) => {
     const [rawInvoices, statsResult, filterCount] = await Promise.all([
       queryChain,
       Invoice.aggregate([
-        { $match: baseScopeQuery },
+        {
+          $match: {
+            ...baseScopeQuery,
+            isDeleted: { $ne: true },
+            status: { $nin: ["deleted", "cancelled"] }
+          }
+        },
         {
           $project: {
             paymentStatus: 1,
@@ -756,6 +766,8 @@ const deleteInvoice = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid invoice ID format." });
     }
 
+    const useSoftDelete = req.query.hard !== "true";
+
     // 1. Try to find and delete as a real Invoice record
     const invoice = await Invoice.findById(id);
     if (invoice) {
@@ -769,12 +781,27 @@ const deleteInvoice = async (req, res) => {
       }
 
       const orderIdString = invoice.orderId;
-      await Invoice.findByIdAndDelete(id);
+      if (useSoftDelete) {
+        await Invoice.findByIdAndUpdate(id, {
+          $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" },
+        });
+        if (orderIdString) {
+          await Order.findOneAndUpdate(
+            { orderId: orderIdString },
+            { $set: { isDeleted: true, deletedAt: new Date(), status: "cancelled", orderStatus: "cancelled" } }
+          );
+        }
+      } else {
+        await Invoice.findByIdAndDelete(id);
+        if (orderIdString) {
+          await Order.findOneAndDelete({ orderId: orderIdString });
+        }
+      }
 
-      // Also delete the corresponding Order to prevent re-derivation in getInvoices
-      await Order.findOneAndDelete({ orderId: orderIdString });
+      // Immediately invalidate cached dashboard metrics
+      invalidateDashboardCache();
 
-      console.log(`[invoiceController] deleteInvoice - Invoice ${id} deleted by ${req.user?.email} (${role})`);
+      console.log(`[invoiceController] deleteInvoice - Invoice ${id} (${useSoftDelete ? 'soft' : 'hard'} deleted) by ${req.user?.email} (${role})`);
       return res.json({ success: true, message: "Invoice and related order deleted successfully" });
     }
 
@@ -790,11 +817,27 @@ const deleteInvoice = async (req, res) => {
         }
       }
 
-      await Order.findByIdAndDelete(id);
-      // Also try to delete any Invoice record that might exist for this orderId string
-      await Invoice.findOneAndDelete({ orderId: order.orderId });
+      if (useSoftDelete) {
+        await Order.findByIdAndUpdate(id, {
+          $set: { isDeleted: true, deletedAt: new Date(), status: "cancelled", orderStatus: "cancelled" },
+        });
+        if (order.orderId) {
+          await Invoice.findOneAndUpdate(
+            { orderId: order.orderId },
+            { $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" } }
+          );
+        }
+      } else {
+        await Order.findByIdAndDelete(id);
+        if (order.orderId) {
+          await Invoice.findOneAndDelete({ orderId: order.orderId });
+        }
+      }
 
-      console.log(`[invoiceController] deleteInvoice - Derived invoice (order ${id}) deleted by ${req.user?.email} (${role})`);
+      // Immediately invalidate cached dashboard metrics
+      invalidateDashboardCache();
+
+      console.log(`[invoiceController] deleteInvoice - Derived invoice (order ${id}) (${useSoftDelete ? 'soft' : 'hard'} deleted) by ${req.user?.email} (${role})`);
       return res.json({ success: true, message: "Invoice (derived from order) deleted successfully" });
     }
 

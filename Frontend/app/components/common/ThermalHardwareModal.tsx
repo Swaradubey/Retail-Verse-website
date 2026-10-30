@@ -10,7 +10,6 @@ import {
   RotateCcw,
   Sliders,
   Store,
-  Layers,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
@@ -29,8 +28,8 @@ interface ThermalHardwareModalProps {
   bluetoothDevice?: any;
   onConnectBluetooth?: () => Promise<void>;
   onDisconnectBluetooth?: () => Promise<void>;
-  onTestPrintReceipt: () => Promise<void>;
-  onTestPrintLabel: () => Promise<void>;
+  onTestPrintReceipt?: () => Promise<void>;
+  onTestPrintLabel?: () => Promise<void>;
 }
 
 export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
@@ -48,7 +47,6 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
   const [activeTab, setActiveTab] = useState<'hardware' | 'store'>('hardware');
   const [formSettings, setFormSettings] = useState<PrinterSettings>(settings);
   const [isConnectingBt, setIsConnectingBt] = useState(false);
-  const [isPrintingTest, setIsPrintingTest] = useState(false);
 
   // Sync form state when settings prop updates
   React.useEffect(() => {
@@ -362,55 +360,6 @@ export const ThermalHardwareModal: React.FC<ThermalHardwareModalProps> = ({
                   >
                     ESC/POS
                   </button>
-                </div>
-              </div>
-
-              {/* Hardware Test Prints */}
-              <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/40 space-y-3">
-                <span className="text-xs font-bold text-zinc-900 dark:text-white flex items-center gap-1.5 uppercase tracking-wider">
-                  <Printer className="w-4 h-4 text-indigo-600" />
-                  Diagnostic Test Prints
-                </span>
-                <p className="text-[11px] text-zinc-500">
-                  Verify print density, alignment, paper cut, and barcode scanability on your physical printer:
-                </p>
-                <div className="flex flex-wrap gap-2.5">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      setIsPrintingTest(true);
-                      try {
-                        await onTestPrintReceipt();
-                      } finally {
-                        setIsPrintingTest(false);
-                      }
-                    }}
-                    disabled={isPrintingTest}
-                    className="rounded-xl text-xs font-semibold gap-1.5 border-zinc-300 dark:border-zinc-700"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Test Receipt ({formSettings.rollWidth})
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={async () => {
-                      setIsPrintingTest(true);
-                      try {
-                        await onTestPrintLabel();
-                      } finally {
-                        setIsPrintingTest(false);
-                      }
-                    }}
-                    disabled={isPrintingTest}
-                    className="rounded-xl text-xs font-semibold gap-1.5 border-zinc-300 dark:border-zinc-700"
-                  >
-                    <Layers className="w-3.5 h-3.5" />
-                    Test Barcode Sticker (50×25mm)
-                  </Button>
                 </div>
               </div>
             </div>

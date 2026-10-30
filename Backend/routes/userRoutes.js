@@ -27,6 +27,9 @@ router.get("/", protect, allowRoles("super_admin", "admin", "client", "client_ad
 
 router.get("/platform/list", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, listPlatformUsers);
 router.patch("/platform/:id/role", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, updateUserRole);
+router.patch("/:id/role", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, updateUserRole);
+router.put("/:id/role", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, updateUserRole);
+router.put("/:id", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, updateUserRole);
 router.patch("/platform/:id/status", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, updateUserStatus);
 router.post("/platform/:id/reset-password", protect, allowRoles("super_admin", "admin", "client", "client_admin"), tenantMiddleware, resetUserPassword);
 router.delete("/platform/:id", protect, allowRoles("super_admin"), tenantMiddleware, deleteUser);

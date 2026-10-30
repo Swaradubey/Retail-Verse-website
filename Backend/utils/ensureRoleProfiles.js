@@ -166,6 +166,73 @@ async function ensureEmployeeStub(userDoc) {
   }
 }
 
+async function ensureVendorProfile(userDoc) {
+  const normRole = String(userDoc.role || "").trim().toLowerCase();
+  if (normRole !== "vendor") {
+    return;
+  }
+
+  const Vendor = require("../models/Vendor");
+  const email = String(userDoc.email || "").trim().toLowerCase();
+
+  let vendor = await Vendor.findOne({
+    $or: [
+      { userId: userDoc._id },
+      ...(email ? [{ email }] : []),
+      ...(userDoc.vendorRef ? [{ _id: userDoc.vendorRef }] : []),
+    ],
+  });
+
+  if (vendor) {
+    let modified = false;
+    if (!vendor.userId || String(vendor.userId) !== String(userDoc._id)) {
+      vendor.userId = userDoc._id;
+      modified = true;
+    }
+    if (userDoc.clientId && !vendor.clientId) {
+      vendor.clientId = userDoc.clientId;
+      modified = true;
+    }
+    if (modified) await vendor.save();
+
+    if (!userDoc.vendorRef || String(userDoc.vendorRef) !== String(vendor._id)) {
+      userDoc.vendorRef = vendor._id;
+      await userDoc.save();
+    }
+    return vendor;
+  }
+
+  try {
+    const newVendor = await Vendor.create({
+      name: String(userDoc.name || "Vendor Partner").trim(),
+      companyName: userDoc.name ? `${userDoc.name} Supplies` : "Vendor Organization",
+      email: email || `vendor_${userDoc._id}@retailverse.in`,
+      phone: userDoc.phone || "",
+      address: userDoc.address || "",
+      category: "General Supplies",
+      userId: userDoc._id,
+      clientId: userDoc.clientId || null,
+      isActive: userDoc.isActive !== false,
+    });
+
+    userDoc.vendorRef = newVendor._id;
+    await userDoc.save();
+    return newVendor;
+  } catch (err) {
+    if (err && err.code === 11000) {
+      const recovered = await Vendor.findOne({ email });
+      if (recovered) {
+        recovered.userId = userDoc._id;
+        await recovered.save();
+        userDoc.vendorRef = recovered._id;
+        await userDoc.save();
+        return recovered;
+      }
+    }
+    console.warn("[ensureVendorProfile] Warning:", err.message);
+  }
+}
+
 /**
  * Ensures Client (+ optional Employee stub) exist when the user's role requires them.
  * Idempotent; safe to call on each authenticated request until profiles exist.
@@ -182,6 +249,7 @@ async function ensureRoleProfilesForUser(userDoc) {
 
   await ensureClientLinked(userDoc);
   await ensureEmployeeStub(userDoc);
+  await ensureVendorProfile(userDoc);
 }
 
 /**

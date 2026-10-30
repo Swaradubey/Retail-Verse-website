@@ -781,6 +781,15 @@ export function buildBarcodeLabelTspl(
   lines.push(`DIRECTION 1`);
   lines.push(`REFERENCE 0,0`);
   lines.push(`OFFSET 0 mm`);
+  // Activate transmissive gap sensor — auto-calibrates label boundary detection on each batch
+  // GAPDETECT feeds 2-3 labels through the sensor to learn the exact gap position
+  // This ensures 100% accurate label-to-label alignment even if roll is shifted or new roll loaded
+  lines.push(`GAPDETECT`);
+  // Set print density (darkness) and speed for consistent high-contrast sticker output
+  lines.push(`DENSITY 10`);  // Max darkness (0-15) for pitch-black barcode on sticker
+  lines.push(`SPEED 3`);      // Medium speed for best print quality
+  // Disable built-in cutter so continuous label roll is not cut mid-print
+  lines.push(`SET CUTTER OFF`);
 
   // Prepare clean text fields
   const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
@@ -865,10 +874,12 @@ export function buildBarcodeLabelTspl(
       lines.push(`TEXT ${startX},${currentY},"1",0,1,1,"${truncatedInfo.replace(/"/g, '')}"`);
     }
 
-    // Print this label and feed exactly to the die-cut gap sensor
+    // Print this label and feed exactly to the die-cut gap sensor (no extra feed, no cut)
     lines.push(`PRINT 1,1`);
   }
 
+  // Ensure cutter remains disabled after batch completes
+  lines.push(`SET CUTTER OFF`);
   lines.push('');
   const commandStr = lines.join('\r\n');
   return new TextEncoder().encode(commandStr);
@@ -1075,6 +1086,19 @@ export function buildBarcodeLabelRasterEscPos(
     return buildBarcodeLabelNativeEscPos(label, copies, exactDimensions);
   }
 
+  // Parse label height to calculate precise feed lines (avoid over-feed / cut into next label)
+  let heightMm = 25;
+  if (exactDimensions) {
+    const parts = exactDimensions.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      const h = parseFloat(parts[1]);
+      if (!isNaN(h) && h > 0) heightMm = h;
+    }
+  }
+  // Feed lines: taller labels need more feed to reach gap sensor accurately
+  // 1 line ≈ 3.75mm on standard 203 DPI thermal heads
+  const feedLines = heightMm <= 26 ? 1 : heightMm <= 35 ? 2 : 3;
+
   const rasterCommand = canvasToEscPosRaster(canvas);
   const chunks: Uint8Array[] = [];
 
@@ -1082,14 +1106,14 @@ export function buildBarcodeLabelRasterEscPos(
   chunks.push(ESC_POS.INIT);
   chunks.push(ESC_POS.ALIGN_CENTER);
 
-  // Print requested number of copies with feed & separation
+  // Print requested number of copies with precise feed & separation
   const count = Math.max(1, copies);
   for (let i = 0; i < count; i++) {
     // 1. Send raster bit image data
     chunks.push(rasterCommand);
 
-    // 2. Feed & Separation: ESC d 2 lines so consecutive stickers don't overlap
-    chunks.push(ESC_POS.FEED_LINES(2));
+    // 2. Feed exactly to match label height so consecutive stickers don't overlap or shift
+    chunks.push(ESC_POS.FEED_LINES(feedLines));
   }
 
   // Flush buffer
@@ -1131,6 +1155,9 @@ export function buildBarcodeLabelNativeEscPos(
     }
   }
 
+  // Feed lines calculated from label height for precise gap-to-gap alignment
+  const feedLines = heightMm <= 26 ? 1 : heightMm <= 35 ? 2 : 3;
+
   const cleanStore = (label.storeName && label.storeName !== 'RETAILVERSE' ? label.storeName : '').trim();
   const count = Math.max(1, copies);
 
@@ -1165,8 +1192,8 @@ export function buildBarcodeLabelNativeEscPos(
       builder.textLine(details.join(' | '));
     }
 
-    // 5. Feed & Separation: ESC d 2 so consecutive stickers don't overlap
-    builder.raw(ESC_POS.FEED_LINES(2));
+    // 5. Feed precisely to match label height — prevents overlap and misalignment
+    builder.raw(ESC_POS.FEED_LINES(feedLines));
   }
 
   // Flush buffer

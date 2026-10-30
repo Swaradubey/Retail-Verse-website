@@ -268,6 +268,7 @@ const marketplaceSyncJobRoutes = require("./routes/marketplaceSyncJobRoutes");
 const flipkartRoutes = require("./routes/flipkartRoutes");
 const posRoutes = require("./routes/posRoutes");
 const bannerRoutes = require("./routes/bannerRoutes");
+const vendorAllocationRoutes = require("./routes/vendorAllocationRoutes");
 
 console.log("[Backend Debug] Mounting API routes...");
 app.use("/api/auth", authRoutes);
@@ -281,6 +282,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/admin/vendors", vendorAllocationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/pos", posRoutes);
@@ -308,6 +310,9 @@ app.use("/api/marketplaces", marketplaceRoutes);
 app.use("/api/marketplace-sync/jobs", marketplaceSyncJobRoutes);
 app.use("/api/integrations/flipkart", flipkartRoutes);
 app.use("/api/banners", bannerRoutes);
+app.use("/api/vendor-allocations", vendorAllocationRoutes);
+app.use("/api/vendors", vendorAllocationRoutes);
+app.use("/api/vendor", vendorAllocationRoutes);
 
 // Health route
 app.get("/api/health", (req, res) => {

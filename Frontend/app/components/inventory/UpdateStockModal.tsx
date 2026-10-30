@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '../ui/dialog';
 import { InventoryItem } from '../../types/inventory';
+import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
 
 interface UpdateStockModalProps {
   open: boolean;
@@ -82,9 +83,13 @@ export function UpdateStockModal({
           {/* Product Info */}
           <div className="flex items-center gap-4 rounded-xl bg-gray-50/80 dark:bg-white/5 p-4">
             <img
-              src={item.image}
+              src={getFullImageUrl(getProductImageUrl(item)) || PRODUCT_PLACEHOLDER}
               alt={item.name}
               className="h-14 w-14 rounded-xl object-cover shadow-sm"
+              onError={(e) => {
+                (e.target as HTMLImageElement).onerror = null;
+                (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
+              }}
             />
             <div className="min-w-0 flex-1">
               <p className="font-bold text-sm truncate">{item.name}</p>

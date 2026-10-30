@@ -386,9 +386,11 @@ export const router = createBrowserRouter([
           {
             path: 'dashboard/ai-voice-orders',
             element: withSuspense(
-              <BlockSuperAdminRoute>
-                <DashboardVoiceOrders />
-              </BlockSuperAdminRoute>
+              <AdminRoute blockedRoles={['client', 'client_admin']}>
+                <BlockSuperAdminRoute>
+                  <DashboardVoiceOrders />
+                </BlockSuperAdminRoute>
+              </AdminRoute>
             ),
           },
           {

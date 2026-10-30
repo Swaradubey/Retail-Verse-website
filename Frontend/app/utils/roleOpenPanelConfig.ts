@@ -30,6 +30,7 @@ const ROLE_LABEL: Record<string, string> = {
   counter_manager: 'Counter Manager',
   vendor: 'Vendor',
   VENDOR: 'Vendor',
+  Vendor: 'Vendor',
 };
 
 export function roleDisplayName(role: string | undefined): string {
@@ -54,6 +55,7 @@ const OPEN_PANEL: Record<string, Omit<RoleOpenPanelConfig, 'useImpersonation'>> 
   counter_manager: { buttonLabel: 'Open Counter Manager', path: '/dashboard/inventory' },
   vendor: { buttonLabel: 'Open Vendor', path: '/vendor/dashboard' },
   VENDOR: { buttonLabel: 'Open Vendor', path: '/vendor/dashboard' },
+  Vendor: { buttonLabel: 'Open Vendor', path: '/vendor/dashboard' },
 };
 
 export function getRoleOpenPanelConfig(role: string | undefined): RoleOpenPanelConfig | null {

@@ -204,13 +204,16 @@ const updateUserRole = async (req, res) => {
     if (!role || typeof role !== "string") {
       return res.status(400).json({ success: false, message: "Role is required" });
     }
-    // Normalize to lowercase so "Client" → "client", etc.
-    const nextRole = role.trim().toLowerCase();
+    // Normalize to lowercase so "Client" -> "client", etc.
+    const rawRole = String(role).trim();
+    const normalizedRole = normalizeRole(rawRole);
+    const isVendor = normalizedRole === "vendor" || rawRole.toLowerCase() === "vendor";
+    const nextRole = isVendor ? (rawRole === "Vendor" ? "Vendor" : (rawRole === "VENDOR" ? "VENDOR" : "vendor")) : normalizedRole;
     if (!nextRole) {
       return res.status(400).json({ success: false, message: "Role cannot be empty" });
     }
 
-    if (nextRole === "admin") {
+    if (normalizedRole === "admin") {
       return res.status(403).json({
         success: false,
         message: "Admin role cannot be assigned from user management.",
@@ -250,11 +253,11 @@ const updateUserRole = async (req, res) => {
         });
       }
 
-      const ADMIN_ALLOWED_ROLES = ["counter_manager", "seo_manager", "store_manager", "inventory_manager", "employee", "client", "user", "vendor", "VENDOR"];
-      if (!ADMIN_ALLOWED_ROLES.includes(nextRole)) {
+      const ADMIN_ALLOWED_ROLES = ["counter_manager", "seo_manager", "store_manager", "inventory_manager", "employee", "client", "user", "vendor", "VENDOR", "Vendor"];
+      if (!ADMIN_ALLOWED_ROLES.includes(rawRole) && !ADMIN_ALLOWED_ROLES.includes(nextRole) && !ADMIN_ALLOWED_ROLES.includes(normalizedRole)) {
         return res.status(403).json({
           success: false,
-          message: "Access denied. You can only assign Counter Manager, SEO Manager, Store Manager, Inventory Manager, Employee, Client, or User roles.",
+          message: "Access denied. You can only assign Counter Manager, SEO Manager, Store Manager, Inventory Manager, Employee, Client, User, or Vendor roles.",
         });
       }
     }
@@ -271,7 +274,7 @@ const updateUserRole = async (req, res) => {
     let linkedStore = null;
 
     // Requirement 1 & 2: Provision store for client, check existing
-    if (nextRole === "client") {
+    if (normalizedRole === "client") {
       const Client = require("../models/Client");
       
       // 1. Check if user already has a clientId
@@ -315,7 +318,15 @@ const updateUserRole = async (req, res) => {
     }
 
     try {
-      await target.save();
+      const updatePayload = { role: nextRole };
+      if (linkedStore) {
+        updatePayload.clientId = linkedStore._id;
+      }
+      updatedUser = await User.findByIdAndUpdate(
+        id,
+        { $set: updatePayload },
+        { new: true, runValidators: true }
+      );
     } catch (saveErr) {
       if (saveErr.name === "ValidationError" && saveErr.errors?.role) {
         return res.status(400).json({
@@ -362,17 +373,17 @@ const updateUserRole = async (req, res) => {
       }
     }
 
-    await ensureRoleProfilesForUser(target);
+    await ensureRoleProfilesForUser(updatedUser || target);
     const fresh = await User.findById(target._id).select("-password").lean();
     
     // Requirement 7: Return updated user and linked store
     const responsePayload = {
       success: true,
-      message: nextRole === "client" ? "Role updated and store linked successfully" : "Role updated",
+      message: normalizedRole === "client" ? "Role updated and store linked successfully" : isVendor ? "Role updated to Vendor successfully" : "Role updated",
       data: fresh,
     };
 
-    if (nextRole === "client" && linkedStore) {
+    if (normalizedRole === "client" && linkedStore) {
       responsePayload.store = {
         _id: linkedStore._id,
         name: linkedStore.shopName || linkedStore.companyName,

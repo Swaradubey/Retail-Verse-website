@@ -26,11 +26,6 @@ interface InventoryFiltersProps {
   onMaxPriceChange?: (value: number) => void;
 }
 
-const chipVariants = {
-  initial: { opacity: 0, scale: 0.85 },
-  animate: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 400, damping: 25 } },
-  exit: { opacity: 0, scale: 0.85, transition: { duration: 0.15 } },
-};
 
 export function InventoryFilters({
   search,
@@ -205,32 +200,9 @@ export function InventoryFilters({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-        {inventoryCategories.slice(1).map((cat) => {
-          const isActive = category === cat;
-          return (
-            <motion.button
-              type="button"
-              key={cat}
-              variants={chipVariants}
-              initial="initial"
-              animate="animate"
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.98 }}
-              transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-              onClick={() => onCategoryChange(isActive ? 'All Categories' : cat)}
-              className={`relative overflow-hidden rounded-full px-4 py-2 text-xs font-semibold tracking-wide transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isActive
-                ? 'border border-indigo-200/80 bg-gradient-to-r from-indigo-50 via-white to-violet-50 text-indigo-900 shadow-[0_4px_16px_-4px_rgba(79,70,229,0.25)] ring-1 ring-indigo-200/60 dark:border-indigo-500/30 dark:from-indigo-950/80 dark:via-slate-900/40 dark:to-violet-950/60 dark:text-indigo-100 dark:ring-indigo-500/20'
-                : 'border border-slate-200/80 bg-white/70 text-slate-600 shadow-sm hover:border-slate-300 hover:bg-white hover:shadow-md dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-slate-400 dark:hover:border-white/15 dark:hover:bg-white/[0.07]'
-                }`}
-            >
-              {cat}
-            </motion.button>
-          );
-        })}
-
-        <AnimatePresence>
-          {activeFilterCount > 0 && (
+      {activeFilterCount > 0 && (
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <AnimatePresence>
             <motion.button
               type="button"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -243,9 +215,9 @@ export function InventoryFilters({
               <X className="h-3.5 w-3.5" />
               Clear {activeFilterCount} filter{activeFilterCount > 1 ? 's' : ''}
             </motion.button>
-          )}
-        </AnimatePresence>
-      </div>
+          </AnimatePresence>
+        </div>
+      )}
     </motion.div>
   );
 }

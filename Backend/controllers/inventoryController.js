@@ -13,6 +13,7 @@ const {
 const {
   formatProductsWithClient,
   formatProductWithClient,
+  getFullImageUrl,
 } = require("../utils/formatInventoryProduct");
 const { isClientScopedRole, normalizeRole } = require("../utils/clientScopedRoles");
 const { resolveClientId, buildScopeQuery, applyScope, buildProductVisibilityFilter, isValidObjectId } = require("../utils/tenantResolver");
@@ -36,6 +37,9 @@ function processBase64ImageAsync(rawImg) {
     const filename = `product-${Date.now()}-${crypto.randomBytes(4).toString("hex")}.${ext}`;
     const filePath = path.join(productsUploadDir, filename);
     const publicUrl = `/uploads/products/${filename}`;
+    if (!fs.existsSync(productsUploadDir)) {
+      fs.mkdirSync(productsUploadDir, { recursive: true });
+    }
     fs.promises.writeFile(filePath, buffer).catch((err) => {
       console.error("[inventoryController] Async image write failed:", err.message);
     });
@@ -505,6 +509,9 @@ const getInventory = async (req, res) => {
       }
     }
 
+    // Ensure standard formatting (full dynamic imageUrl, client, normalized stock)
+    formattedInventory = formatProductsWithClient(formattedInventory);
+
     // Requested debug logs
     console.log("-----------------------------------------");
     console.log("role:", req.user?.role, "clientId:", resolvedClientId, "query:", JSON.stringify(query));
@@ -647,13 +654,14 @@ const updateInventoryItem = async (req, res) => {
         }
       });
 
+      const formattedItem = formatProductWithClient(updatedItem);
       const responsePayload = {
         success: true,
         message: role === "seo_manager" 
           ? "SEO Manager successfully updated product SEO details"
           : INVENTORY_MANAGER_TITLE_DESC_SUCCESS,
-        product: updatedItem,
-        data: updatedItem,
+        product: formattedItem,
+        data: formattedItem,
       };
       return res.json(responsePayload);
     }
@@ -861,13 +869,14 @@ const updateInventoryItem = async (req, res) => {
       }
     }
 
+    const formattedItem = formatProductWithClient(updatedItem);
     const responsePayload = {
       success: true,
       message: titleDescriptionOnlyFlow
         ? INVENTORY_MANAGER_TITLE_DESC_SUCCESS
         : "Inventory item updated successfully",
-      product: updatedItem,
-      data: updatedItem,
+      product: formattedItem,
+      data: formattedItem,
     };
     console.log("[Backend Debug] PUT /api/inventory/:id - Response:", responsePayload);
     return res.json(responsePayload);
@@ -1097,6 +1106,7 @@ const createInventoryProduct = async (req, res) => {
     clearInventoryMetaCache();
 
     // Fast non-blocking lean response containing only essential saved fields (< 60ms latency)
+    const fullImgUrl = getFullImageUrl(savedProduct.imageUrl || savedProduct.image);
     const responseProduct = {
       _id: savedProduct._id,
       sku: savedProduct.sku,
@@ -1106,8 +1116,9 @@ const createInventoryProduct = async (req, res) => {
       stockLevel: savedProduct.stockLevel,
       stock: savedProduct.stock,
       category: savedProduct.category,
-      image: savedProduct.image,
-      imageUrl: savedProduct.imageUrl,
+      image: fullImgUrl || savedProduct.image,
+      imageUrl: fullImgUrl || savedProduct.imageUrl || "",
+      images: fullImgUrl ? [fullImgUrl] : [],
       clientId: savedProduct.clientId,
       clientName: savedProduct.clientName,
     };

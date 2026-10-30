@@ -1,16 +1,18 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, AlertTriangle, Package } from 'lucide-react';
+import { X, AlertTriangle, Package, Users } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Product } from '../../api/products';
+import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
 
 interface LowStockAlertModalProps {
   isOpen: boolean;
   items: Product[];
   onClose: () => void;
+  onAllocate?: (product: Product) => void;
 }
 
-export function LowStockAlertModal({ isOpen, items, onClose }: LowStockAlertModalProps) {
+export function LowStockAlertModal({ isOpen, items, onClose, onAllocate }: LowStockAlertModalProps) {
   const lowStock = items.filter(
     (p) => (p.stock ?? 0) >= 1 && (p.stock ?? 0) < 10
   );
@@ -76,6 +78,11 @@ export function LowStockAlertModal({ isOpen, items, onClose }: LowStockAlertModa
                         <th className="text-center px-5 py-4 font-bold text-[11px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">Current Stock</th>
                         <th className="text-center px-5 py-4 font-bold text-[11px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">Min. Threshold</th>
                         <th className="text-center px-5 py-4 font-bold text-[11px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">Status</th>
+                        {onAllocate && (
+                          <th className="text-right px-5 py-4 font-bold text-[11px] uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+                            Restock Action
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -87,11 +94,15 @@ export function LowStockAlertModal({ isOpen, items, onClose }: LowStockAlertModa
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
-                                {product.image ? (
+                                {getProductImageUrl(product) ? (
                                   <img
-                                    src={product.image}
+                                    src={getFullImageUrl(getProductImageUrl(product))}
                                     alt={product.name}
                                     className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).onerror = null;
+                                      (e.target as HTMLImageElement).src = PRODUCT_PLACEHOLDER;
+                                    }}
                                   />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
@@ -121,6 +132,21 @@ export function LowStockAlertModal({ isOpen, items, onClose }: LowStockAlertModa
                               Low Stock
                             </span>
                           </td>
+                          {onAllocate && (
+                            <td className="px-5 py-4 text-right">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  onClose();
+                                  onAllocate(product);
+                                }}
+                                className="h-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 shadow-sm"
+                              >
+                                <Users className="w-3.5 h-3.5" />
+                                Split & Allocate
+                              </Button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>

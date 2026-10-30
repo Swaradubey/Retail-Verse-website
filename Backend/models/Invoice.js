@@ -73,6 +73,22 @@ const invoiceSchema = new mongoose.Schema(
       ref: "Client",
       default: null,
     },
+    status: {
+      type: String,
+      default: "active",
+    },
+    invoiceDate: {
+      type: Date,
+      default: Date.now,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -81,12 +97,17 @@ const invoiceSchema = new mongoose.Schema(
 
 // High-performance covered compound indexes for tenant, status, search, and aggregation
 invoiceSchema.index({ clientId: 1, createdAt: -1 });
+invoiceSchema.index({ clientId: 1, isDeleted: 1, createdAt: -1 });
+invoiceSchema.index({ clientId: 1, isDeleted: 1, invoiceDate: -1, status: 1 });
+invoiceSchema.index({ clientId: 1, isDeleted: 1, paymentStatus: 1, createdAt: -1 });
 invoiceSchema.index({ clientId: 1, paymentStatus: 1, createdAt: -1 });
 invoiceSchema.index({ clientId: 1, totalAmount: 1 });
+invoiceSchema.index({ orderId: 1, isDeleted: 1 });
 invoiceSchema.index({ orderId: 1 });
 invoiceSchema.index({ customerEmail: 1, createdAt: -1 });
 invoiceSchema.index({ customerName: 1, createdAt: -1 });
 invoiceSchema.index({ paymentStatus: 1, createdAt: -1 });
+invoiceSchema.index({ isDeleted: 1, createdAt: -1 });
 invoiceSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Invoice", invoiceSchema);

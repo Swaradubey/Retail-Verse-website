@@ -355,7 +355,7 @@ const getClientInvoices = async (req, res) => {
     // Step 2: find invoices whose orderId matches one of those order IDs
     let invoices = [];
     if (orderIds.length > 0) {
-      const rawInvoices = await Invoice.find({ orderId: { $in: orderIds } }).sort({ createdAt: -1 });
+      const rawInvoices = await Invoice.find({ orderId: { $in: orderIds }, isDeleted: { $ne: true } }).sort({ createdAt: -1 });
       invoices = rawInvoices.map((inv) => {
         const invObj = inv.toObject ? inv.toObject() : { ...inv };
         const isPos = /^POS-/i.test(invObj.orderId) || /^ORD-POS-/i.test(invObj.orderId);
@@ -464,30 +464,11 @@ const getClientCustomers = async (req, res) => {
   }
 };
 
-// Lightweight in-memory TTL cache for Super Admin overview (60 seconds)
-const superAdminOverviewCache = new Map();
-const SUPERADMIN_CACHE_TTL = 60 * 1000;
-
-function getCachedSuperAdminOverview(key) {
-  const item = superAdminOverviewCache.get(key);
-  if (!item) return null;
-  if (Date.now() > item.expiry) {
-    superAdminOverviewCache.delete(key);
-    return null;
-  }
-  return item.data;
-}
-
-function setCachedSuperAdminOverview(key, data) {
-  if (superAdminOverviewCache.size > 200) {
-    const oldestKey = superAdminOverviewCache.keys().next().value;
-    superAdminOverviewCache.delete(oldestKey);
-  }
-  superAdminOverviewCache.set(key, {
-    data,
-    expiry: Date.now() + SUPERADMIN_CACHE_TTL,
-  });
-}
+const {
+  getCachedSuperAdminOverview,
+  setCachedSuperAdminOverview,
+  invalidateDashboardCache,
+} = require("../utils/dashboardCache");
 
 // @desc    Get Super Admin Overview (Combined data from all clients)
 // @route   GET /api/superadmin/overview
@@ -569,12 +550,18 @@ const getOverview = async (req, res) => {
     const isRevenueOrder = isValidSalesOrder;
 
     const isInvoicePaidOrSuccessful = (invoice) => {
+      if (!invoice || invoice.isDeleted === true || invoice.deletedAt) return false;
+      const status = String(invoice.status || "").toLowerCase().trim();
+      if (["deleted", "cancelled", "refunded", "failed"].includes(status)) {
+        return false;
+      }
+
       const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
       const orderStatus = String(invoice.orderStatus || "").toLowerCase().trim();
 
       if (
-        ["cancelled", "refunded", "failed"].includes(paymentStatus) ||
-        ["cancelled", "refunded", "failed"].includes(orderStatus)
+        ["cancelled", "refunded", "failed", "deleted"].includes(paymentStatus) ||
+        ["cancelled", "refunded", "failed", "deleted"].includes(orderStatus)
       ) {
         return false;
       }
@@ -674,7 +661,9 @@ const getOverview = async (req, res) => {
       }).select("totalPrice totalAmount grandTotal finalAmount payableAmount total amount pricing payment items orderItems products cartItems productItems status orderStatus paymentStatus payment_status paymentMethod orderSource createdAt orderDate invoiceDate customerEmail customerName customerPhone shippingAddress user orderId _id").lean(),
       Invoice.find({
         ...scopeQuery,
-      }).select("totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items").lean(),
+        isDeleted: { $ne: true },
+        status: { $nin: ["deleted", "cancelled", "refunded"] },
+      }).select("totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items isDeleted status").lean(),
       Client.find(trialQuery).select("isTrialExpired trialEndDate").lean(),
     ]);
 

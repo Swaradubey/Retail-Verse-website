@@ -2,7 +2,7 @@ const Order = require("../models/Order");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const Invoice = require("../models/Invoice");
-const { 
+const {
   applyScope,
   isValidObjectId
 } = require("../utils/tenantResolver");
@@ -153,7 +153,7 @@ async function salesThisMonthForWindow(start, end, scopeQuery) {
  * (linked User id, else normalized customerEmail on the order). Orders with neither are excluded.
  */
 async function activeOrderingCustomersCountForWindow(start, end, scopeQuery) {
-  const match = { 
+  const match = {
     createdAt: { $gte: start, $lt: end },
     isDeleted: { $ne: true },
     deletedAt: { $exists: false },
@@ -209,7 +209,7 @@ async function customerLifetimeValueAllTime(scopeQuery) {
     ]
   };
   applyScope(match, scopeQuery);
-  
+
   const [revAgg] = await Order.aggregate([
     { $match: match },
     {
@@ -293,7 +293,7 @@ async function monthlyActiveCustomers(start, end, scopeQuery) {
  * This is not the lifetime CLV delta (that would need historical snapshots); it is documented as a revenue-intensity trend.
  */
 async function monthlyRevenuePerPayer(start, end, scopeQuery) {
-  const match = { 
+  const match = {
     createdAt: { $gte: start, $lt: end },
     isDeleted: { $ne: true },
     deletedAt: { $exists: false },
@@ -397,7 +397,7 @@ const PIE_COLORS = ["#3b82f6", "#ec4899", "#10b981", "#f59e0b", "#8b5cf6", "#06b
  * Orders without resolvable category bucket as "Uncategorized".
  */
 async function topCategoriesForWindow(start, end, scopeQuery, limit = 8) {
-  const match = { 
+  const match = {
     createdAt: { $gte: start, $lt: end },
     // Exclude soft-deleted orders
     isDeleted: { $ne: true },
@@ -489,7 +489,7 @@ async function topProductsForWindow(start, end, scopeQuery, limit = 3) {
   const prevEnd = start;
 
   const productLineStages = (windowStart, windowEnd) => {
-    const match = { 
+    const match = {
       createdAt: { $gte: windowStart, $lt: windowEnd },
       // Exclude soft-deleted orders
       isDeleted: { $ne: true },
@@ -593,30 +593,11 @@ async function topProductsForWindow(start, end, scopeQuery, limit = 3) {
   });
 }
 
-// Lightweight in-memory TTL cache for admin analytics summary metrics (60-second TTL)
-const adminAnalyticsCache = new Map();
-const ADMIN_ANALYTICS_CACHE_TTL = 60 * 1000;
-
-function getCachedAdminAnalytics(key) {
-  const item = adminAnalyticsCache.get(key);
-  if (!item) return null;
-  if (Date.now() > item.expiry) {
-    adminAnalyticsCache.delete(key);
-    return null;
-  }
-  return item.data;
-}
-
-function setCachedAdminAnalytics(key, data) {
-  if (adminAnalyticsCache.size > 200) {
-    const oldestKey = adminAnalyticsCache.keys().next().value;
-    adminAnalyticsCache.delete(oldestKey);
-  }
-  adminAnalyticsCache.set(key, {
-    data,
-    expiry: Date.now() + ADMIN_ANALYTICS_CACHE_TTL,
-  });
-}
+const {
+  getCachedAdminAnalytics,
+  setCachedAdminAnalytics,
+  invalidateDashboardCache,
+} = require("../utils/dashboardCache");
 
 // @desc    Admin dashboard analytics (summary, revenue flow, categories, top products)
 // @route   GET /api/admin/analytics
@@ -737,12 +718,18 @@ const getAdminAnalytics = async (req, res) => {
     const isRevenueOrder = isValidSalesOrder;
 
     const isInvoicePaidOrSuccessful = (invoice) => {
+      if (!invoice || invoice.isDeleted === true || invoice.deletedAt) return false;
+      const status = String(invoice.status || "").toLowerCase().trim();
+      if (["deleted", "cancelled", "refunded", "failed"].includes(status)) {
+        return false;
+      }
+
       const paymentStatus = String(invoice.paymentStatus || "").toLowerCase().trim();
       const orderStatus = String(invoice.orderStatus || "").toLowerCase().trim();
 
       if (
-        ["cancelled", "refunded", "failed"].includes(paymentStatus) ||
-        ["cancelled", "refunded", "failed"].includes(orderStatus)
+        ["cancelled", "refunded", "failed", "deleted"].includes(paymentStatus) ||
+        ["cancelled", "refunded", "failed", "deleted"].includes(orderStatus)
       ) {
         return false;
       }
@@ -773,9 +760,10 @@ const getAdminAnalytics = async (req, res) => {
       return docDate >= start && docDate < end;
     };
 
-    const calculateStatsForWindow = (start, end, allOrders /*, allInvoices intentionally excluded — orders are the single source of truth */) => {
+    const calculateStatsForWindow = (start, end, allOrders, allInvoices = []) => {
       // Filter to orders whose createdAt falls in [start, end)
       const ordersInWindow = allOrders.filter(o => isDateInWindow(o, start, end));
+      const invoicesInWindow = (allInvoices || []).filter(i => isDateInWindow(i, start, end));
 
       let revenue = 0;
       let validOrdersCount = 0;
@@ -792,6 +780,23 @@ const getAdminAnalytics = async (req, res) => {
           if (oid) {
             validOrderIdsSet.add(String(oid).trim().toLowerCase());
             validOrderIds.push(String(oid).trim());
+          }
+        }
+      }
+
+      // Standalone or converted quote invoices not already accounted for by an order document
+      for (const invoice of invoicesInWindow) {
+        if (isInvoicePaidOrSuccessful(invoice)) {
+          const invOrderId = String(invoice.orderId || "").trim().toLowerCase();
+          if (invOrderId && validOrderIdsSet.has(invOrderId)) {
+            continue;
+          }
+          const amt = invoice.totalAmount || invoice.subtotal || 0;
+          revenue += amt;
+          validOrdersCount++;
+          if (invOrderId) {
+            validOrderIdsSet.add(invOrderId);
+            validOrderIds.push(invOrderId);
           }
         }
       }
@@ -1016,9 +1021,11 @@ const getAdminAnalytics = async (req, res) => {
         .lean(),
       Invoice.find({
         ...scopeFilter,
+        isDeleted: { $ne: true },
+        status: { $nin: ["deleted", "cancelled", "refunded"] },
       })
         .select(
-          "totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items"
+          "totalAmount subtotal paymentStatus orderStatus orderId invoiceDate createdAt items isDeleted status"
         )
         .lean(),
       User.countDocuments(userQuery),
@@ -1058,8 +1065,8 @@ const getAdminAnalytics = async (req, res) => {
       console.log("[AdminAnalytics] No orders found in query.");
     }
 
-    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders);
-    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders);
+    const curStats = calculateStatsForWindow(cur.start, cur.end, allOrders, allInvoices);
+    const prevStats = calculateStatsForWindow(prev.start, prev.end, allOrders, allInvoices);
     const salesThisMonth = curStats.revenue;
 
     // Safe backend logs
@@ -1072,7 +1079,7 @@ const getAdminAnalytics = async (req, res) => {
     console.log("[AdminDashboard] cancelledThisMonth:", cancelledThisMonth);
     console.log("[AdminDashboard] validOrdersFound:", validOrdersFound);
     console.log("[AdminDashboard] totalRevenueCalculated:", Math.round(curStats.revenue * 100) / 100);
-    console.log("[AdminDashboard] topProductFound:", (calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, [], 1)[0]?.name || "None"));
+    console.log("[AdminDashboard] topProductFound:", (calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 1)[0]?.name || "None"));
     console.log("[AdminDashboard] Order IDs counted:", curStats.paidOrderIds);
 
     const curPurchasers = curPurchasersWithUser.filter((id) => id != null).length;
@@ -1087,8 +1094,8 @@ const getAdminAnalytics = async (req, res) => {
     };
 
     const revenueFlow = calculateRevenueFlow(allOrders, allInvoices);
-    const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, []);
-    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, [], 3);
+    const topCategories = calculateTopCategories(cur.start, cur.end, allOrders, allInvoices);
+    const topProducts = calculateTopProducts(cur.start, cur.end, prev.start, prev.end, allOrders, allInvoices, 3);
 
     // Requirement 15: Safe backend debug logs — deleted/cancelled orders, revenue recalculated from DB
     const totalNonDeletedOrdersFound = allOrders.length;

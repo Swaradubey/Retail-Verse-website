@@ -56,7 +56,7 @@ const quoteSchema = new mongoose.Schema(
     status: {
       type: String,
       default: "pending",
-      enum: ["pending", "countered", "accepted", "rejected"],
+      enum: ["pending", "countered", "accepted", "rejected", "deleted"],
     },
     paymentStatus: {
       type: String,
@@ -78,6 +78,14 @@ const quoteSchema = new mongoose.Schema(
     validUntil: {
       type: Date,
     },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      required: false,
+    },
   },
   {
     timestamps: true,
@@ -86,13 +94,18 @@ const quoteSchema = new mongoose.Schema(
 
 // High-performance covered compound indexes for tenant, status, user, search, and aggregation
 quoteSchema.index({ clientId: 1, createdAt: -1 });
+quoteSchema.index({ clientId: 1, isDeleted: 1, createdAt: -1 });
+quoteSchema.index({ clientId: 1, isDeleted: 1, status: 1, createdAt: -1 });
+quoteSchema.index({ clientId: 1, isDeleted: 1, paymentStatus: 1, createdAt: -1 });
 quoteSchema.index({ clientId: 1, status: 1, createdAt: -1 });
 quoteSchema.index({ clientId: 1, paymentStatus: 1, createdAt: -1 });
+quoteSchema.index({ userId: 1, isDeleted: 1, createdAt: -1 });
 quoteSchema.index({ userId: 1, createdAt: -1 });
 quoteSchema.index({ status: 1, createdAt: -1 });
 quoteSchema.index({ paymentStatus: 1, createdAt: -1 });
 quoteSchema.index({ customerEmail: 1, createdAt: -1 });
 quoteSchema.index({ customerName: 1, createdAt: -1 });
+quoteSchema.index({ isDeleted: 1, createdAt: -1 });
 quoteSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Quote", quoteSchema);

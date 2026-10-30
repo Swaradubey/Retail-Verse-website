@@ -12,7 +12,6 @@ import {
   Eye,
   CreditCard,
   Truck,
-  Calendar,
   User as UserIcon,
   Mail,
   Phone,
@@ -34,7 +33,6 @@ import ApiService from '../../api/apiService';
 import { patchOrderTrackingStatus, deleteOrder, cancelOrder } from '../../api/orders';
 import { useAuth } from '../../context/AuthContext';
 import { hasFullAdminPrivileges, isStaffRole, isCustomerAccountRole, isSuperAdminRole } from '../../utils/staffRoles';
-import { OrderTrackingTimeline, type TimelineStage } from '../../components/orders/OrderTrackingTimeline';
 import { toast } from 'sonner';
 import { formatINR } from '../../utils/formatINR';
 
@@ -61,17 +59,38 @@ export function DashboardOrders() {
   const isCustomer = isCustomerAccountRole(user?.role);
   const isSuperAdmin = isSuperAdminRole(user?.role);
 
-  const [orders, setOrders] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const userCacheKey = `${user?.role || ''}_${user?._id || user?.id || ''}`;
+  const ordersStorageKey = `agy_dashboard_orders_${userCacheKey}`;
+
+  // Read initial cached state synchronously for instant 0ms render
+  const initialCache = useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem(ordersStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.data)) {
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }, [ordersStorageKey]);
+
+  const [orders, setOrders] = useState<any[]>(() => initialCache?.data || []);
+  const [backendStats, setBackendStats] = useState<any>(() => initialCache?.stats || null);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCache?.data || initialCache.data.length === 0);
   const [searchTerm, setSearchTerm] = useState('');
   const [manageOrder, setManageOrder] = useState<any | null>(null);
   const [viewOrder, setViewOrder] = useState<any | null>(null);
   const [trackingSubmitting, setTrackingSubmitting] = useState(false);
-  const [backendStats, setBackendStats] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOrders = useCallback(async () => {
-    setIsLoading(true);
+  const fetchOrders = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       const endpoint = isCustomer ? '/orders/my-tracking' : (isStaff ? '/orders' : '/orders/my-tracking');
@@ -81,8 +100,18 @@ export function DashboardOrders() {
         if (response.stats) {
           setBackendStats(response.stats);
         }
+        try {
+          sessionStorage.setItem(
+            ordersStorageKey,
+            JSON.stringify({ data: response.data, stats: response.stats || null })
+          );
+        } catch {
+          // ignore
+        }
       } else {
-        setOrders([]);
+        if (!opts?.silent) {
+          setOrders([]);
+        }
         if (!response.success && response.message) {
           setError(response.message);
           toast.error(response.message);
@@ -90,17 +119,21 @@ export function DashboardOrders() {
       }
     } catch (err: any) {
       console.error('Failed to fetch orders', err);
-      setOrders([]);
+      if (!opts?.silent) {
+        setOrders([]);
+      }
       const msg = err.message || 'Could not load orders. Check that the server is running.';
       setError(msg);
       toast.error(msg);
     } finally {
       setIsLoading(false);
     }
-  }, [isStaff, isCustomer, user]);
+  }, [isStaff, isCustomer, ordersStorageKey]);
 
   useEffect(() => {
-    void fetchOrders();
+    // If cached orders exist, fetch silently in background (Stale-While-Revalidate)
+    const hasData = (orders && orders.length > 0) || !!initialCache?.data;
+    void fetchOrders({ silent: hasData });
   }, [fetchOrders]);
 
   const filteredOrders = useMemo(() => {
@@ -161,27 +194,6 @@ export function DashboardOrders() {
     return 1;
   };
 
-  const stagesForModal = (o: any): TimelineStage[] => {
-    if (o?.stages && Array.isArray(o.stages) && o.stages.length > 0) return o.stages as TimelineStage[];
-    const cs = currentStageForOrder(o);
-    const labels = [
-      'Order Placed',
-      'Confirmed',
-      'Packed',
-      'Shipped',
-      'Out for Delivery',
-      'Delivered',
-    ];
-    return labels.map((label, i) => {
-      const step = i + 1;
-      let status: TimelineStage['status'] = 'pending';
-      if (o?.isDelivered) status = 'complete';
-      else if (step < cs) status = 'complete';
-      else if (step === cs) status = 'current';
-      return { step, label, status };
-    });
-  };
-
   const handleDeleteOrder = async (orderId: string) => {
     if (!window.confirm('Are you sure you want to delete this order permanently?')) return;
     try {
@@ -190,7 +202,18 @@ export function DashboardOrders() {
       const res = await deleteOrder(idToDelete);
       if (res.success) {
         toast.success(res.message || 'Order deleted');
-        setOrders((prev) => prev.filter((o) => o.orderId !== orderId && o._id !== idToDelete));
+        setOrders((prev) => {
+          const updated = prev.filter((o) => o.orderId !== orderId && o._id !== idToDelete);
+          try {
+            sessionStorage.setItem(
+              ordersStorageKey,
+              JSON.stringify({ data: updated, stats: backendStats })
+            );
+          } catch {
+            // ignore
+          }
+          return updated;
+        });
         // Notify Dashboard to refetch analytics so revenue/stats update immediately
         window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId } }));
       }
@@ -209,13 +232,22 @@ export function DashboardOrders() {
       if (res.success && res.data) {
         toast.success(res.message || 'Tracking updated');
         setManageOrder(res.data);
-        setOrders((prev) =>
-          prev.map((row) =>
+        setOrders((prev) => {
+          const updated = prev.map((row) =>
             row.orderId === res.data.orderId || String(row._id) === String(res.data._id)
               ? { ...row, ...res.data }
               : row
-          )
-        );
+          );
+          try {
+            sessionStorage.setItem(
+              ordersStorageKey,
+              JSON.stringify({ data: updated, stats: backendStats })
+            );
+          } catch {
+            // ignore
+          }
+          return updated;
+        });
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Update failed';
@@ -228,7 +260,7 @@ export function DashboardOrders() {
   const handleCancelOrder = async () => {
     if (!manageOrder) return;
     if (!window.confirm('Are you sure you want to cancel this order?')) return;
-    
+
     const oid = manageOrder.orderId || manageOrder._id;
     if (!oid) return;
     setTrackingSubmitting(true);
@@ -237,13 +269,22 @@ export function DashboardOrders() {
       if (res.success && res.data) {
         toast.success(res.message || 'Order cancelled successfully');
         setManageOrder(res.data);
-        setOrders((prev) =>
-          prev.map((row) =>
+        setOrders((prev) => {
+          const updated = prev.map((row) =>
             row.orderId === res.data.orderId || String(row._id) === String(res.data._id)
               ? { ...row, ...res.data }
               : row
-          )
-        );
+          );
+          try {
+            sessionStorage.setItem(
+              ordersStorageKey,
+              JSON.stringify({ data: updated, stats: backendStats })
+            );
+          } catch {
+            // ignore
+          }
+          return updated;
+        });
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Cancellation failed';
@@ -290,12 +331,12 @@ export function DashboardOrders() {
             <Card className="relative overflow-hidden border-none bg-white/50 shadow-md backdrop-blur-md dark:bg-black/40">
               <div
                 className={`absolute top-0 left-0 h-full w-1 opacity-70 ${stat.color === 'blue'
-                    ? 'bg-blue-500'
-                    : stat.color === 'amber'
-                      ? 'bg-amber-500'
-                      : stat.color === 'emerald'
-                        ? 'bg-emerald-500'
-                        : 'bg-indigo-500'
+                  ? 'bg-blue-500'
+                  : stat.color === 'amber'
+                    ? 'bg-amber-500'
+                    : stat.color === 'emerald'
+                      ? 'bg-emerald-500'
+                      : 'bg-indigo-500'
                   }`}
               />
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -304,12 +345,12 @@ export function DashboardOrders() {
                 </CardTitle>
                 <div
                   className={`rounded-lg p-1.5 ${stat.color === 'blue'
-                      ? 'bg-blue-500/10 text-blue-500'
-                      : stat.color === 'amber'
-                        ? 'bg-amber-500/10 text-amber-500'
-                        : stat.color === 'emerald'
-                          ? 'bg-emerald-500/10 text-emerald-500'
-                          : 'bg-indigo-500/10 text-indigo-500'
+                    ? 'bg-blue-500/10 text-blue-500'
+                    : stat.color === 'amber'
+                      ? 'bg-amber-500/10 text-amber-500'
+                      : stat.color === 'emerald'
+                        ? 'bg-emerald-500/10 text-emerald-500'
+                        : 'bg-indigo-500/10 text-indigo-500'
                     }`}
                 >
                   <stat.icon className="h-4 w-4" />
@@ -580,11 +621,18 @@ export function DashboardOrders() {
 
           {manageOrder && (
             <div className="space-y-6">
-              <div className="rounded-xl border border-stone-100 bg-stone-50/80 p-4">
-                <p className="mb-3 text-xs font-bold tracking-wider text-stone-500 uppercase">
-                  Current stage
-                </p>
-                <OrderTrackingTimeline stages={stagesForModal(manageOrder)} variant="light" />
+              <div className="flex items-center justify-between rounded-xl border border-stone-200/80 bg-stone-50/90 p-4 dark:border-white/10 dark:bg-white/5">
+                <div>
+                  <p className="text-xs font-bold tracking-wider text-stone-500 uppercase dark:text-stone-400">
+                    Current stage
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-foreground">
+                    {manageOrder.trackingStatus || manageOrder.orderStatus || 'Order Placed'}
+                  </p>
+                </div>
+                <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200/50 dark:border-blue-700/30">
+                  Stage {modalCurrent} of 6
+                </span>
               </div>
 
               <div className="space-y-2">
@@ -606,8 +654,8 @@ export function DashboardOrders() {
                         disabled={disabled}
                         variant={isNext ? 'default' : 'outline'}
                         className={`h-11 w-full justify-center rounded-xl ${alreadyApplied && !isNext
-                            ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800'
-                            : ''
+                          ? 'border-emerald-200 bg-emerald-50/50 text-emerald-800'
+                          : ''
                           }`}
                         onClick={() => {
                           if (isNext) void handleTrackingAction(action.trackingStatus);
@@ -659,6 +707,11 @@ export function DashboardOrders() {
             </DialogTitle>
             <DialogDescription>
               Full order information and customer details for Order #{viewOrder?.orderId || viewOrder?.id}
+              {viewOrder?.createdAt && (
+                <span className="block mt-1 text-xs text-muted-foreground">
+                  Placed on: {new Date(viewOrder.createdAt).toLocaleString()}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -804,23 +857,6 @@ export function DashboardOrders() {
                         <span className="text-xl font-black text-blue-600">{formatINR(viewOrder.totalPrice || 0)}</span>
                       </div>
                     </div>
-                  </div>
-                </section>
-
-                {/* Status Timeline */}
-                <section className="space-y-3">
-                  <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    Timeline & Status
-                  </h3>
-                  <div className="rounded-xl border border-stone-100 bg-stone-50/50 p-4 dark:border-white/5 dark:bg-white/5">
-                    <div className="mb-4 flex justify-between items-center">
-                      <span className="text-xs text-muted-foreground">Placed on:</span>
-                      <span className="text-xs font-medium">
-                        {viewOrder.createdAt ? new Date(viewOrder.createdAt).toLocaleString() : 'N/A'}
-                      </span>
-                    </div>
-                    <OrderTrackingTimeline stages={stagesForModal(viewOrder)} variant="light" />
                   </div>
                 </section>
               </div>

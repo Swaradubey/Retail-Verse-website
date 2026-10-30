@@ -377,11 +377,72 @@ export function DashboardInvoices() {
         toast.success("Invoice deleted successfully");
         setViewInvoice(null);
         setInvoices((prev) => prev.filter((item) => (item._id || item.id) !== invoiceId));
+
+        // Clear dashboard session storage caches
+        try {
+          Object.keys(sessionStorage).forEach((key) => {
+            if (key.startsWith('agy_dashboard_')) {
+              sessionStorage.removeItem(key);
+            }
+          });
+        } catch {
+          // ignore
+        }
+
+        // Notify dashboard to refresh aggregated metrics immediately
+        window.dispatchEvent(new CustomEvent('invoice-deleted', { detail: { id: invoiceId } }));
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { id: invoiceId } }));
+        void fetchData();
       } else {
         toast.error(res.message || "Failed to delete invoice");
       }
     } catch (error: any) {
       toast.error(error.message || "Failed to delete invoice");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteQuote = async () => {
+    const quoteId = viewQuote?._id || viewQuote?.id;
+
+    if (!quoteId) {
+      toast.error("Quote ID not found");
+      return;
+    }
+
+    const confirmed = window.confirm("Are you sure you want to delete this quote?");
+    if (!confirmed) return;
+
+    try {
+      setIsDeleting(true);
+      const res = await ApiService.delete(`/quotes/${quoteId}`, { pageName: 'DashboardQuotes' });
+
+      if (res.success) {
+        toast.success("Quote deleted successfully");
+        setViewQuote(null);
+        setQuotes((prev) => prev.filter((item) => (item._id || item.id) !== quoteId));
+
+        // Clear dashboard session storage caches
+        try {
+          Object.keys(sessionStorage).forEach((key) => {
+            if (key.startsWith('agy_dashboard_')) {
+              sessionStorage.removeItem(key);
+            }
+          });
+        } catch {
+          // ignore
+        }
+
+        // Notify dashboard to refresh aggregated metrics immediately
+        window.dispatchEvent(new CustomEvent('quote-deleted', { detail: { id: quoteId } }));
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { id: quoteId } }));
+        void fetchData();
+      } else {
+        toast.error(res.message || "Failed to delete quote");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete quote");
     } finally {
       setIsDeleting(false);
     }
@@ -674,7 +735,7 @@ export function DashboardInvoices() {
 
   return (
     <div className="relative min-h-screen bg-[#F8FAFC] text-[#0B1F3A]">
-      <div className="relative space-y-8 p-6 md:p-8">
+      <div className="relative space-y-6 sm:space-y-8 px-4 sm:px-6 md:px-8 pt-2 sm:pt-4 pb-8">
         
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1210,7 +1271,7 @@ export function DashboardInvoices() {
                     </div>
                     Quotation Details
                   </DialogTitle>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`inline-flex items-center rounded-full px-3 sm:px-4 py-1 sm:py-1.5 text-[10px] sm:text-xs font-black uppercase border ${getStatusColor(viewQuote?.status)}`}>
                       {viewQuote?.status || 'Pending'}
                     </span>
@@ -1218,6 +1279,21 @@ export function DashboardInvoices() {
                       <span className={`inline-flex items-center rounded-full px-3 sm:px-4 py-1 sm:py-1.5 text-[10px] sm:text-xs font-black uppercase border ${getStatusColor(viewQuote.paymentStatus)}`}>
                         {viewQuote.paymentStatus}
                       </span>
+                    )}
+                    {viewQuote && (user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'client' || user?.role === 'store_manager') && (
+                      <button
+                        type="button"
+                        title="Delete Quote"
+                        onClick={handleDeleteQuote}
+                        disabled={isDeleting}
+                        className="p-2 rounded-full text-[#FF6B00] hover:bg-[#FF6B00]/10 disabled:opacity-50 transition-colors cursor-pointer"
+                      >
+                        {isDeleting ? (
+                          <RefreshCcw className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <Trash2 size={20} />
+                        )}
+                      </button>
                     )}
                   </div>
                 </div>

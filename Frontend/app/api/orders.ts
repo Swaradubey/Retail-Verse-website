@@ -240,3 +240,29 @@ export const verifyRazorpayPayment = async (
 ): Promise<{ success: boolean; message: string }> => {
   return ApiService.post('/razorpay/verify-payment', payload);
 };
+
+/**
+ * Background pre-warm orders cache so clicking "Orders" in the dashboard opens instantly.
+ */
+export function prefetchOrders(user: any) {
+  if (!user) return;
+  const role = String(user?.role || '').toLowerCase();
+  const isCustomer = role === 'user' || role === 'customer';
+  const endpoint = isCustomer ? '/orders/my-tracking' : '/orders';
+  const ordersStorageKey = `agy_dashboard_orders_${user?.role || ''}_${user?._id || user?.id || ''}`;
+
+  ApiService.get(endpoint)
+    .then((res: any) => {
+      if (res?.success && Array.isArray(res?.data)) {
+        try {
+          sessionStorage.setItem(
+            ordersStorageKey,
+            JSON.stringify({ data: res.data, stats: res.stats || null })
+          );
+        } catch {
+          // ignore
+        }
+      }
+    })
+    .catch(() => {});
+}

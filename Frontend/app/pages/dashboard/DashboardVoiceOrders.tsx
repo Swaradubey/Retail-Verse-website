@@ -682,7 +682,7 @@ export function DashboardVoiceOrders() {
   // ══════════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-6 pb-10">
+    <div className="w-full max-w-6xl mx-auto space-y-6 px-4 sm:px-6 md:px-8 pt-2 sm:pt-4 pb-10">
 
       {/* ── Page Header ─────────────────────────────────────────────────── */}
       <motion.div
