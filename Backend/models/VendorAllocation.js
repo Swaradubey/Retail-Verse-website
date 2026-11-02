@@ -98,8 +98,14 @@ const VendorAllocationSchema = new mongoose.Schema(
 VendorAllocationSchema.index({ vendorId: 1, status: 1 });
 VendorAllocationSchema.index({ vendorUserId: 1, status: 1 });
 VendorAllocationSchema.index({ vendorId: 1, status: 1, isSeen: 1 });
+VendorAllocationSchema.index({ vendorId: 1, createdAt: -1 });
+VendorAllocationSchema.index({ vendorUserId: 1, createdAt: -1 });
+VendorAllocationSchema.index({ vendorId: 1, status: 1, createdAt: -1 });
+VendorAllocationSchema.index({ vendorUserId: 1, status: 1, createdAt: -1 });
 VendorAllocationSchema.index({ productId: 1, createdAt: -1 });
 VendorAllocationSchema.index({ clientId: 1, status: 1 });
+VendorAllocationSchema.index({ clientId: 1, createdAt: -1 });
+VendorAllocationSchema.index({ clientId: 1, status: 1, createdAt: -1 });
 VendorAllocationSchema.index({ adminId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('VendorAllocation', VendorAllocationSchema);

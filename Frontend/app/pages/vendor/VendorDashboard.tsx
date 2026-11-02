@@ -19,6 +19,7 @@ import {
   Calendar,
   Sparkles,
   ChevronRight,
+  ChevronLeft,
   Send,
   X,
   ExternalLink,
@@ -33,6 +34,8 @@ import {
   VendorAllocationItem,
   VendorItem,
   AllocationStatus,
+  PaginationInfo,
+  VendorStats,
 } from '../../api/vendorAllocations';
 import { formatINR } from '../../utils/formatINR';
 import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
@@ -44,7 +47,28 @@ export function VendorDashboard() {
 
   const [activeTab, setActiveTab] = useState<'overview' | 'requirements' | 'profile'>('overview');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [page, setPage] = useState<number>(1);
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
+  const [stats, setStats] = useState<VendorStats>({
+    totalAllocations: 0,
+    totalUnits: 0,
+    pending: 0,
+    accepted: 0,
+    dispatched: 0,
+    received: 0,
+    totalUnitsAllocated: 0,
+    seenCount: 0,
+    unseenCount: 0,
+  });
   const [allocations, setAllocations] = useState<VendorAllocationItem[]>([]);
   const [vendorProfile, setVendorProfile] = useState<VendorItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +90,19 @@ export function VendorDashboard() {
     logout();
     navigate('/login');
   };
+
+  // Debounce search query to avoid redundant server roundtrips
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, statusFilter, selectedVendorId]);
 
   // Load available vendors for test switcher if privileged
   useEffect(() => {
@@ -90,13 +127,23 @@ export function VendorDashboard() {
 
       try {
         const vendorQueryParam = isPrivileged && selectedVendorId ? selectedVendorId : undefined;
-        const res = await vendorAllocationsApi.getVendorAllocations(
-          vendorQueryParam ? { vendorId: vendorQueryParam } : undefined
-        );
+        const res = await vendorAllocationsApi.getVendorAllocations({
+          vendorId: vendorQueryParam,
+          page,
+          limit: 10,
+          status: statusFilter !== 'ALL' ? statusFilter : undefined,
+          search: debouncedSearchQuery.trim() || undefined,
+        });
 
-        setAllocations(res.allocations || []);
+        setAllocations(res.data || res.allocations || []);
         if (res.vendor) {
           setVendorProfile(res.vendor);
+        }
+        if (res.pagination) {
+          setPagination(res.pagination);
+        }
+        if (res.metrics || res.stats) {
+          setStats(res.metrics || res.stats);
         }
       } catch (err: any) {
         console.error('Failed to load vendor allocations:', err);
@@ -106,7 +153,7 @@ export function VendorDashboard() {
         setRefreshing(false);
       }
     },
-    [isPrivileged, selectedVendorId]
+    [isPrivileged, selectedVendorId, page, statusFilter, debouncedSearchQuery]
   );
 
   useEffect(() => {
@@ -131,6 +178,11 @@ export function VendorDashboard() {
                     : alloc
                 )
               );
+              setStats((prev) => ({
+                ...prev,
+                unseenCount: Math.max(0, (prev.unseenCount || 0) - 1),
+                seenCount: (prev.seenCount || 0) + 1,
+              }));
             })
             .catch(() => {});
         });
@@ -239,6 +291,9 @@ export function VendorDashboard() {
           },
         });
       }
+
+      // Refresh server metrics and paginated records
+      void loadVendorData(true);
     } catch (err: any) {
       toast.error(err.message || 'Failed to update inventory stock');
     } finally {
@@ -266,6 +321,9 @@ export function VendorDashboard() {
       if (selectedAllocation?._id === allocationId) {
         setSelectedAllocation(updated);
       }
+
+      // Refresh server metrics
+      void loadVendorData(true);
     } catch (err: any) {
       toast.error(err.message || 'Failed to accept requirement');
     } finally {
@@ -278,48 +336,8 @@ export function VendorDashboard() {
     return handleUpdateStock(allocationId);
   };
 
-  // KPI Calculations
-  const stats = useMemo(() => {
-    const totalAllocations = allocations.length;
-    const totalUnits = allocations.reduce(
-      (sum, a) => sum + (Number(a.allocatedQuantity) || 0),
-      0
-    );
-    const pending = allocations.filter((a) => a.status === 'PENDING').length;
-    const accepted = allocations.filter((a) => a.status === 'ACCEPTED').length;
-    const dispatched = allocations.filter((a) => a.status === 'DISPATCHED').length;
-    const received = allocations.filter((a) => a.status === 'RECEIVED').length;
-    const unreadCount = allocations.filter((a) => !a.isSeen).length;
-
-    return {
-      totalAllocations,
-      totalUnits,
-      pending,
-      accepted,
-      dispatched,
-      received,
-      unreadCount,
-    };
-  }, [allocations]);
-
-  // Filtering
-  const filteredAllocations = useMemo(() => {
-    return allocations.filter((item) => {
-      if (statusFilter !== 'ALL' && item.status !== statusFilter) {
-        return false;
-      }
-
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const name = item.productId?.name?.toLowerCase() || '';
-        const sku = item.productId?.sku?.toLowerCase() || '';
-        const id = item._id.toLowerCase();
-        return name.includes(q) || sku.includes(q) || id.includes(q);
-      }
-
-      return true;
-    });
-  }, [allocations, statusFilter, searchQuery]);
+  // Filtering & Pagination are executed server-side
+  const filteredAllocations = allocations;
 
   const formatDate = (dateStr?: string | null) => {
     if (!dateStr) return '—';
@@ -414,7 +432,7 @@ export function VendorDashboard() {
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                Allocations ({allocations.length})
+                Allocations ({stats.totalAllocations})
               </button>
               <button
                 onClick={() => setActiveTab('profile')}
@@ -519,14 +537,14 @@ export function VendorDashboard() {
                       Low-stock replenishment orders published by client administration.
                     </CardDescription>
                   </div>
-                  {allocations.length > 0 && (
+                  {stats.totalAllocations > 0 && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setActiveTab('requirements')}
                       className="text-xs rounded-xl"
                     >
-                      View All ({allocations.length})
+                      View All ({stats.totalAllocations})
                     </Button>
                   )}
                 </div>
@@ -568,7 +586,7 @@ export function VendorDashboard() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/40 font-medium">
-                        {allocations.slice(0, 6).map((req) => (
+                        {allocations.map((req) => (
                           <tr
                             key={req._id}
                             className="hover:bg-slate-50/70 dark:hover:bg-zinc-900/30 transition-colors cursor-pointer"
@@ -658,6 +676,45 @@ export function VendorDashboard() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {/* Server-Side Pagination Bar for Latest Allocated Requirements */}
+                {pagination.total > 0 && (
+                  <div className="px-6 py-3.5 border-t border-slate-100 dark:border-zinc-800/60 bg-slate-50/50 dark:bg-zinc-900/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    <div className="text-muted-foreground">
+                      Showing <span className="font-semibold text-slate-800 dark:text-zinc-200">{(pagination.page - 1) * pagination.limit + 1}</span> to{' '}
+                      <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                        {Math.min(pagination.page * pagination.limit, pagination.total)}
+                      </span>{' '}
+                      of <span className="font-semibold text-slate-800 dark:text-zinc-200">{pagination.total}</span> requirements
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!pagination.hasPrevPage || loading || refreshing}
+                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                        className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Prev
+                      </Button>
+                      <span className="px-2 font-mono text-[11px] font-bold text-slate-700 dark:text-zinc-300">
+                        Page {pagination.page} of {pagination.totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!pagination.hasNextPage || loading || refreshing}
+                        onClick={() => setPage((prev) => prev + 1)}
+                        className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                      >
+                        Next
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -873,6 +930,45 @@ export function VendorDashboard() {
                     </CardContent>
                   </Card>
                 ))}
+              </div>
+            )}
+
+            {/* Server-Side Pagination Bar for Allocations Tab */}
+            {pagination.total > 0 && (
+              <div className="p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-slate-200 dark:border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-sm">
+                <div className="text-muted-foreground">
+                  Showing <span className="font-semibold text-slate-800 dark:text-zinc-200">{(pagination.page - 1) * pagination.limit + 1}</span> to{' '}
+                  <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                    {Math.min(pagination.page * pagination.limit, pagination.total)}
+                  </span>{' '}
+                  of <span className="font-semibold text-slate-800 dark:text-zinc-200">{pagination.total}</span> requirements
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!pagination.hasPrevPage || loading || refreshing}
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Prev
+                  </Button>
+                  <span className="px-2 font-mono text-[11px] font-bold text-slate-700 dark:text-zinc-300">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!pagination.hasNextPage || loading || refreshing}
+                    onClick={() => setPage((prev) => prev + 1)}
+                    className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                  >
+                    Next
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
               </div>
             )}
           </motion.div>

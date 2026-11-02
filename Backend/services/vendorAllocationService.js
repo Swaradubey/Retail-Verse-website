@@ -4,6 +4,7 @@ const Vendor = require('../models/Vendor');
 const User = require('../models/User');
 const VendorAllocation = require('../models/VendorAllocation');
 const { getFullImageUrl } = require('../utils/formatInventoryProduct');
+const vendorAllocationCache = require('../utils/vendorAllocationCache');
 
 function normalizeAllocatedProduct(productDoc) {
   if (!productDoc || typeof productDoc !== 'object') return productDoc;
@@ -196,6 +197,7 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
   }
 
   const createdAllocations = await VendorAllocation.insertMany(documentsToInsert);
+  vendorAllocationCache.invalidate();
 
   // Return populated documents using lean queries
   const populated = await VendorAllocation.find({
@@ -210,16 +212,155 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
 }
 
 /**
- * Retrieves allocations for Admin view with read-receipt and delivery metrics
+ * Resolves candidate ObjectIds associated with a vendor user (User._id, Vendor._id, Employee._id, linked IDs)
  */
-async function getAdminAllocations({ clientId = null, status = null, productId = null, isSeen = null }) {
+async function resolveVendorCandidateIds(vendorUserId, userEmail = '') {
+  const userOid = new mongoose.Types.ObjectId(String(vendorUserId));
+  const candidateIds = [userOid];
+
+  const linkedVendor = await Vendor.findOne({
+    $or: [
+      { userId: userOid },
+      { _id: userOid },
+      ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
+    ],
+  })
+    .select('_id userId')
+    .lean();
+
+  if (linkedVendor) {
+    if (linkedVendor._id && !candidateIds.some((id) => String(id) === String(linkedVendor._id))) {
+      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor._id)));
+    }
+    if (linkedVendor.userId && !candidateIds.some((id) => String(id) === String(linkedVendor.userId))) {
+      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor.userId)));
+    }
+  }
+
+  try {
+    const Employee = require('../models/Employee');
+    const linkedEmployee = await Employee.findOne({
+      $or: [
+        { userId: userOid },
+        { _id: userOid },
+        ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
+      ],
+    })
+      .select('_id userId')
+      .lean();
+    if (linkedEmployee) {
+      if (linkedEmployee._id && !candidateIds.some((id) => String(id) === String(linkedEmployee._id))) {
+        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee._id)));
+      }
+      if (linkedEmployee.userId && !candidateIds.some((id) => String(id) === String(linkedEmployee.userId))) {
+        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee.userId)));
+      }
+    }
+  } catch {
+    // Ignore if employee lookup is unavailable
+  }
+
+  return candidateIds;
+}
+
+/**
+ * Retrieves summary metrics for Vendor portal via a single optimized aggregation query
+ */
+async function getVendorMetrics(vendorUserId, userEmail = '') {
+  if (!vendorUserId || !mongoose.Types.ObjectId.isValid(vendorUserId)) {
+    return {
+      totalAllocations: 0,
+      totalUnits: 0,
+      pending: 0,
+      accepted: 0,
+      dispatched: 0,
+      received: 0,
+      unreadCount: 0,
+    };
+  }
+
+  const candidateIds = await resolveVendorCandidateIds(vendorUserId, userEmail);
+  const vendorMatch = {
+    $or: [
+      { vendorId: { $in: candidateIds } },
+      { vendorUserId: { $in: candidateIds } },
+    ],
+    status: { $ne: 'CANCELLED' },
+  };
+
+  const [agg] = await VendorAllocation.aggregate([
+    { $match: vendorMatch },
+    {
+      $group: {
+        _id: null,
+        totalAllocations: { $sum: 1 },
+        totalUnits: { $sum: { $ifNull: ['$allocatedQuantity', 0] } },
+        pending: {
+          $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0] },
+        },
+        accepted: {
+          $sum: { $cond: [{ $eq: ['$status', 'ACCEPTED'] }, 1, 0] },
+        },
+        dispatched: {
+          $sum: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, 1, 0] },
+        },
+        received: {
+          $sum: { $cond: [{ $eq: ['$status', 'RECEIVED'] }, 1, 0] },
+        },
+        unreadCount: {
+          $sum: { $cond: [{ $ne: ['$isSeen', true] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  return {
+    totalAllocations: agg?.totalAllocations || 0,
+    totalUnits: agg?.totalUnits || 0,
+    pending: agg?.pending || 0,
+    accepted: agg?.accepted || 0,
+    dispatched: agg?.dispatched || 0,
+    received: agg?.received || 0,
+    unreadCount: agg?.unreadCount || 0,
+  };
+}
+
+/**
+ * Retrieves allocations for Admin view with server-side pagination, search, projections, and delivery metrics
+ */
+async function getAdminAllocations({
+  clientId = null,
+  page = 1,
+  limit = 10,
+  status = null,
+  search = '',
+  productId = null,
+  isSeen = null,
+}) {
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+
+  const cacheKey = vendorAllocationCache.generateAdminKey(clientId, {
+    page: parsedPage,
+    limit: parsedLimit,
+    status,
+    search,
+    productId,
+    isSeen,
+  });
+
+  const cached = vendorAllocationCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   const query = {};
 
   if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
     query.clientId = new mongoose.Types.ObjectId(String(clientId));
   }
 
-  if (status) {
+  if (status && status !== 'ALL') {
     if (Array.isArray(status)) {
       query.status = { $in: status };
     } else {
@@ -235,67 +376,151 @@ async function getAdminAllocations({ clientId = null, status = null, productId =
     query.isSeen = isSeen === true || isSeen === 'true';
   }
 
-  const allocations = await VendorAllocation.find(query)
+  if (search && String(search).trim()) {
+    const clean = String(search).trim();
+    const regex = new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+    const [matchingProducts, matchingVendors, matchingUsers] = await Promise.all([
+      Product.find({ $or: [{ name: regex }, { sku: regex }] }).select('_id').lean(),
+      Vendor.find({ $or: [{ name: regex }, { companyName: regex }] }).select('_id').lean(),
+      User.find({ name: regex }).select('_id').lean(),
+    ]);
+
+    const pIds = matchingProducts.map((p) => p._id);
+    const vIds = [
+      ...matchingVendors.map((v) => v._id),
+      ...matchingUsers.map((u) => u._id),
+    ];
+
+    const searchOr = [];
+    if (pIds.length > 0) searchOr.push({ productId: { $in: pIds } });
+    if (vIds.length > 0) searchOr.push({ vendorId: { $in: vIds } });
+    if (mongoose.Types.ObjectId.isValid(clean)) {
+      searchOr.push({ _id: new mongoose.Types.ObjectId(clean) });
+    }
+
+    if (searchOr.length > 0) {
+      query.$and = (query.$and || []).concat([{ $or: searchOr }]);
+    } else {
+      query._id = new mongoose.Types.ObjectId('000000000000000000000000');
+    }
+  }
+
+  const skip = (parsedPage - 1) * parsedLimit;
+
+  const allocationFields =
+    'productId vendorId adminId vendorModel vendorUserId allocatedQuantity currentStockAtTrigger targetDeliveryDate status isSeen seenAt vendorNotes fulfilledQuantity stockUpdatedToInventory stockUpdatedAt dispatchedAt receivedAt clientId createdAt updatedAt';
+  const productFields =
+    'name sku category image imageUrl images price stock stockLevel lowStockAlert lowStockThreshold minStock';
+  const vendorFields = 'name companyName email phone address';
+  const adminFields = 'name email';
+
+  const metricsMatch = clientId && mongoose.Types.ObjectId.isValid(clientId)
+    ? { clientId: new mongoose.Types.ObjectId(String(clientId)) }
+    : {};
+
+  const dataPromise = VendorAllocation.find(query)
     .sort({ createdAt: -1 })
-    .populate('productId', 'name sku category image imageUrl price stock stockLevel')
-    .populate('vendorId', 'name companyName email phone address')
-    .populate('adminId', 'name email')
+    .skip(skip)
+    .limit(parsedLimit)
+    .select(allocationFields)
+    .populate('productId', productFields)
+    .populate('vendorId', vendorFields)
+    .populate('adminId', adminFields)
     .lean();
 
-  return normalizeAllocations(allocations);
+  const countPromise = VendorAllocation.countDocuments(query);
+
+  const metricsPromise = VendorAllocation.aggregate([
+    { $match: metricsMatch },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        totalUnits: { $sum: { $ifNull: ['$allocatedQuantity', 0] } },
+        inTransit: {
+          $sum: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, 1, 0] },
+        },
+        received: {
+          $sum: { $cond: [{ $eq: ['$status', 'RECEIVED'] }, 1, 0] },
+        },
+        unread: {
+          $sum: {
+            $cond: [
+              { $and: [{ $ne: ['$isSeen', true] }, { $ne: ['$status', 'RECEIVED'] }] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+
+  const [rawDocs, totalCount, metricsAggResult] = await Promise.all([
+    dataPromise,
+    countPromise,
+    metricsPromise,
+  ]);
+
+  const normalizedDocs = normalizeAllocations(rawDocs);
+  const totalPages = Math.ceil(totalCount / parsedLimit) || 1;
+  const agg = metricsAggResult && metricsAggResult[0] ? metricsAggResult[0] : null;
+  const metrics = {
+    total: agg?.total || 0,
+    totalUnits: agg?.totalUnits || 0,
+    inTransit: agg?.inTransit || 0,
+    received: agg?.received || 0,
+    unread: agg?.unread || 0,
+  };
+
+  const result = {
+    data: normalizedDocs,
+    allocations: normalizedDocs,
+    pagination: {
+      total: totalCount,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages,
+      hasNextPage: parsedPage < totalPages,
+      hasPrevPage: parsedPage > 1,
+    },
+    metrics,
+  };
+
+  vendorAllocationCache.set(cacheKey, result);
+  return result;
 }
 
 /**
- * Retrieves allocations assigned to a specific vendor user.
+ * Retrieves allocations assigned to a specific vendor user with server-side pagination, search, and metrics.
  * Seamlessly resolves both User _id and Vendor _id to guarantee all split requirements display.
  */
-async function getVendorAllocations(vendorUserId, { status = null, isSeen = null, userEmail = '' } = {}) {
+async function getVendorAllocations(
+  vendorUserId,
+  { page = 1, limit = 10, status = null, search = '', isSeen = null, userEmail = '' } = {}
+) {
   if (!vendorUserId || !mongoose.Types.ObjectId.isValid(vendorUserId)) {
     throw new Error('Valid vendorUserId is required.');
   }
 
-  const userOid = new mongoose.Types.ObjectId(String(vendorUserId));
-  const candidateIds = [userOid];
+  const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
 
-  // Also check if there is a linked Vendor profile or User
-  const linkedVendor = await Vendor.findOne({
-    $or: [
-      { userId: userOid },
-      { _id: userOid },
-      ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
-    ],
-  }).lean();
+  const cacheKey = vendorAllocationCache.generateVendorKey(vendorUserId, {
+    page: parsedPage,
+    limit: parsedLimit,
+    status,
+    search,
+    isSeen,
+  });
 
-  if (linkedVendor) {
-    if (linkedVendor._id && !candidateIds.some((id) => String(id) === String(linkedVendor._id))) {
-      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor._id)));
-    }
-    if (linkedVendor.userId && !candidateIds.some((id) => String(id) === String(linkedVendor.userId))) {
-      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor.userId)));
-    }
+  const cached = vendorAllocationCache.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  // Also check if there is a linked Employee staff record
-  try {
-    const Employee = require('../models/Employee');
-    const linkedEmployee = await Employee.findOne({
-      $or: [
-        { userId: userOid },
-        { _id: userOid },
-        ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
-      ],
-    }).lean();
-    if (linkedEmployee) {
-      if (linkedEmployee._id && !candidateIds.some((id) => String(id) === String(linkedEmployee._id))) {
-        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee._id)));
-      }
-      if (linkedEmployee.userId && !candidateIds.some((id) => String(id) === String(linkedEmployee.userId))) {
-        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee.userId)));
-      }
-    }
-  } catch {
-    // Ignore if employee lookup is unavailable
-  }
+  const candidateIds = await resolveVendorCandidateIds(vendorUserId, userEmail);
 
   const query = {
     $or: [
@@ -316,19 +541,121 @@ async function getVendorAllocations(vendorUserId, { status = null, isSeen = null
     query.isSeen = isSeen === true || isSeen === 'true';
   }
 
-  // Fast execution leveraging compound index on { vendorId: 1, status: 1 }
-  const allocations = await VendorAllocation.find(query)
+  if (search && String(search).trim()) {
+    const clean = String(search).trim();
+    const regex = new RegExp(clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const matchingProducts = await Product.find({
+      $or: [{ name: regex }, { sku: regex }],
+    })
+      .select('_id')
+      .lean();
+
+    const pIds = matchingProducts.map((p) => p._id);
+    const searchOr = [];
+    if (pIds.length > 0) searchOr.push({ productId: { $in: pIds } });
+    if (mongoose.Types.ObjectId.isValid(clean)) {
+      searchOr.push({ _id: new mongoose.Types.ObjectId(clean) });
+    }
+
+    if (searchOr.length > 0) {
+      query.$and = (query.$and || []).concat([{ $or: searchOr }]);
+    } else {
+      query._id = new mongoose.Types.ObjectId('000000000000000000000000');
+    }
+  }
+
+  const skip = (parsedPage - 1) * parsedLimit;
+
+  const allocationFields =
+    'productId vendorId adminId vendorModel vendorUserId allocatedQuantity currentStockAtTrigger targetDeliveryDate status isSeen seenAt vendorNotes fulfilledQuantity stockUpdatedToInventory stockUpdatedAt dispatchedAt receivedAt clientId createdAt updatedAt';
+  const productFields =
+    'name sku category image imageUrl images price currentStock stock stockLevel lowStockAlert lowStockThreshold minStock';
+  const vendorFields = 'name companyName email phone address';
+  const adminFields = 'name email';
+
+  const vendorMetricsMatch = {
+    $or: [
+      { vendorId: { $in: candidateIds } },
+      { vendorUserId: { $in: candidateIds } },
+    ],
+    status: { $ne: 'CANCELLED' },
+  };
+
+  // Fast execution leveraging compound indexes on { vendorId: 1, createdAt: -1 } and { vendorUserId: 1, createdAt: -1 }
+  const dataPromise = VendorAllocation.find(query)
     .sort({ createdAt: -1 })
-    .populate(
-      'productId',
-      'name sku image imageUrl images price category currentStock stock stockLevel lowStockAlert lowStockThreshold minStock'
-    )
-    .populate('vendorId', 'name companyName email phone address')
-    .populate('adminId', 'name email')
+    .skip(skip)
+    .limit(parsedLimit)
+    .select(allocationFields)
+    .populate('productId', productFields)
+    .populate('vendorId', vendorFields)
+    .populate('adminId', adminFields)
     .lean();
 
-  // Normalize product properties and image URLs
-  return normalizeAllocations(allocations);
+  const countPromise = VendorAllocation.countDocuments(query);
+
+  const metricsPromise = VendorAllocation.aggregate([
+    { $match: vendorMetricsMatch },
+    {
+      $group: {
+        _id: null,
+        totalAllocations: { $sum: 1 },
+        totalUnits: { $sum: { $ifNull: ['$allocatedQuantity', 0] } },
+        pending: {
+          $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0] },
+        },
+        accepted: {
+          $sum: { $cond: [{ $eq: ['$status', 'ACCEPTED'] }, 1, 0] },
+        },
+        dispatched: {
+          $sum: { $cond: [{ $eq: ['$status', 'DISPATCHED'] }, 1, 0] },
+        },
+        received: {
+          $sum: { $cond: [{ $eq: ['$status', 'RECEIVED'] }, 1, 0] },
+        },
+        unreadCount: {
+          $sum: { $cond: [{ $ne: ['$isSeen', true] }, 1, 0] },
+        },
+      },
+    },
+  ]);
+
+  const [rawDocs, totalCount, metricsAggResult] = await Promise.all([
+    dataPromise,
+    countPromise,
+    metricsPromise,
+  ]);
+
+  const normalizedDocs = normalizeAllocations(rawDocs);
+  const totalPages = Math.ceil(totalCount / parsedLimit) || 1;
+  const agg = metricsAggResult && metricsAggResult[0] ? metricsAggResult[0] : null;
+  const metrics = {
+    totalAllocations: agg?.totalAllocations || 0,
+    totalUnits: agg?.totalUnits || 0,
+    pending: agg?.pending || 0,
+    accepted: agg?.accepted || 0,
+    dispatched: agg?.dispatched || 0,
+    received: agg?.received || 0,
+    unreadCount: agg?.unreadCount || 0,
+  };
+
+  const result = {
+    data: normalizedDocs,
+    allocations: normalizedDocs,
+    pagination: {
+      total: totalCount,
+      page: parsedPage,
+      limit: parsedLimit,
+      totalPages,
+      hasNextPage: parsedPage < totalPages,
+      hasPrevPage: parsedPage > 1,
+    },
+    metrics,
+    stats: metrics,
+  };
+
+  vendorAllocationCache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -357,6 +684,7 @@ async function markAllocationAsSeen(allocationId) {
     .populate('vendorId', 'name companyName email phone address')
     .lean();
 
+  vendorAllocationCache.invalidate();
   return normalizeAllocation(updated);
 }
 
@@ -399,6 +727,7 @@ async function updateVendorStatus(allocationId, { status, vendorNotes = '' }) {
     .populate('vendorId', 'name companyName email phone address')
     .lean();
 
+  vendorAllocationCache.invalidate();
   return updated;
 }
 
@@ -466,6 +795,8 @@ async function receiveAllocation(allocationId, adminId) {
     .populate('adminId', 'name email')
     .lean();
 
+  vendorAllocationCache.invalidate();
+
   return {
     allocation: normalizeAllocation(populatedAllocation),
     product: normalizeAllocatedProduct(updatedProduct),
@@ -491,6 +822,8 @@ async function cancelAllocation(allocationId, adminId) {
 
   allocation.status = 'CANCELLED';
   await allocation.save();
+
+  vendorAllocationCache.invalidate();
 
   return normalizeAllocation(allocation);
 }
@@ -660,6 +993,8 @@ async function vendorUpdateStock({ allocationId, vendorUserId, quantity = null, 
     .populate('adminId', 'name email')
     .lean();
 
+  vendorAllocationCache.invalidate();
+
   return {
     success: true,
     allocation: normalizeAllocation(populated),
@@ -687,6 +1022,7 @@ async function deleteAllocation(allocationId) {
   }
 
   const deleted = await VendorAllocation.findByIdAndDelete(allocationId).lean();
+  vendorAllocationCache.invalidate();
   return deleted;
 }
 
@@ -695,6 +1031,7 @@ module.exports = {
   createSplitAllocation,
   getAdminAllocations,
   getVendorAllocations,
+  getVendorMetrics,
   markAllocationAsSeen,
   updateVendorStatus,
   receiveAllocation,

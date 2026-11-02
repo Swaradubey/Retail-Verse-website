@@ -17,6 +17,8 @@ import {
   Plus,
   Trash2,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -25,6 +27,8 @@ import {
   vendorAllocationsApi,
   VendorAllocationItem,
   AllocationStatus,
+  PaginationInfo,
+  AdminAllocationMetrics,
 } from '../../api/vendorAllocations';
 import { formatINR } from '../../utils/formatINR';
 import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
@@ -47,34 +51,79 @@ export function VendorAllocationsTrackerModal({
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [page, setPage] = useState<number>(1);
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
+  const [metrics, setMetrics] = useState<AdminAllocationMetrics>({
+    total: 0,
+    inTransit: 0,
+    unread: 0,
+    received: 0,
+    totalUnits: 0,
+  });
   const [receivingId, setReceivingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [allocationToDelete, setAllocationToDelete] = useState<VendorAllocationItem | null>(null);
   const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
   const [productForAllocation, setProductForAllocation] = useState<any>(null);
 
-  const fetchAllocations = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+  // Debounce search input to avoid redundant API hits while typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-    try {
-      const data = await vendorAllocationsApi.getAdminAllocations();
-      setAllocations(data);
-    } catch (err: any) {
-      console.error('Failed to fetch allocations:', err);
-      toast.error('Failed to load vendor allocations');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  // When filters or search change, reset page to 1
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery, selectedStatus]);
+
+  const fetchAllocations = useCallback(
+    async (isRefresh = false, targetPage = page) => {
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+
+      try {
+        const res = await vendorAllocationsApi.getAdminAllocations({
+          page: targetPage,
+          limit: 10,
+          status: selectedStatus !== 'ALL' ? selectedStatus : undefined,
+          search: debouncedSearchQuery.trim() || undefined,
+        });
+
+        setAllocations(res.data || res.allocations || []);
+        if (res.pagination) {
+          setPagination(res.pagination);
+        }
+        if (res.metrics) {
+          setMetrics(res.metrics);
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch allocations:', err);
+        toast.error('Failed to load vendor allocations');
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [page, selectedStatus, debouncedSearchQuery]
+  );
 
   useEffect(() => {
     if (isOpen) {
-      void fetchAllocations();
+      void fetchAllocations(false, page);
     }
-  }, [isOpen, fetchAllocations]);
+  }, [isOpen, page, selectedStatus, debouncedSearchQuery]);
 
   const handleConfirmReceipt = async (allocation: VendorAllocationItem) => {
     setReceivingId(allocation._id);
@@ -84,8 +133,8 @@ export function VendorAllocationsTrackerModal({
         `Receipt confirmed! Added ${allocation.allocatedQuantity} units of "${allocation.productId?.name}" into inventory stock (New Stock: ${res.newStock ?? 'updated'}).`
       );
 
-      // Refresh list
-      await fetchAllocations(true);
+      // Refresh list and metrics
+      await fetchAllocations(true, page);
 
       if (onStockUpdated) {
         onStockUpdated();
@@ -100,67 +149,37 @@ export function VendorAllocationsTrackerModal({
   const handleDeleteAllocation = async (allocation: VendorAllocationItem) => {
     const targetId = allocation._id;
     const previousAllocations = allocations;
+    const previousMetrics = metrics;
 
     // Optimistic UI Update: remove row from local React state immediately
     setAllocations((prev) => prev.filter((item) => item._id !== targetId));
+    setMetrics((prev) => ({
+      ...prev,
+      total: Math.max(0, prev.total - 1),
+      totalUnits: Math.max(0, prev.totalUnits - (Number(allocation.allocatedQuantity) || 0)),
+    }));
     setAllocationToDelete(null);
     setDeletingId(targetId);
 
     try {
       await vendorAllocationsApi.deleteAllocation(targetId);
       toast.success('Allocation deleted successfully');
+      await fetchAllocations(true, page);
       if (onStockUpdated) {
         onStockUpdated();
       }
     } catch (err: any) {
       // Revert with toast error if API fails
       setAllocations(previousAllocations);
+      setMetrics(previousMetrics);
       toast.error(err.message || 'Failed to delete allocation');
     } finally {
       setDeletingId(null);
     }
   };
 
-  const filteredAllocations = useMemo(() => {
-    return allocations.filter((item) => {
-      // Status filter
-      if (selectedStatus !== 'ALL' && item.status !== selectedStatus) {
-        return false;
-      }
-
-      // Search query
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const prodName = item.productId?.name?.toLowerCase() || '';
-        const prodSku = item.productId?.sku?.toLowerCase() || '';
-        const vendorName = item.vendorId?.name?.toLowerCase() || '';
-        const vendorCompany = item.vendorId?.companyName?.toLowerCase() || '';
-
-        return (
-          prodName.includes(query) ||
-          prodSku.includes(query) ||
-          vendorName.includes(query) ||
-          vendorCompany.includes(query)
-        );
-      }
-
-      return true;
-    });
-  }, [allocations, selectedStatus, searchQuery]);
-
-  // Metrics
-  const stats = useMemo(() => {
-    const total = allocations.length;
-    const inTransit = allocations.filter((a) => a.status === 'DISPATCHED').length;
-    const received = allocations.filter((a) => a.status === 'RECEIVED').length;
-    const unread = allocations.filter((a) => !a.isSeen && a.status !== 'RECEIVED').length;
-    const totalUnits = allocations.reduce(
-      (sum, a) => sum + (Number(a.allocatedQuantity) || 0),
-      0
-    );
-
-    return { total, inTransit, received, unread, totalUnits };
-  }, [allocations]);
+  const filteredAllocations = allocations;
+  const stats = metrics;
 
   const formatTimestamp = (dateStr?: string | null) => {
     if (!dateStr) return '—';
@@ -240,7 +259,7 @@ export function VendorAllocationsTrackerModal({
                   className="h-8 text-xs rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1 shadow-sm transition-all"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  + New Allocation
+                  New Allocation
                 </Button>
               </div>
             </div>
@@ -359,7 +378,7 @@ export function VendorAllocationsTrackerModal({
                       className="mt-2 h-8 text-xs rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-1 shadow-sm"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      + New Allocation
+                      New Allocation
                     </Button>
                   )}
                 </div>
@@ -547,6 +566,45 @@ export function VendorAllocationsTrackerModal({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Server-Side Pagination Bar */}
+                {pagination.total > 0 && (
+                  <div className="px-5 py-3 border-t border-slate-100 dark:border-zinc-800 bg-slate-50/50 dark:bg-zinc-900/40 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    <div className="text-muted-foreground">
+                      Showing <span className="font-semibold text-slate-800 dark:text-zinc-200">{(pagination.page - 1) * pagination.limit + 1}</span> to{' '}
+                      <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                        {Math.min(pagination.page * pagination.limit, pagination.total)}
+                      </span>{' '}
+                      of <span className="font-semibold text-slate-800 dark:text-zinc-200">{pagination.total}</span> allocations
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!pagination.hasPrevPage || loading || refreshing}
+                        onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                        className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Prev
+                      </Button>
+                      <span className="px-2 font-mono text-[11px] font-bold text-slate-700 dark:text-zinc-300">
+                        Page {pagination.page} of {pagination.totalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!pagination.hasNextPage || loading || refreshing}
+                        onClick={() => setPage((prev) => prev + 1)}
+                        className="h-8 px-2.5 rounded-xl text-xs gap-1 border-slate-200 dark:border-zinc-800"
+                      >
+                        Next
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -63,6 +63,43 @@ export interface VendorAllocationItem {
   updatedAt: string;
 }
 
+export interface PaginationInfo {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface AdminAllocationMetrics {
+  total: number;
+  inTransit: number;
+  unread: number;
+  received: number;
+  totalUnits: number;
+}
+
+export interface AdminAllocationsResponse {
+  success: boolean;
+  data: VendorAllocationItem[];
+  allocations: VendorAllocationItem[];
+  count: number;
+  pagination: PaginationInfo;
+  metrics: AdminAllocationMetrics;
+}
+
+export interface VendorAllocationsResponse {
+  success: boolean;
+  data: VendorAllocationItem[];
+  allocations: VendorAllocationItem[];
+  vendor: VendorItem | null;
+  count: number;
+  pagination: PaginationInfo;
+  metrics: VendorStats;
+  stats: VendorStats;
+}
+
 export interface SplitAllocationPayload {
   productId: string;
   allocations: Array<{
@@ -114,6 +151,77 @@ function extractAllocationList(res: any): VendorAllocationItem[] {
   return [];
 }
 
+function extractPagination(res: any, defaultLimit = 10): PaginationInfo {
+  const p = res?.pagination || res?.data?.pagination;
+  const list = extractAllocationList(res);
+  const total =
+    typeof p?.total === 'number'
+      ? p.total
+      : typeof res?.count === 'number'
+      ? res.count
+      : list.length;
+  const page = typeof p?.page === 'number' ? p.page : 1;
+  const limit = typeof p?.limit === 'number' ? p.limit : defaultLimit;
+  const totalPages =
+    typeof p?.totalPages === 'number' ? p.totalPages : Math.ceil(total / limit) || 1;
+  return {
+    total,
+    page,
+    limit,
+    totalPages,
+    hasNextPage: p?.hasNextPage !== undefined ? p.hasNextPage : page < totalPages,
+    hasPrevPage: p?.hasPrevPage !== undefined ? p.hasPrevPage : page > 1,
+  };
+}
+
+function extractAdminMetrics(res: any): AdminAllocationMetrics {
+  const m = res?.metrics || res?.data?.metrics;
+  if (m) {
+    return {
+      total: Number(m.total) || 0,
+      inTransit: Number(m.inTransit) || 0,
+      unread: Number(m.unread) || 0,
+      received: Number(m.received) || 0,
+      totalUnits: Number(m.totalUnits) || 0,
+    };
+  }
+  const list = extractAllocationList(res);
+  return {
+    total: list.length,
+    inTransit: list.filter((a) => a.status === 'DISPATCHED').length,
+    unread: list.filter((a) => !a.isSeen && a.status !== 'RECEIVED').length,
+    received: list.filter((a) => a.status === 'RECEIVED').length,
+    totalUnits: list.reduce((sum, a) => sum + (Number(a.allocatedQuantity) || 0), 0),
+  };
+}
+
+function extractVendorMetrics(res: any): VendorStats {
+  const m = res?.metrics || res?.stats || res?.data?.metrics || res?.data?.stats;
+  if (m) {
+    return {
+      totalAllocations: Number(m.totalAllocations) || 0,
+      totalUnits: Number(m.totalUnits) || 0,
+      pending: Number(m.pending) || 0,
+      accepted: Number(m.accepted) || 0,
+      dispatched: Number(m.dispatched) || 0,
+      received: Number(m.received) || 0,
+      seenCount: Number(m.seenCount) || 0,
+      unseenCount: Number(m.unseenCount ?? m.unreadCount) || 0,
+    };
+  }
+  const list = extractAllocationList(res);
+  return {
+    totalAllocations: list.length,
+    totalUnits: list.reduce((sum, a) => sum + (Number(a.allocatedQuantity) || 0), 0),
+    pending: list.filter((a) => a.status === 'PENDING').length,
+    accepted: list.filter((a) => a.status === 'ACCEPTED').length,
+    dispatched: list.filter((a) => a.status === 'DISPATCHED').length,
+    received: list.filter((a) => a.status === 'RECEIVED').length,
+    seenCount: list.filter((a) => a.isSeen).length,
+    unseenCount: list.filter((a) => !a.isSeen).length,
+  };
+}
+
 export const vendorAllocationsApi = {
   /** Fetch active vendors from /admin/vendors or vendor endpoints */
   async getVendors(): Promise<VendorItem[]> {
@@ -162,21 +270,38 @@ export const vendorAllocationsApi = {
     return res.data?.allocations || [];
   },
 
-  /** Admin gets all allocations with read-receipt and progress information */
+  /** Admin gets allocations with server-side pagination, search, read-receipt, and delivery metrics */
   async getAdminAllocations(params?: {
+    page?: number;
+    limit?: number;
     status?: string;
+    search?: string;
     productId?: string;
     isSeen?: boolean;
-  }): Promise<VendorAllocationItem[]> {
+  }): Promise<AdminAllocationsResponse> {
     const query = new URLSearchParams();
-    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search.trim());
     if (params?.productId) query.set('productId', params.productId);
     if (params?.isSeen !== undefined) query.set('isSeen', String(params.isSeen));
 
     const qs = query.toString();
     const endpoint = `/vendor-allocations/admin${qs ? `?${qs}` : ''}`;
     const res = await ApiService.get<any>(endpoint);
-    return extractAllocationList(res);
+    const list = extractAllocationList(res);
+    const pagination = extractPagination(res, params?.limit || 10);
+    const metrics = extractAdminMetrics(res);
+
+    return {
+      success: true,
+      data: list,
+      allocations: list,
+      count: pagination.total,
+      pagination,
+      metrics,
+    };
   },
 
   /** Low stock items requiring restock & pending allocation prompt */
@@ -188,40 +313,49 @@ export const vendorAllocationsApi = {
     return (raw as LowStockSummaryItem[]) || [];
   },
 
-  /** Vendor views their allocated requirements */
+  /** Vendor views their allocated requirements with server-side pagination (limit=10) and metrics */
   async getVendorAllocations(params?: {
     vendorId?: string;
+    page?: number;
+    limit?: number;
     status?: string;
+    search?: string;
     isSeen?: boolean;
-  }): Promise<{ allocations: VendorAllocationItem[]; vendor: VendorItem | null }> {
+  }): Promise<VendorAllocationsResponse> {
     const query = new URLSearchParams();
     if (params?.vendorId) query.set('vendorId', params.vendorId);
-    if (params?.status) query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search.trim());
     if (params?.isSeen !== undefined) query.set('isSeen', String(params.isSeen));
 
     const qs = query.toString();
     const endpoint = `/vendor/allocations${qs ? `?${qs}` : ''}`;
+    let rawRes: any;
     try {
-      const res = await ApiService.get<any>(endpoint);
-      const rawList = extractAllocationList(res);
-      const vendorObj = res?.vendor || res?.data?.vendor || null;
-
-      return {
-        allocations: rawList,
-        vendor: vendorObj,
-      };
+      rawRes = await ApiService.get<any>(endpoint);
     } catch {
       // Fallback to /vendor-allocations/vendor if needed
       const fallbackEndpoint = `/vendor-allocations/vendor${qs ? `?${qs}` : ''}`;
-      const resFallback = await ApiService.get<any>(fallbackEndpoint);
-      const rawList = extractAllocationList(resFallback);
-      const vendorObj = resFallback?.vendor || resFallback?.data?.vendor || null;
-
-      return {
-        allocations: rawList,
-        vendor: vendorObj,
-      };
+      rawRes = await ApiService.get<any>(fallbackEndpoint);
     }
+
+    const list = extractAllocationList(rawRes);
+    const vendorObj = rawRes?.vendor || rawRes?.data?.vendor || null;
+    const pagination = extractPagination(rawRes, params?.limit || 10);
+    const metrics = extractVendorMetrics(rawRes);
+
+    return {
+      success: true,
+      data: list,
+      allocations: list,
+      vendor: vendorObj,
+      count: pagination.total,
+      pagination,
+      metrics,
+      stats: metrics,
+    };
   },
 
   /** Vendor opens/views requirement - updates read-receipt (Seen feature) */

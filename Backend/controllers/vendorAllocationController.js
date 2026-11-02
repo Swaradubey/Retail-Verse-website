@@ -281,25 +281,30 @@ exports.createSplitAllocation = async (req, res) => {
 
 /**
  * GET /api/vendor-allocations/admin
- * Admin fetches all vendor allocations with read-receipt and progress badges
+ * Admin fetches vendor allocations with server-side pagination, search, metrics and read-receipt
  */
 exports.getAdminAllocations = async (req, res) => {
   try {
     const clientId = await resolveClientId(req);
-    const { status, productId, isSeen } = req.query;
+    const { page, limit, status, search, productId, isSeen } = req.query;
 
-    const allocations = await vendorAllocationService.getAdminAllocations({
+    const result = await vendorAllocationService.getAdminAllocations({
       clientId,
+      page,
+      limit,
       status,
+      search,
       productId,
       isSeen,
     });
 
     res.json({
       success: true,
-      allocations,
-      count: allocations.length,
-      data: allocations,
+      data: result.data,
+      allocations: result.allocations,
+      count: result.pagination.total,
+      pagination: result.pagination,
+      metrics: result.metrics,
     });
   } catch (error) {
     console.error('[vendorAllocationController] getAdminAllocations error:', error.message);
@@ -331,7 +336,7 @@ exports.getLowStockSummary = async (req, res) => {
 /**
  * GET /api/vendor/allocations & /api/vendor/requirements & /api/vendor-allocations/vendor
  * Fetches allocations directly assigned to this logged-in vendor user.
- * Seamlessly matches req.user._id, linked vendor profile ID, or vendorUserId.
+ * Supports server-side pagination (limit=10), search, status filters, and metrics aggregation.
  */
 exports.getVendorAllocations = async (req, res) => {
   try {
@@ -344,21 +349,32 @@ exports.getVendorAllocations = async (req, res) => {
       targetId = req.query.vendorId;
     }
 
-    const { status, isSeen } = req.query;
-    const allocations = await vendorAllocationService.getVendorAllocations(targetId, {
-      status,
-      isSeen,
-      userEmail: req.user.email,
-    });
+    const { page, limit, status, search, isSeen } = req.query;
 
-    const vendor = await resolveVendorForUser(req.user, req.query.vendorId);
+    const [result, vendor] = await Promise.all([
+      vendorAllocationService.getVendorAllocations(targetId, {
+        page,
+        limit,
+        status,
+        search,
+        isSeen,
+        userEmail: req.user.email,
+      }),
+      resolveVendorForUser(req.user, req.query.vendorId),
+    ]);
+
+    const resolvedVendor =
+      vendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role };
 
     res.json({
       success: true,
-      vendor: vendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role },
-      allocations,
-      count: allocations.length,
-      data: allocations, // Supports both res.allocations and res.data
+      vendor: resolvedVendor,
+      data: result.data,
+      allocations: result.allocations,
+      count: result.pagination.total,
+      pagination: result.pagination,
+      metrics: result.metrics,
+      stats: result.metrics,
     });
   } catch (error) {
     console.error('[vendorAllocationController] getVendorAllocations error:', error.message);
@@ -535,7 +551,7 @@ exports.cancelAllocation = async (req, res) => {
 
 /**
  * GET /api/vendor-allocations/vendor/stats & /api/vendor/stats
- * Vendor portal KPI metrics
+ * Vendor portal lightweight KPI metrics (aggregation-powered, sub-millisecond)
  */
 exports.getVendorStats = async (req, res) => {
   try {
@@ -547,28 +563,17 @@ exports.getVendorStats = async (req, res) => {
       targetId = req.query.vendorId;
     }
 
-    const allocations = await vendorAllocationService.getVendorAllocations(targetId, {
-      userEmail: req.user.email,
-    });
-
-    const vendor = await resolveVendorForUser(req.user, req.query.vendorId);
-
-    const stats = {
-      totalAllocations: allocations.length,
-      pending: allocations.filter((a) => a.status === 'PENDING').length,
-      accepted: allocations.filter((a) => a.status === 'ACCEPTED').length,
-      dispatched: allocations.filter((a) => a.status === 'DISPATCHED').length,
-      received: allocations.filter((a) => a.status === 'RECEIVED').length,
-      totalUnitsAllocated: allocations.reduce((sum, a) => sum + (Number(a.allocatedQuantity) || 0), 0),
-      seenCount: allocations.filter((a) => a.isSeen).length,
-      unseenCount: allocations.filter((a) => !a.isSeen).length,
-    };
+    const [stats, vendor] = await Promise.all([
+      vendorAllocationService.getVendorMetrics(targetId, req.user.email),
+      resolveVendorForUser(req.user, req.query.vendorId),
+    ]);
 
     res.json({
       success: true,
       vendor: vendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role },
       stats,
       data: stats,
+      metrics: stats,
     });
   } catch (error) {
     console.error('[vendorAllocationController] getVendorStats error:', error.message);
