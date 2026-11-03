@@ -999,6 +999,9 @@ export function Pos() {
 
     // Refresh products to show updated stock immediately
     void fetchProducts();
+    window.dispatchEvent(new CustomEvent('pos-order-created', { detail: order }));
+    window.dispatchEvent(new CustomEvent('invoice-created', { detail: order }));
+    window.dispatchEvent(new CustomEvent('order-created', { detail: order }));
 
     if (isOffline) {
       // For offline orders, we don't have a backend invoice yet.

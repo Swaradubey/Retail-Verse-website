@@ -22,9 +22,9 @@ export function Layout() {
     SHOW_COMING_SOON && (pathname === "/" || comingSoonAllowedPathPrefixes.some(p => pathname.startsWith(p)));
 
   return (
-    <div className={`flex flex-col min-h-screen ${hasSidebar ? 'h-screen overflow-hidden' : ''}`}>
+    <div className={`flex flex-col min-h-screen min-h-[100dvh] ${hasSidebar ? 'h-[100dvh] md:h-screen md:overflow-hidden overflow-x-hidden' : ''}`}>
       <ThemeHeader />
-      <div className={`relative flex-1 flex flex-col ${hasSidebar ? 'min-h-0 overflow-hidden' : ''}`}>
+      <div className={`relative flex-1 flex flex-col min-h-0 ${hasSidebar ? 'md:overflow-hidden overflow-x-hidden' : ''}`}>
         {shouldShowComingSoon && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
             <div className="text-center text-white px-4">
@@ -34,10 +34,10 @@ export function Layout() {
           </div>
         )}
         <div
-          className={`flex-1 flex flex-col ${hasSidebar ? 'min-h-0 overflow-hidden' : ''} ${shouldShowComingSoon ? 'pointer-events-none select-none' : ''}`}
+          className={`flex-1 flex flex-col min-h-0 ${hasSidebar ? 'md:overflow-hidden overflow-x-hidden' : ''} ${shouldShowComingSoon ? 'pointer-events-none select-none' : ''}`}
           style={shouldShowComingSoon ? { filter: 'blur(8px)', WebkitFilter: 'blur(8px)' } : {}}
         >
-          <main className={`flex-1 ${hasSidebar ? 'min-h-0 overflow-hidden' : ''}`}>
+          <main className={`flex-1 flex flex-col min-h-0 ${hasSidebar ? 'md:overflow-hidden overflow-x-hidden' : ''}`}>
             <Outlet />
           </main>
           {!hasSidebar && <ThemeFooter />}

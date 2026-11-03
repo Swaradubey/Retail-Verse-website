@@ -3,6 +3,8 @@ import { Heart, LogOut, Store, Package, ShoppingCart, Truck, LayoutDashboard, Mi
 import { useAuth } from '../context/AuthContext';
 import { isInventoryManagerRole, isCustomerAccountRole } from '../utils/staffRoles';
 import { Footer } from '../components/Footer';
+import { useTheme } from '../context/ThemeContext';
+import { getThemeFooter } from '../themes/themeRegistry';
 import {
   Sidebar,
   SidebarContent,
@@ -31,8 +33,11 @@ const accountNav = [
 
 export function Account() {
   const { user, logout } = useAuth();
+  const { themeKey } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const ThemeFooter = getThemeFooter(themeKey) || Footer;
 
   const handleLogout = () => {
     logout();
@@ -142,7 +147,7 @@ export function Account() {
           <SidebarRail />
         </Sidebar>
 
-        <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-white dark:bg-[#09090b]">
+        <SidebarInset className="flex flex-col flex-1 min-h-0 md:overflow-hidden overflow-x-hidden bg-white dark:bg-[#09090b]">
           <header className="h-14 border-b border-gray-100 dark:border-white/10 flex items-center px-6 gap-4 justify-between bg-white/80 dark:bg-black/40 backdrop-blur-sm">
             <div className="flex items-center gap-3">
               <SidebarTrigger />
@@ -151,15 +156,21 @@ export function Account() {
               </p>
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <main
+            className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pb-28 sm:pb-28 md:pb-8 touch-pan-y"
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-y',
+            }}
+          >
             <div className="max-w-[1000px] mx-auto">
               {location.pathname !== '/account/track' && (
                 <h1 className="text-2xl font-extrabold tracking-tight mb-6">{pageTitle}</h1>
               )}
               <Outlet />
             </div>
-            <div className="max-w-[1000px] mx-auto mt-8">
-              <Footer />
+            <div className="max-w-[1000px] mx-auto mt-8 rounded-2xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm">
+              <ThemeFooter />
             </div>
           </main>
         </SidebarInset>

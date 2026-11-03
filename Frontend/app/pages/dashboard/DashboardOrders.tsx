@@ -17,6 +17,8 @@ import {
   Phone,
   Package,
   Trash2,
+  AlertTriangle,
+  RefreshCcw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -86,6 +88,8 @@ export function DashboardOrders() {
   const [viewOrder, setViewOrder] = useState<any | null>(null);
   const [trackingSubmitting, setTrackingSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchOrders = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) {
@@ -134,6 +138,22 @@ export function DashboardOrders() {
     // If cached orders exist, fetch silently in background (Stale-While-Revalidate)
     const hasData = (orders && orders.length > 0) || !!initialCache?.data;
     void fetchOrders({ silent: hasData });
+  }, [fetchOrders]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      void fetchOrders({ silent: true });
+    };
+    window.addEventListener('pos-order-created', handleSync);
+    window.addEventListener('order-created', handleSync);
+    window.addEventListener('order-deleted', handleSync);
+    window.addEventListener('invoice-deleted', handleSync);
+    return () => {
+      window.removeEventListener('pos-order-created', handleSync);
+      window.removeEventListener('order-created', handleSync);
+      window.removeEventListener('order-deleted', handleSync);
+      window.removeEventListener('invoice-deleted', handleSync);
+    };
   }, [fetchOrders]);
 
   const filteredOrders = useMemo(() => {
@@ -214,11 +234,56 @@ export function DashboardOrders() {
           }
           return updated;
         });
-        // Notify Dashboard to refetch analytics so revenue/stats update immediately
-        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId } }));
+        // Notify Dashboard and Invoices to refetch analytics so revenue/stats update immediately
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId, id: idToDelete } }));
+        window.dispatchEvent(new CustomEvent('invoice-deleted', { detail: { orderId, id: idToDelete } }));
+        void fetchOrders({ silent: true });
       }
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Delete failed');
+    }
+  };
+
+  const handleConfirmDeleteOrder = async () => {
+    if (!viewOrder) return;
+    const orderId = viewOrder.orderId;
+    const idToDelete = viewOrder._id || orderId;
+
+    setIsDeleting(true);
+    try {
+      const res = await deleteOrder(idToDelete);
+      if (res.success) {
+        toast.success(res.message || 'Order deleted successfully');
+        setIsDeleteDialogOpen(false);
+        setViewOrder(null);
+
+        // Update local orders state
+        setOrders((prev) => {
+          const updated = prev.filter((o) => o.orderId !== orderId && o._id !== idToDelete);
+          try {
+            sessionStorage.setItem(
+              ordersStorageKey,
+              JSON.stringify({ data: updated, stats: backendStats })
+            );
+          } catch {
+            // ignore
+          }
+          return updated;
+        });
+
+        // Broadcast events to update Quotes & Invoices, Dashboard Analytics, etc.
+        window.dispatchEvent(new CustomEvent('order-deleted', { detail: { orderId, id: idToDelete } }));
+        window.dispatchEvent(new CustomEvent('invoice-deleted', { detail: { orderId, id: idToDelete } }));
+
+        // Refetch orders list & summary metrics
+        void fetchOrders({ silent: true });
+      } else {
+        toast.error(res.message || 'Failed to delete order');
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -863,22 +928,136 @@ export function DashboardOrders() {
             </div>
           )}
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setViewOrder(null)}>
-              Close
-            </Button>
-            {isAdmin && !isCancelledOrder(viewOrder) && !viewOrder?.isDelivered && (
-              <Button
-                type="button"
-                className="bg-blue-600 hover:bg-blue-700"
-                onClick={() => {
-                  setManageOrder(viewOrder);
-                  setViewOrder(null);
-                }}
-              >
-                Update Tracking
+          <DialogFooter className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-stone-100 dark:border-white/5">
+            <div>
+              {isAdmin && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-medium flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer shadow-sm"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete Order
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="outline" className="rounded-xl cursor-pointer" onClick={() => setViewOrder(null)}>
+                Close
               </Button>
-            )}
+              {isAdmin && !isCancelledOrder(viewOrder) && !viewOrder?.isDelivered && (
+                <Button
+                  type="button"
+                  className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                  onClick={() => {
+                    setManageOrder(viewOrder);
+                    setViewOrder(null);
+                  }}
+                >
+                  Update Tracking
+                </Button>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Order Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isDeleting && setIsDeleteDialogOpen(open)}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Delete Order
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-stone-600 dark:text-stone-300 leading-relaxed">
+              Are you sure you want to delete this order? This action cannot be undone.
+              {viewOrder && (
+                <span className="block mt-2 font-mono font-bold text-xs text-stone-900 dark:text-white bg-stone-100 dark:bg-white/10 p-2 rounded-lg">
+                  Order #{viewOrder.orderId || viewOrder._id}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 flex flex-row justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeleting}
+              className="rounded-xl cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl flex items-center gap-1.5 cursor-pointer"
+              onClick={handleConfirmDeleteOrder}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <RefreshCcw className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete Order
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Order Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={(open) => !isDeleting && setIsDeleteDialogOpen(open)}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              Delete Order
+            </DialogTitle>
+            <DialogDescription className="pt-2 text-sm text-stone-600 dark:text-stone-300 leading-relaxed">
+              Are you sure you want to delete this order? This action cannot be undone.
+              {viewOrder && (
+                <span className="block mt-2 font-mono font-bold text-xs text-stone-900 dark:text-white bg-stone-100 dark:bg-white/10 p-2 rounded-lg">
+                  Order #{viewOrder.orderId || viewOrder._id}
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4 flex flex-row justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={isDeleting}
+              className="rounded-xl cursor-pointer"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 text-white rounded-xl flex items-center gap-1.5 cursor-pointer"
+              onClick={handleConfirmDeleteOrder}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <RefreshCcw className="h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4" />
+                  Delete Order
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

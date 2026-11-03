@@ -1720,10 +1720,42 @@ const deleteOrder = async (req, res) => {
     const oid = order.orderId;
     const mongoId = order._id;
 
-    // Hard delete from MongoDB — avoids Mongoose validation errors on save()
-    await Order.deleteOne({ _id: mongoId });
+    // 1. Inventory rollback for order items if order was active
+    if (order.orderStatus !== "cancelled" && order.status !== "cancelled") {
+      for (const item of order.items || []) {
+        const pid = item.productId || item._id;
+        const qty = Number(item.quantity) || 0;
+        if (pid && qty > 0) {
+          try {
+            if (isValidObjectId(pid)) {
+              await Product.findByIdAndUpdate(String(pid), {
+                $inc: { stock: qty, stockLevel: qty, quantity: qty },
+              });
+            } else {
+              await Product.findOneAndUpdate(
+                { $or: [{ barcode: item.barcode || pid }, { sku: pid }] },
+                { $inc: { stock: qty, stockLevel: qty, quantity: qty } }
+              );
+            }
+          } catch (stkErr) {
+            console.error(`[OrderDelete] Failed to restore stock for ${pid}:`, stkErr.message);
+          }
+        }
+      }
+    }
 
-    console.log("[OrderDelete LOG]: Deleted order ID:", mongoId, "orderId:", oid);
+    const useSoftDelete = req.query.soft === "true";
+    if (useSoftDelete) {
+      await Order.updateOne(
+        { _id: mongoId },
+        { $set: { isDeleted: true, deletedAt: new Date(), status: "cancelled", orderStatus: "cancelled" } }
+      );
+    } else {
+      // Hard delete from MongoDB — avoids Mongoose validation errors on save()
+      await Order.deleteOne({ _id: mongoId });
+    }
+
+    console.log("[OrderDelete LOG]: Deleted order ID:", mongoId, "orderId:", oid, "soft:", useSoftDelete);
 
     // Clean up related tracking logs
     if (oid) {
@@ -1736,7 +1768,14 @@ const deleteOrder = async (req, res) => {
 
     // Clean up related invoice record if exists
     try {
-      await Invoice.deleteMany({ orderId: oid });
+      if (useSoftDelete) {
+        await Invoice.updateMany(
+          { $or: [{ orderId: oid }, { orderRef: mongoId }] },
+          { $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" } }
+        );
+      } else {
+        await Invoice.deleteMany({ $or: [{ orderId: oid }, { orderRef: mongoId }] });
+      }
     } catch (invErr) {
       console.error(`[OrderDelete] Failed to delete invoice for ${oid}:`, invErr.message);
     }

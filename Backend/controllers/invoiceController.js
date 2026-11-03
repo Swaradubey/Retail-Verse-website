@@ -124,6 +124,99 @@ const getInvoices = async (req, res) => {
     // Keep base scope query for tenant-wide stats (strictly exclude soft-deleted records)
     const baseScopeQuery = { ...query };
 
+    // Ensure any POS-originated orders from Order collection are properly reflected in Invoice collection
+    try {
+      const posOrderScope = {
+        isDeleted: { $ne: true },
+        status: { $nin: ["deleted", "cancelled"] },
+        $or: [
+          { orderSource: "pos" },
+          { source: "pos" },
+          { isInvoice: true },
+          { invoiceNumber: { $regex: /^INV-/i } },
+        ],
+      };
+      if (!isSuperAdmin && clientId) {
+        posOrderScope.clientId = clientId;
+      }
+      const posOrders = await Order.find(posOrderScope)
+        .select("_id orderId invoiceNumber customerName customerEmail items subtotal totalGst taxPrice grandTotal totalPrice totalAmount paymentMethod paymentStatus isPaid paidAt orderStatus clientId createdAt")
+        .lean();
+
+      if (posOrders && posOrders.length > 0) {
+        const orderIdentifiers = posOrders.map((o) => o.orderId || o.invoiceNumber).filter(Boolean);
+        const orderMongoIds = posOrders.map((o) => o._id);
+
+        const existingInvoices = await Invoice.find({
+          $or: [
+            { orderId: { $in: orderIdentifiers } },
+            { invoiceNumber: { $in: orderIdentifiers } },
+            { orderRef: { $in: orderMongoIds } },
+          ],
+        }).select("orderId invoiceNumber orderRef").lean();
+
+        const existingSet = new Set();
+        for (const inv of existingInvoices) {
+          if (inv.orderId) existingSet.add(String(inv.orderId));
+          if (inv.invoiceNumber) existingSet.add(String(inv.invoiceNumber));
+          if (inv.orderRef) existingSet.add(String(inv.orderRef));
+        }
+
+        const missing = posOrders.filter(
+          (o) =>
+            !existingSet.has(String(o.orderId)) &&
+            !existingSet.has(String(o.invoiceNumber)) &&
+            !existingSet.has(String(o._id))
+        );
+
+        if (missing.length > 0) {
+          const docs = missing.map((o) => {
+            const num = o.invoiceNumber || o.orderId || `INV-${Date.now()}`;
+            const subtotal = Number(o.subtotal) || 0;
+            const tax = Number(o.totalGst || o.taxPrice) || 0;
+            const total = Number(o.grandTotal || o.totalPrice || o.totalAmount) || (subtotal + tax);
+            const isPaid = o.isPaid || String(o.paymentStatus).toUpperCase() === "PAID";
+            return {
+              invoiceNumber: num,
+              orderId: o.orderId || num,
+              orderRef: o._id,
+              customerName: o.customerName || (o.shippingAddress && o.shippingAddress.fullName) || "Walk-in Customer",
+              customerEmail: o.customerEmail || (o.shippingAddress && o.shippingAddress.email) || "",
+              items: (o.items || []).map((i) => ({
+                name: i.name || "Item",
+                quantity: Number(i.quantity) || 1,
+                price: Number(i.price !== undefined ? i.price : i.unitPrice) || 0,
+                subtotal: (Number(i.price !== undefined ? i.price : i.unitPrice) || 0) * (Number(i.quantity) || 1),
+                gstRate: Number(i.gstRate !== undefined ? i.gstRate : i.gst) || 0,
+                gstAmount: Number(i.gstAmount !== undefined ? i.gstAmount : i.tax) || 0,
+              })),
+              subtotal,
+              tax,
+              cgst: tax / 2,
+              sgst: tax / 2,
+              discountAmount: Number(o.discountAmount) || 0,
+              couponCode: o.couponCode || "",
+              totalAmount: total,
+              paymentMethod: o.paymentMethod || "CASH",
+              paymentStatus: isPaid ? "paid" : String(o.paymentStatus || "pending").toLowerCase(),
+              paidAt: o.paidAt || (isPaid ? o.createdAt : null),
+              orderStatus: o.orderStatus || (isPaid ? "delivered" : "placed"),
+              orderSource: "pos",
+              source: "pos",
+              isInvoice: true,
+              clientId: o.clientId || null,
+              status: "active",
+              invoiceDate: o.createdAt || new Date(),
+              isDeleted: false,
+            };
+          });
+          await Invoice.insertMany(docs, { ordered: false }).catch(() => {});
+        }
+      }
+    } catch (syncErr) {
+      console.warn("[invoiceController] POS sync warning:", syncErr.message);
+    }
+
     // Dynamic search filtering (invoiceNumber, orderId, customerName, customerEmail)
     if (req.query.search && String(req.query.search).trim()) {
       const sanitized = String(req.query.search).trim().replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
@@ -162,7 +255,7 @@ const getInvoices = async (req, res) => {
     const skip = (page - 1) * limit;
 
     // Lean Projection: Essential fields for list & dialog views
-    const projection = "_id invoiceNumber orderId customerName customerEmail items subtotal tax cgst sgst discountAmount couponCode totalAmount paymentMethod paymentStatus orderStatus createdAt clientId";
+    const projection = "_id invoiceNumber orderId orderRef customerName customerEmail items subtotal tax cgst sgst discountAmount couponCode totalAmount paymentMethod paymentStatus orderStatus createdAt clientId orderSource source isInvoice";
 
     const queryChain = Invoice.find(query)
       .select(projection)
@@ -248,8 +341,8 @@ const getInvoices = async (req, res) => {
     const defaultProfile = { name: "Business Profile", tagline: "", logo: "", address: "", email: "", phone: "", taxNumber: "", website: "" };
 
     const invoices = rawInvoices.map((inv) => {
-      const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId);
-      if (isPos) {
+      const isPos = /^POS-/i.test(inv.orderId) || /^ORD-POS-/i.test(inv.orderId) || /^INV-/i.test(inv.orderId) || inv.orderSource === "pos" || inv.source === "pos";
+      if (isPos && (!inv.paymentStatus || inv.paymentStatus === "completed" || String(inv.paymentStatus).toLowerCase() === "paid")) {
         inv.paymentStatus = "paid";
       }
       inv.business = (inv.clientId && profileMap.get(String(inv.clientId))) || defaultProfile;
@@ -781,6 +874,33 @@ const deleteInvoice = async (req, res) => {
       }
 
       const orderIdString = invoice.orderId;
+
+      // Inventory rollback for related order items if deleting active order
+      try {
+        const Product = require("../models/Product");
+        const orderToRollback = await Order.findOne({ $or: [{ orderId: orderIdString }, { _id: invoice.orderRef }] });
+        if (orderToRollback && orderToRollback.orderStatus !== "cancelled" && orderToRollback.status !== "cancelled") {
+          for (const item of orderToRollback.items || []) {
+            const pid = item.productId || item._id;
+            const qty = Number(item.quantity) || 0;
+            if (pid && qty > 0) {
+              if (isValidObjectId(pid)) {
+                await Product.findByIdAndUpdate(String(pid), {
+                  $inc: { stock: qty, stockLevel: qty, quantity: qty },
+                });
+              } else {
+                await Product.findOneAndUpdate(
+                  { $or: [{ barcode: item.barcode || pid }, { sku: pid }] },
+                  { $inc: { stock: qty, stockLevel: qty, quantity: qty } }
+                );
+              }
+            }
+          }
+        }
+      } catch (stkErr) {
+        console.warn("[deleteInvoice] Stock rollback warning:", stkErr.message);
+      }
+
       if (useSoftDelete) {
         await Invoice.findByIdAndUpdate(id, {
           $set: { isDeleted: true, deletedAt: new Date(), status: "deleted" },
@@ -815,6 +935,31 @@ const deleteInvoice = async (req, res) => {
         if (!userClientId || !orderClientId || userClientId !== orderClientId) {
           return res.status(403).json({ success: false, message: "Access denied. You can only delete your own invoices." });
         }
+      }
+
+      // Inventory rollback for order items if order was active
+      try {
+        const Product = require("../models/Product");
+        if (order.orderStatus !== "cancelled" && order.status !== "cancelled") {
+          for (const item of order.items || []) {
+            const pid = item.productId || item._id;
+            const qty = Number(item.quantity) || 0;
+            if (pid && qty > 0) {
+              if (isValidObjectId(pid)) {
+                await Product.findByIdAndUpdate(String(pid), {
+                  $inc: { stock: qty, stockLevel: qty, quantity: qty },
+                });
+              } else {
+                await Product.findOneAndUpdate(
+                  { $or: [{ barcode: item.barcode || pid }, { sku: pid }] },
+                  { $inc: { stock: qty, stockLevel: qty, quantity: qty } }
+                );
+              }
+            }
+          }
+        }
+      } catch (stkErr) {
+        console.warn("[deleteInvoice] Stock rollback warning for derived order:", stkErr.message);
       }
 
       if (useSoftDelete) {

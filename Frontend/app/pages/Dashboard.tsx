@@ -58,6 +58,7 @@ import { DashboardStats } from '../components/DashboardStats';
 import { DashboardQuickActions } from '../components/DashboardQuickActions';
 import { DashboardNavbar } from '../components/DashboardNavbar';
 import { Footer } from '../components/Footer';
+import { getThemeFooter } from '../themes/themeRegistry';
 import { DashboardSkeleton } from '../components/DashboardSkeleton';
 import { canAccessInventoryEditor } from '../utils/inventoryPermissions';
 import {
@@ -523,14 +524,15 @@ export function Dashboard() {
   }
 
   const { themeKey } = useTheme();
+  const ThemeFooter = getThemeFooter(themeKey) || Footer;
 
   return (
     <SidebarProvider>
       <div
-        className={`client-dashboard theme-${themeKey} flex flex-col min-h-0 flex-1 md:h-[calc(100vh-var(--top-nav-height,148px))] md:max-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
+        className={`client-dashboard theme-${themeKey} flex flex-col min-h-0 flex-1 h-full md:h-[calc(100vh-var(--top-nav-height,148px))] md:max-h-[calc(100vh-var(--top-nav-height,148px))] w-full md:overflow-hidden overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
       >
         <ImpersonationBanner />
-        <div className="flex min-h-0 flex-1 w-full overflow-hidden">
+        <div className="flex min-h-0 flex-1 w-full md:overflow-hidden overflow-x-hidden">
           {/* Sidebar */}
           <Sidebar
             collapsible="icon"
@@ -665,18 +667,22 @@ export function Dashboard() {
           </Sidebar>
 
           {/* Main Content Area */}
-          <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-[#F8FAFC] text-[#0B1F3A]">
+          <SidebarInset className="flex flex-col flex-1 min-h-0 md:overflow-hidden overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]">
             <DashboardNavbar premiumOverview={isOverview} items={mainSidebarItems} />
 
             <main
               className={
                 isOverview
-                  ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 custom-scrollbar dashboard-overview-fade bg-[#F8FAFC] text-[#0B1F3A]'
+                  ? 'flex-1 overflow-y-auto overflow-x-hidden p-5 sm:p-7 lg:p-10 pb-28 sm:pb-28 md:pb-10 custom-scrollbar dashboard-overview-fade bg-[#F8FAFC] text-[#0B1F3A] touch-pan-y'
                   : location.pathname.startsWith('/dashboard/products') || location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders')
-                    ? 'flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
-                    : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A]'
+                    ? 'flex-1 overflow-y-auto overflow-x-hidden pb-28 sm:pb-28 md:pb-6 custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A] touch-pan-y'
+                    : 'flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8 pb-28 sm:pb-28 md:pb-8 custom-scrollbar bg-[#F8FAFC] text-[#0B1F3A] touch-pan-y'
               }
-              style={{ fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}
+              style={{
+                fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif",
+                WebkitOverflowScrolling: 'touch',
+                touchAction: 'pan-y',
+              }}
             >
               <div className={`w-full max-w-[1600px] mx-auto min-w-0 ${location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders') ? '' : 'space-y-8 sm:space-y-10'}`}>
                 {/* Welcome Section */}
@@ -705,27 +711,6 @@ export function Dashboard() {
                           : `Manage your ${location.pathname.split('/').pop()?.replace('-', ' ')} and view detailed insights.`}
                       </p>
                     </div>
-
-                    {location.pathname === '/dashboard' && !location.pathname.includes('inventory') && (
-                      <div className="flex items-center gap-3">
-                        <div className="flex -space-x-2">
-                          {[1, 2, 3, 4].map(i => (
-                            <div
-                              key={i}
-                              className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#F8FAFC] overflow-hidden shadow-md"
-                            >
-                              <img src={`https://i.pravatar.cc/150?u=${i + 10}`} alt="user" className="w-full h-full object-cover" />
-                            </div>
-                          ))}
-                          <div className="w-9 h-9 rounded-full border-2 border-[#0B1F3A] bg-[#2563EB] text-[#F8FAFC] flex items-center justify-center text-[10px] font-bold shadow-md">
-                            +12
-                          </div>
-                        </div>
-                        <span className="text-xs text-[#2563EB] font-semibold underline-offset-4 hover:underline hover:text-[#FF6B00] cursor-pointer transition-colors duration-200">
-                          Live Customers
-                        </span>
-                      </div>
-                    )}
                   </motion.div>
                 )}
 
@@ -789,7 +774,9 @@ export function Dashboard() {
                   )}
                 </AnimatePresence>
 
-                <Footer variant="platform" />
+                <div className="rounded-2xl overflow-hidden mt-8 border border-[#2563EB]/30">
+                  <ThemeFooter />
+                </div>
               </div>
             </main>
           </SidebarInset>

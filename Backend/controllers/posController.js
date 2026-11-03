@@ -1,9 +1,85 @@
 const mongoose = require("mongoose");
 const Product = require("../models/Product");
 const Order = require("../models/Order");
+const Invoice = require("../models/Invoice");
 const Coupon = require("../models/Coupon");
 const InventoryLedger = require("../models/InventoryLedger");
 const { resolveClientId } = require("../utils/tenantResolver");
+const { invalidateDashboardCache } = require("../utils/dashboardCache");
+
+/**
+ * Helper to create or update an Invoice document corresponding to a POS order.
+ * Ensures the Quotes & Invoices dashboard and financial metrics reflect all POS sales immediately.
+ */
+async function syncInvoiceFromOrder(orderDoc, session = null) {
+  if (!orderDoc) return null;
+  try {
+    const invNumber = orderDoc.invoiceNumber || orderDoc.orderId;
+    const invOrderId = orderDoc.orderId || invNumber;
+    const subtotal = Number(orderDoc.subtotal) || 0;
+    const tax = Number(orderDoc.totalGst || orderDoc.taxPrice) || 0;
+    const totalAmount = Number(orderDoc.grandTotal || orderDoc.totalPrice || orderDoc.totalAmount) || (subtotal + tax);
+    const isPaid = orderDoc.isPaid || String(orderDoc.paymentStatus).toUpperCase() === "PAID";
+    const paymentStatus = isPaid ? "paid" : String(orderDoc.paymentStatus || "pending").toLowerCase();
+
+    const items = (orderDoc.items || []).map((i) => {
+      const price = Number(i.price !== undefined ? i.price : i.unitPrice) || 0;
+      const quantity = Number(i.quantity) || 1;
+      const gstRate = Number(i.gstRate !== undefined ? i.gstRate : i.gst) || 0;
+      const gstAmount = Number(i.gstAmount !== undefined ? i.gstAmount : i.tax) || 0;
+      return {
+        name: i.name || "Item",
+        quantity,
+        price,
+        subtotal: price * quantity,
+        gstRate,
+        gstAmount,
+      };
+    });
+
+    const invoiceData = {
+      invoiceNumber: invNumber,
+      orderId: invOrderId,
+      orderRef: orderDoc._id,
+      customerName: orderDoc.customerName || (orderDoc.shippingAddress && orderDoc.shippingAddress.fullName) || "Walk-in Customer",
+      customerEmail: orderDoc.customerEmail || (orderDoc.shippingAddress && orderDoc.shippingAddress.email) || "",
+      items,
+      subtotal,
+      tax,
+      cgst: tax / 2,
+      sgst: tax / 2,
+      discountAmount: Number(orderDoc.discountAmount) || 0,
+      couponCode: orderDoc.couponCode || "",
+      totalAmount,
+      paymentMethod: orderDoc.paymentMethod || "CASH",
+      paymentStatus,
+      paidAt: orderDoc.paidAt || (isPaid ? new Date() : null),
+      orderStatus: orderDoc.orderStatus || (isPaid ? "delivered" : "placed"),
+      orderSource: "pos",
+      source: "pos",
+      isInvoice: true,
+      clientId: orderDoc.clientId || null,
+      status: "active",
+      invoiceDate: orderDoc.createdAt || new Date(),
+      isDeleted: false,
+    };
+
+    const options = { upsert: true, new: true, setDefaultsOnInsert: true };
+    if (session) options.session = session;
+
+    const invoice = await Invoice.findOneAndUpdate(
+      { $or: [{ orderId: invOrderId }, { invoiceNumber: invNumber }] },
+      { $set: invoiceData },
+      options
+    );
+
+    invalidateDashboardCache();
+    return invoice;
+  } catch (err) {
+    console.error("[posController] Error syncing invoice for order:", err.message);
+    return null;
+  }
+}
 
 const isValidObjectId = (id) => {
   if (id === null || id === undefined) return false;
@@ -435,6 +511,13 @@ const checkoutPOS = async (req, res) => {
       console.warn("[posController] Ledger entry warning:", ledgerErr.message);
     }
 
+    // 6. Create & sync Invoice document in MongoDB
+    try {
+      await syncInvoiceFromOrder(order, session);
+    } catch (invErr) {
+      console.warn("[posController] Invoice sync warning:", invErr.message);
+    }
+
     if (session && useTransaction) {
       await session.commitTransaction();
       session.endSession();
@@ -848,6 +931,13 @@ const createWhatsAppPaymentLink = async (req, res) => {
       console.warn("[createWhatsAppPaymentLink] Ledger warning:", ledgerErr.message);
     }
 
+    // 6. Create & sync Invoice document in MongoDB
+    try {
+      await syncInvoiceFromOrder(order, session);
+    } catch (invErr) {
+      console.warn("[posController] Invoice sync warning:", invErr.message);
+    }
+
     if (session && useTransaction) {
       await session.commitTransaction();
       session.endSession();
@@ -929,6 +1019,14 @@ const checkPaymentStatus = async (req, res) => {
             }
           }
         }
+
+        try {
+          await Invoice.findOneAndUpdate(
+            { $or: [{ orderId: order.orderId }, { invoiceNumber: order.invoiceNumber }] },
+            { $set: { status: "cancelled", paymentStatus: "cancelled" } }
+          );
+          invalidateDashboardCache();
+        } catch (invErr) {}
       }
       return res.status(200).json({
         success: true,
@@ -947,6 +1045,9 @@ const checkPaymentStatus = async (req, res) => {
       order.orderStatus = "delivered";
       order.trackingStatus = "Delivered";
       await order.save();
+      try {
+        await syncInvoiceFromOrder(order);
+      } catch (invErr) {}
       return res.status(200).json({
         success: true,
         isPaid: true,
@@ -1005,6 +1106,9 @@ const checkPaymentStatus = async (req, res) => {
             order.razorpayPaymentId = rzpLink.payments[0].payment_id;
           }
           await order.save();
+          try {
+            await syncInvoiceFromOrder(order);
+          } catch (invErr) {}
         }
       } catch (rzpFetchErr) {
         console.warn("[checkPaymentStatus] Razorpay fetch warning:", rzpFetchErr.message);
@@ -1447,6 +1551,9 @@ const syncOfflineOrders = async (req, res) => {
           });
 
           results.push({ offlineId, status: "SYNCED", orderId: createdOrder.orderId });
+          try {
+            await syncInvoiceFromOrder(createdOrder);
+          } catch (invErr) {}
         }
       } catch (itemErr) {
         console.error("[syncOfflineOrders] Item sync error:", itemErr);

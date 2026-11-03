@@ -44,7 +44,7 @@ export function getThemeHeader(key: string): React.ComponentType | null {
 }
 
 export function getThemeFooter(key: string): React.ComponentType | null {
-  return themeRegistry.get(key)?.Footer || null;
+  return themeRegistry.get(key)?.Footer || LuxeFooter;
 }
 
 // ── Register both themes ────────────────────────────────────────────────────────

@@ -84,7 +84,13 @@ export function DashboardNavbar({ items = [] }: DashboardNavbarProps) {
         </div>
 
         {/* Horizontal Quick-Access Scrollable Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto px-3 py-2 scrollbar-none no-scrollbar">
+        <div
+          className="flex items-center gap-2 overflow-x-auto px-3 py-2 scrollbar-none no-scrollbar touch-pan-x"
+          style={{
+            WebkitOverflowScrolling: 'touch',
+            touchAction: 'pan-x',
+          }}
+        >
           {items.map((item) => {
             const href = item.href;
             const isActive =

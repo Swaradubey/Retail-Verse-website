@@ -318,6 +318,24 @@ export function DashboardInvoices() {
     void fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    const handleUpdate = () => {
+      void fetchData();
+    };
+    window.addEventListener('pos-order-created', handleUpdate);
+    window.addEventListener('order-created', handleUpdate);
+    window.addEventListener('invoice-created', handleUpdate);
+    window.addEventListener('order-deleted', handleUpdate);
+    window.addEventListener('invoice-deleted', handleUpdate);
+    return () => {
+      window.removeEventListener('pos-order-created', handleUpdate);
+      window.removeEventListener('order-created', handleUpdate);
+      window.removeEventListener('invoice-created', handleUpdate);
+      window.removeEventListener('order-deleted', handleUpdate);
+      window.removeEventListener('invoice-deleted', handleUpdate);
+    };
+  }, [fetchData]);
+
   const handleBargainAction = async (action: 'accept' | 'reject' | 'counter' | 'convert') => {
     if (!viewQuote) return;
     setIsSubmitting(true);

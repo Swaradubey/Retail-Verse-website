@@ -139,7 +139,7 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            "group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex min-h-svh w-full overflow-hidden",
+            "group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex min-h-screen md:min-h-svh w-full overflow-x-hidden md:overflow-hidden",
             className,
           )}
           {...props}
@@ -189,7 +189,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-[#0B1F3A] text-[#F8FAFC] w-[88vw] max-w-xs sm:max-w-sm p-0 z-50 border-r border-[#2563EB]/40 shadow-2xl flex flex-col h-full fixed inset-y-0 left-0"
+          className="bg-[#0B1F3A] text-[#F8FAFC] w-[88vw] max-w-xs sm:max-w-sm p-0 z-50 border-r border-[#2563EB]/40 shadow-2xl flex flex-col h-[100dvh] max-h-[100dvh] fixed inset-y-0 left-0 overflow-hidden"
           overlayClassName="fixed inset-0 bg-black/50 z-40"
           side={side}
         >
@@ -212,7 +212,13 @@ function Sidebar({
               <XIcon className="w-5 h-5" />
             </button>
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden bg-[#0B1F3A] text-[#F8FAFC] p-2 flex flex-col justify-between">
+          <div
+            className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-[#0B1F3A] text-[#F8FAFC] p-2 pb-8 flex flex-col justify-between touch-pan-y"
+            style={{
+              WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-y',
+            }}
+          >
             {children}
           </div>
         </SheetContent>
@@ -332,7 +338,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "bg-background relative flex w-full flex-1 flex-col min-h-0 overflow-hidden",
+        "bg-background relative flex w-full flex-1 flex-col min-h-0 overflow-x-hidden md:overflow-hidden",
         "md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2",
         className,
       )}
@@ -391,15 +397,20 @@ function SidebarSeparator({
   );
 }
 
-function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
+function SidebarContent({ className, style, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden",
+        "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden touch-pan-y",
         className,
       )}
+      style={{
+        WebkitOverflowScrolling: 'touch',
+        touchAction: 'pan-y',
+        ...style,
+      }}
       {...props}
     />
   );

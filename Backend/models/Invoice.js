@@ -11,6 +11,31 @@ const invoiceSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    orderRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Order",
+      default: null,
+    },
+    orderSource: {
+      type: String,
+      default: "web",
+    },
+    source: {
+      type: String,
+      default: "web",
+    },
+    isInvoice: {
+      type: Boolean,
+      default: true,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+    },
+    couponCode: {
+      type: String,
+      default: "",
+    },
     customerName: {
       type: String,
       required: true,
@@ -104,6 +129,8 @@ invoiceSchema.index({ clientId: 1, paymentStatus: 1, createdAt: -1 });
 invoiceSchema.index({ clientId: 1, totalAmount: 1 });
 invoiceSchema.index({ orderId: 1, isDeleted: 1 });
 invoiceSchema.index({ orderId: 1 });
+invoiceSchema.index({ orderRef: 1 });
+invoiceSchema.index({ orderSource: 1, isDeleted: 1, createdAt: -1 });
 invoiceSchema.index({ customerEmail: 1, createdAt: -1 });
 invoiceSchema.index({ customerName: 1, createdAt: -1 });
 invoiceSchema.index({ paymentStatus: 1, createdAt: -1 });

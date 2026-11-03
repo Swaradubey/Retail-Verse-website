@@ -1747,6 +1747,9 @@ export function POSBilling() {
                 setCustomerAddress('');
                 setCustomerPhoneError(null);
                 fetchProducts(true);
+                window.dispatchEvent(new CustomEvent('pos-order-created', { detail: res }));
+                window.dispatchEvent(new CustomEvent('invoice-created', { detail: res }));
+                window.dispatchEvent(new CustomEvent('order-created', { detail: res }));
               } else {
                 throw new Error(res.message || 'Checkout failed');
               }
@@ -2052,6 +2055,9 @@ export function POSBilling() {
         refreshPendingSyncCount();
         // Refresh products stock immediately in background
         fetchProducts(true);
+        window.dispatchEvent(new CustomEvent('pos-order-created', { detail: res }));
+        window.dispatchEvent(new CustomEvent('invoice-created', { detail: res }));
+        window.dispatchEvent(new CustomEvent('order-created', { detail: res }));
       } else {
         throw new Error(res.message || 'Checkout failed');
       }
