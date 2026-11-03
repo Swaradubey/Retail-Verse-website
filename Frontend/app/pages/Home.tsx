@@ -1,7 +1,5 @@
 import React from 'react';
 import { EbayHeroBanner } from '../components/banners/EbayHeroBanner';
-import { TrustMarquee } from '../components/TrustMarquee';
-import { ResourcesSection } from '../components/ResourcesSection';
 import { SmartDigitalBusinessSection } from '../components/SmartDigitalBusinessSection';
 
 export function Home() {
@@ -13,11 +11,6 @@ export function Home() {
       {/* Smart Digital Business Platform Section */}
       <SmartDigitalBusinessSection />
 
-      {/* Trust & Features Marquee */}
-      <TrustMarquee />
-
-      {/* Resources & Business Insights */}
-      <ResourcesSection />
     </div>
   );
 }

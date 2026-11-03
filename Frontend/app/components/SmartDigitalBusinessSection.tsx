@@ -1,3 +1,4 @@
+import { TrustMarquee } from './TrustMarquee';
 import React, { useState, useEffect } from 'react';
 import { motion, useInView } from 'framer-motion';
 import {
@@ -498,6 +499,11 @@ export function SmartDigitalBusinessSection() {
               );
             })}
           </div>
+        </div>
+
+        {/* Trust & Features Marquee */}
+        <div className="-mx-4 sm:-mx-6 lg:-mx-8 mb-24 sm:mb-32">
+          <TrustMarquee />
         </div>
 
         {/* ========================================================================= */}
