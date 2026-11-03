@@ -527,10 +527,10 @@ export function Dashboard() {
   return (
     <SidebarProvider>
       <div
-        className={`client-dashboard theme-${themeKey} flex flex-col min-h-0 flex-1 md:min-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-x-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
+        className={`client-dashboard theme-${themeKey} flex flex-col min-h-0 flex-1 md:h-[calc(100vh-var(--top-nav-height,148px))] md:max-h-[calc(100vh-var(--top-nav-height,148px))] w-full overflow-hidden bg-[#F8FAFC] text-[#0B1F3A]`}
       >
         <ImpersonationBanner />
-        <div className="flex min-h-0 flex-1 w-full">
+        <div className="flex min-h-0 flex-1 w-full overflow-hidden">
           {/* Sidebar */}
           <Sidebar
             collapsible="icon"
@@ -802,7 +802,7 @@ export function Dashboard() {
           width: 6px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-          background: #0B1F3A;
+          background: #F8FAFC;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
           background: #2563EB;
