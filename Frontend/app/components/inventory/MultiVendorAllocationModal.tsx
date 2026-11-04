@@ -9,7 +9,6 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle2,
-  Building2,
   Clock,
   Sparkles,
 } from 'lucide-react';
@@ -54,6 +53,24 @@ interface VendorSplitRow {
   targetDeliveryDate: string;
   notes: string;
 }
+
+// Exclude specific test/dummy vendors from allocation lists
+const EXCLUDED_VENDOR_PATTERNS = ['swara kumari', 'suha ss'];
+
+const isExcludedVendor = (vendor: VendorItem): boolean => {
+  const nameToCheck = String(vendor?.name || '').trim().toLowerCase();
+  const contactToCheck = String(vendor?.contactPerson || '').trim().toLowerCase();
+  const companyToCheck = String(vendor?.companyName || '').trim().toLowerCase();
+  const emailToCheck = String(vendor?.email || '').trim().toLowerCase();
+
+  return EXCLUDED_VENDOR_PATTERNS.some(
+    (pattern) =>
+      nameToCheck.includes(pattern) ||
+      contactToCheck.includes(pattern) ||
+      companyToCheck.includes(pattern) ||
+      emailToCheck.includes(pattern)
+  );
+};
 
 export function MultiVendorAllocationModal({
   isOpen,
@@ -148,13 +165,10 @@ export function MultiVendorAllocationModal({
   // Vendor allocation split rows
   const [splits, setSplits] = useState<VendorSplitRow[]>([]);
 
-  // Quick inline add vendor state
-  const [showAddVendor, setShowAddVendor] = useState(false);
-  const [newVendorName, setNewVendorName] = useState('');
-  const [newVendorEmail, setNewVendorEmail] = useState('');
-  const [newVendorCompany, setNewVendorCompany] = useState('');
-  const [newVendorPhone, setNewVendorPhone] = useState('');
-  const [addingVendor, setAddingVendor] = useState(false);
+  // Filter out dummy/test vendor profiles
+  const filteredVendors = useMemo(() => {
+    return vendors.filter((v) => !isExcludedVendor(v));
+  }, [vendors]);
 
   // Default target date: 7 days in future (YYYY-MM-DD)
   const defaultDateStr = useMemo(() => {
@@ -174,7 +188,8 @@ export function MultiVendorAllocationModal({
       .getVendors()
       .then((data) => {
         if (!mounted) return;
-        const list = Array.isArray(data) ? data : [];
+        const rawList = Array.isArray(data) ? data : [];
+        const list = rawList.filter((v) => !isExcludedVendor(v));
         setVendors(list);
 
         // Prepopulate splits: if 2+ vendors available, split target 50/50 across two vendors
@@ -244,9 +259,9 @@ export function MultiVendorAllocationModal({
 
   const handleAddSplitRow = () => {
     const remainingToAllocate = Math.max(1, diff > 0 ? diff : 10);
-    // Select first unused vendor or first vendor
+    // Select first unused vendor or first vendor from filtered active vendors
     const usedVendorIds = new Set(splits.map((s) => s.vendorId));
-    const availableVendor = vendors.find((v) => !usedVendorIds.has(v._id)) || vendors[0];
+    const availableVendor = filteredVendors.find((v) => !usedVendorIds.has(v._id)) || filteredVendors[0];
 
     setSplits((prev) => [
       ...prev,
@@ -272,36 +287,6 @@ export function MultiVendorAllocationModal({
     setSplits((prev) =>
       prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
     );
-  };
-
-  const handleCreateNewVendor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newVendorName.trim() || !newVendorEmail.trim()) {
-      toast.error('Vendor name and email are required');
-      return;
-    }
-
-    setAddingVendor(true);
-    try {
-      const created = await vendorAllocationsApi.createVendor({
-        name: newVendorName.trim(),
-        email: newVendorEmail.trim(),
-        companyName: newVendorCompany.trim(),
-        phone: newVendorPhone.trim(),
-      });
-
-      toast.success(`Vendor "${created.name}" registered successfully`);
-      setVendors((prev) => [...prev, created]);
-      setNewVendorName('');
-      setNewVendorEmail('');
-      setNewVendorCompany('');
-      setNewVendorPhone('');
-      setShowAddVendor(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create vendor');
-    } finally {
-      setAddingVendor(false);
-    }
   };
 
   const handleSubmit = async () => {
@@ -549,15 +534,6 @@ export function MultiVendorAllocationModal({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowAddVendor(!showAddVendor)}
-                    className="h-7 text-xs rounded-lg border-dashed"
-                  >
-                    <Plus className="w-3 h-3 mr-1" /> New Vendor Profile
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
                     onClick={handleAddSplitRow}
                     className="h-7 text-xs rounded-lg text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800"
                   >
@@ -565,71 +541,6 @@ export function MultiVendorAllocationModal({
                   </Button>
                 </div>
               </div>
-
-              {/* Inline quick add vendor form */}
-              <AnimatePresence>
-                {showAddVendor && (
-                  <motion.form
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    onSubmit={handleCreateNewVendor}
-                    className="rounded-2xl border border-indigo-200 dark:border-indigo-900/60 p-4 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5" /> Quick Register New Vendor
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddVendor(false)}
-                        className="text-slate-400 hover:text-slate-600 text-xs"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <Input
-                        placeholder="Vendor / Contact Name *"
-                        value={newVendorName}
-                        onChange={(e) => setNewVendorName(e.target.value)}
-                        className="h-8 text-xs bg-white dark:bg-zinc-900"
-                        required
-                      />
-                      <Input
-                        placeholder="Vendor Email Address *"
-                        type="email"
-                        value={newVendorEmail}
-                        onChange={(e) => setNewVendorEmail(e.target.value)}
-                        className="h-8 text-xs bg-white dark:bg-zinc-900"
-                        required
-                      />
-                      <Input
-                        placeholder="Company / Organization Name"
-                        value={newVendorCompany}
-                        onChange={(e) => setNewVendorCompany(e.target.value)}
-                        className="h-8 text-xs bg-white dark:bg-zinc-900"
-                      />
-                      <Input
-                        placeholder="Phone Number"
-                        value={newVendorPhone}
-                        onChange={(e) => setNewVendorPhone(e.target.value)}
-                        className="h-8 text-xs bg-white dark:bg-zinc-900"
-                      />
-                    </div>
-                    <div className="flex justify-end">
-                      <Button
-                        type="submit"
-                        size="sm"
-                        disabled={addingVendor}
-                        className="h-7 text-xs rounded-lg bg-indigo-600 text-white"
-                      >
-                        {addingVendor ? 'Registering...' : 'Save & Select Vendor'}
-                      </Button>
-                    </div>
-                  </motion.form>
-                )}
-              </AnimatePresence>
 
               {/* Rows List */}
               <div className="space-y-3">
@@ -674,12 +585,12 @@ export function MultiVendorAllocationModal({
                               Loading registered vendors...
                             </option>
                           )}
-                          {!loadingVendors && vendors.length === 0 && (
+                          {!loadingVendors && filteredVendors.length === 0 && (
                             <option value="" disabled>
-                              No registered vendors found (Register in Users & Roles or click "+ New Vendor")
+                              No registered vendors found (Register in Users & Roles)
                             </option>
                           )}
-                          {vendors.map((v) => {
+                          {filteredVendors.map((v) => {
                             const name = String(v.name || v.email || 'Vendor').trim();
                             const company = String(v.companyName || '').trim();
                             const hasDistinctCompany =
