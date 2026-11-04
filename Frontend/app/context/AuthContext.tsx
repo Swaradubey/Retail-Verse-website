@@ -345,10 +345,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     localStorage.removeItem(IMPERSONATION_SUPER_TOKEN_BACKUP_KEY);
-    localStorage.removeItem('retail_verse_client_id');
-    localStorage.removeItem('retail_verse_client_domain');
-    localStorage.removeItem('retail_verse_client_origin');
-    localStorage.removeItem('selectedClientId');
+
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isCustomDomain = Boolean(hostname && hostname !== 'localhost' && hostname !== '127.0.0.1');
+
+    // Retrieve custom domain client id from domain data if available
+    let domainClientId: string | null = null;
+    const domainDataStr = typeof window !== 'undefined' ? localStorage.getItem('retail_verse_domain_data') : null;
+    if (domainDataStr) {
+      try {
+        const parsed = JSON.parse(domainDataStr);
+        domainClientId = parsed?.client?._id || parsed?.client?.id || null;
+      } catch {}
+    }
+
+    if (isCustomDomain || domainClientId) {
+      // Preserve custom domain tenant context so signed-out visitors stay scoped to this store
+      if (domainClientId) {
+        localStorage.setItem('retail_verse_client_id', domainClientId);
+      }
+      localStorage.setItem('retail_verse_client_domain', hostname);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('retail_verse_client_origin', window.location.origin);
+      }
+    } else {
+      localStorage.removeItem('retail_verse_client_id');
+      localStorage.removeItem('retail_verse_client_domain');
+      localStorage.removeItem('retail_verse_client_origin');
+      localStorage.removeItem('selectedClientId');
+    }
+
     // Clear POS offline cache and cart draft to prevent cross-client leaks on shared devices
     try {
       clearCachedProducts().catch(() => {});

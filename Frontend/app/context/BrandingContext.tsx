@@ -35,7 +35,28 @@ const BrandingContext = createContext<BrandingContextType>({
 const SELECTED_CLIENT_ID_KEY = 'selectedClientId';
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
-  const [branding, setBranding] = useState<BrandingData | null>(null);
+  const [branding, setBranding] = useState<BrandingData | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const savedDomainData = localStorage.getItem('retail_verse_domain_data');
+      if (savedDomainData) {
+        const parsed = JSON.parse(savedDomainData);
+        const client = parsed?.client;
+        if (client) {
+          const brandName = client.brandingName || client.shopName || client.companyName || '';
+          return {
+            clientId: client._id,
+            businessName: brandName,
+            brandingName: client.brandingName || '',
+            footerText: client.footerText || `© ${new Date().getFullYear()} ${brandName}. All rights reserved.`,
+            logo: client.logo || '',
+            primaryColor: client.primaryColor || '',
+          };
+        }
+      }
+    } catch {}
+    return null;
+  });
   const [localLogo, setLocalLogo] = useState<string | null>(() => {
     return typeof window !== 'undefined' ? localStorage.getItem(STORE_LOGO_KEY) : null;
   });
@@ -56,107 +77,112 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Watch auth state changes: clear client-specific branding when user is
-  // Super Admin or logs out, preventing stale client branding leaks.
+  const loadBranding = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      const isCustomDomain = Boolean(hostname && hostname !== 'localhost' && hostname !== '127.0.0.1');
+
+      // Priority 1: domain-based branding for custom domains (e.g. daizyhome.com)
+      if (isCustomDomain) {
+        try {
+          const res = await ApiService.get(`/api/public/branding?domain=${hostname}`);
+          if (res && res.success && res.branding) {
+            setBranding(res.branding);
+            setIsLoading(false);
+            return;
+          }
+        } catch {
+          // Fall through to domain-data or clientId
+        }
+
+        // Fallback: check cached retail_verse_domain_data
+        const domainDataStr = typeof window !== 'undefined' ? localStorage.getItem('retail_verse_domain_data') : null;
+        if (domainDataStr) {
+          try {
+            const parsed = JSON.parse(domainDataStr);
+            const client = parsed?.client;
+            if (client) {
+              const brandName = client.brandingName || client.shopName || client.companyName || '';
+              setBranding({
+                clientId: client._id,
+                businessName: brandName,
+                brandingName: client.brandingName || '',
+                footerText: client.footerText || `© ${new Date().getFullYear()} ${brandName}. All rights reserved.`,
+                logo: client.logo || '',
+                primaryColor: client.primaryColor || '',
+              });
+              setIsLoading(false);
+              return;
+            }
+          } catch {}
+        }
+      }
+
+      // Priority 2: URL params ?clientId=xxx
+      const params = new URLSearchParams(window.location.search);
+      let targetClientId = params.get('clientId');
+
+      if (targetClientId) {
+        localStorage.setItem(SELECTED_CLIENT_ID_KEY, targetClientId);
+      } else {
+        // Priority 3: localStorage selectedClientId, authUser.clientId, or retail_verse_client_id
+        targetClientId =
+          authUser?.clientId ||
+          localStorage.getItem(SELECTED_CLIENT_ID_KEY) ||
+          localStorage.getItem('retail_verse_client_id');
+      }
+
+      if (targetClientId) {
+        try {
+          const res = await ApiService.get(`/api/public/branding/${targetClientId}`);
+          if (res && res.success && res.branding) {
+            setBranding(res.branding);
+            setIsLoading(false);
+            return;
+          }
+        } catch {
+          // Fall through to default
+        }
+      }
+    } catch {
+      // Final fallback: default branding
+    }
+
+    setBranding(null);
+    setIsLoading(false);
+  }, [authUser?.clientId]);
+
+  // Load branding on mount or when client ID changes
   useEffect(() => {
+    loadBranding();
+  }, [loadBranding]);
+
+  // Watch auth state changes: clear client-specific branding when user is
+  // Super Admin or logs out on non-custom domains, preventing stale client branding leaks.
+  useEffect(() => {
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isCustomDomain = Boolean(hostname && hostname !== 'localhost' && hostname !== '127.0.0.1');
+
+    if (isCustomDomain) {
+      // On custom domains (e.g. daizyhome.com), tenant branding is anchored to the domain
+      // and must persist across sign-in and sign-out.
+      return;
+    }
+
     if (!authUser || isSuperAdminRole(authUser.role) || authUser.isSuperAdmin) {
       setBranding(null);
       localStorage.removeItem(SELECTED_CLIENT_ID_KEY);
     }
   }, [authUser]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadBranding() {
-      try {
-        // Priority 1: URL params ?clientId=xxx
-        const params = new URLSearchParams(window.location.search);
-        let targetClientId = params.get('clientId');
-
-        if (targetClientId) {
-          localStorage.setItem(SELECTED_CLIENT_ID_KEY, targetClientId);
-        } else {
-          // Priority 2: localStorage selectedClientId
-          targetClientId = localStorage.getItem(SELECTED_CLIENT_ID_KEY);
-        }
-
-        if (targetClientId) {
-          try {
-            const res = await ApiService.get(`/api/public/branding/${targetClientId}`);
-            if (!cancelled && res && res.success && res.branding) {
-              setBranding(res.branding);
-              setIsLoading(false);
-              return;
-            }
-          } catch {
-            // Fall through to domain-based or default
-          }
-        }
-
-        // Priority 3: domain-based branding
-        const hostname = window.location.hostname;
-        if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-          try {
-            const res = await ApiService.get(`/api/public/branding?domain=${hostname}`);
-            if (!cancelled && res && res.success && res.branding) {
-              setBranding(res.branding);
-              setIsLoading(false);
-              return;
-            }
-          } catch {
-            // Fall through to default
-          }
-        }
-      } catch {
-        // Final fallback: default branding
-      }
-
-      if (!cancelled) {
-        setBranding(null);
-        setIsLoading(false);
-      }
-    }
-
-    loadBranding();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const updateBranding = useCallback((data: BrandingData | null) => {
     setBranding(data);
   }, []);
 
   const reloadBranding = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const targetClientId = authUser?.clientId || localStorage.getItem(SELECTED_CLIENT_ID_KEY);
-      if (targetClientId) {
-        const res = await ApiService.get(`/api/public/branding/${targetClientId}`);
-        if (res && res.success && res.branding) {
-          setBranding(res.branding);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      const hostname = window.location.hostname;
-      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-        const res = await ApiService.get(`/api/public/branding?domain=${hostname}`);
-        if (res && res.success && res.branding) {
-          setBranding(res.branding);
-          setIsLoading(false);
-          return;
-        }
-      }
-    } catch {
-      // Fallback to default
-    }
-    setBranding(null);
-    setIsLoading(false);
-  }, [authUser]);
+    await loadBranding();
+  }, [loadBranding]);
 
   return (
     <BrandingContext.Provider value={{ branding, isLoading, localLogo, updateBranding, reloadBranding }}>
