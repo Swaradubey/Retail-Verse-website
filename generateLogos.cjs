@@ -7,7 +7,7 @@ const zlib = require('zlib');
 const fs = require('fs');
 const path = require('path');
 
-const dir = path.join(__dirname, 'Frontend/public/marketplace-logos');
+const dir = path.join(__dirname, 'public/marketplace-logos');
 fs.mkdirSync(dir, { recursive: true });
 
 // ─── PNG encoder ────────────────────────────────────────────────────────────
@@ -235,9 +235,7 @@ function ondcPixel(x, y) {
 const logos = [
   { name: 'amazon.png',       fn: amazonPixel },
   { name: 'shopify.png',      fn: shopifyPixel },
-  { name: 'woocommerce.png',  fn: woocommercePixel },
   { name: 'flipkart.png',     fn: flipkartPixel },
-  { name: 'ondc.png',         fn: ondcPixel },
 ];
 
 for (const logo of logos) {

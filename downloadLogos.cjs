@@ -5,12 +5,10 @@ const path = require('path');
 const logos = {
   'amazon.svg': 'https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg',
   'shopify.svg': 'https://upload.wikimedia.org/wikipedia/commons/0/0e/Shopify_logo_2018.svg',
-  'woocommerce.svg': 'https://upload.wikimedia.org/wikipedia/commons/9/9d/WooCommerce_logo.svg',
-  'flipkart.svg': 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Flipkart_logo.svg',
-  'ondc.png': 'https://upload.wikimedia.org/wikipedia/en/thumb/4/42/Open_Network_for_Digital_Commerce_logo.svg/512px-Open_Network_for_Digital_Commerce_logo.svg.png'
+  'flipkart.svg': 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Flipkart_logo.svg'
 };
 
-const dir = path.join(__dirname, 'Frontend', 'public', 'marketplace-logos');
+const dir = path.join(__dirname, 'public', 'marketplace-logos');
 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
 function download(url, filename) {
