@@ -7,7 +7,6 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "build": "echo 'No build step required for backend'",
-    "repair:voice-orders": "node scripts/repairVoiceOrders.js",
     "worker:marketplace": "node workers/marketplaceSyncWorker.js"
   },
   "dependencies": {

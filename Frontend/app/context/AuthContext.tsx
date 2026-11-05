@@ -258,18 +258,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(data.token);
       setUser(data as User);
 
-      if (data.role === 'admin') {
-        try {
-          await authApi.logAdminLogin({
-            email: data.email,
-            role: data.role,
-            message: 'Admin logged in successfully with real JWT',
-          });
-        } catch (logError) {
-          console.warn('Failed to log admin login activity:', logError);
-        }
-      }
-
       await refreshSession();
 
       return data;

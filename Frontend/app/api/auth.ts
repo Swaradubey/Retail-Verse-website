@@ -17,10 +17,6 @@ export const authApi = {
     return ApiService.get<any>("/api/auth/captcha");
   },
 
-  logAdminLogin: async (payload: { email: string; role: string; message?: string }) => {
-    return ApiService.post<any>("/api/admin-login/log", payload);
-  },
-
   forgotPassword: async (email: string) => {
     return ApiService.post<any>("/api/auth/forgot-password", { email });
   },
