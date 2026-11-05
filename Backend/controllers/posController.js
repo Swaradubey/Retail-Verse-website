@@ -88,6 +88,60 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(s);
 };
 
+/**
+ * Detects if the connected MongoDB instance supports multi-document transactions (replica set or mongos).
+ * Standalone mongod instances do NOT support transactions and will throw:
+ * "Transaction numbers are only allowed on a replica set member or mongos"
+ */
+function isTransactionSupported() {
+  if (typeof global._mongoTransactionsSupported === "boolean") {
+    return global._mongoTransactionsSupported;
+  }
+  try {
+    const topology = mongoose.connection?.client?.topology;
+    if (!topology || !topology.description) {
+      return null;
+    }
+    const type = topology.description.type;
+    if (type === "Single") {
+      const servers = topology.description.servers;
+      if (servers) {
+        for (const s of servers.values()) {
+          if (s.type === "Standalone") {
+            global._mongoTransactionsSupported = false;
+            return false;
+          }
+        }
+      }
+      global._mongoTransactionsSupported = false;
+      return false;
+    }
+    if (type === "ReplicaSetWithPrimary" || type === "Sharded" || type === "LoadBalanced") {
+      global._mongoTransactionsSupported = true;
+      return true;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Checks if an error is due to MongoDB running in standalone mode without replica set transaction support.
+ */
+function isTransactionUnsupportedError(err) {
+  if (!err) return false;
+  const msg = err.message || "";
+  return (
+    /Transaction numbers/i.test(msg) ||
+    /replica set/i.test(msg) ||
+    /not a replica set/i.test(msg) ||
+    /transactions are not supported/i.test(msg) ||
+    /Standalone/i.test(msg) ||
+    /retryable writes/i.test(msg) ||
+    err.code === 20 ||
+    err.code === 263
+  );
+}
+
 const couponRuleCache = new Map();
 const COUPON_CACHE_TTL = 60 * 1000;
 
@@ -232,18 +286,7 @@ const checkoutPOS = async (req, res) => {
   const rand4 = Math.floor(1000 + Math.random() * 9000);
   const invoiceNumber = `INV-${yy}${mm}${dd}-${rand4}`;
 
-  // Start MongoDB session if replica set is available; fallback to atomic commands if standalone
-  let session = null;
-  let useTransaction = true;
-  try {
-    session = await mongoose.startSession();
-    session.startTransaction();
-  } catch (sessErr) {
-    useTransaction = false;
-    session = null;
-  }
-
-  try {
+  const executeCheckout = async (sessionToUse) => {
     // 1. Validate items and verify live database stock
     const preparedItems = [];
     let calculatedSubtotal = 0;
@@ -259,8 +302,8 @@ const checkoutPOS = async (req, res) => {
 
       let productDoc = null;
       if (isValidObjectId(pId)) {
-        productDoc = session
-          ? await Product.findById(pId).session(session)
+        productDoc = sessionToUse
+          ? await Product.findById(pId).session(sessionToUse)
           : await Product.findById(pId);
       } else {
         const query = {
@@ -270,8 +313,8 @@ const checkoutPOS = async (req, res) => {
             { _id: isValidObjectId(pId) ? pId : new mongoose.Types.ObjectId() },
           ],
         };
-        productDoc = session
-          ? await Product.findOne(query).session(session)
+        productDoc = sessionToUse
+          ? await Product.findOne(query).session(sessionToUse)
           : await Product.findOne(query);
       }
 
@@ -370,55 +413,79 @@ const checkoutPOS = async (req, res) => {
 
     // 3. Atomically deduct inventory stock in MongoDB using $inc: { stock: -quantity }
     const updatedProducts = [];
-    for (const pItem of preparedItems) {
-      const qtyToDeduct = Math.max(1, Math.floor(Number(pItem.quantity) || 1));
+    try {
+      for (const pItem of preparedItems) {
+        const qtyToDeduct = Math.max(1, Math.floor(Number(pItem.quantity) || 1));
 
-      const filter = {
-        _id: pItem.productDoc._id,
-        $or: [
-          { stock: { $gte: qtyToDeduct } },
-          { stockLevel: { $gte: qtyToDeduct } },
-          { quantity: { $gte: qtyToDeduct } },
-          { currentStock: { $gte: qtyToDeduct } },
-        ],
-      };
+        const filter = {
+          _id: pItem.productDoc._id,
+          $or: [
+            { stock: { $gte: qtyToDeduct } },
+            { stockLevel: { $gte: qtyToDeduct } },
+            { quantity: { $gte: qtyToDeduct } },
+            { currentStock: { $gte: qtyToDeduct } },
+          ],
+        };
 
-      const update = {
-        $inc: {
-          stock: -qtyToDeduct,
-          stockLevel: -qtyToDeduct,
-          quantity: -qtyToDeduct,
-        },
-      };
+        const update = {
+          $inc: {
+            stock: -qtyToDeduct,
+            stockLevel: -qtyToDeduct,
+            quantity: -qtyToDeduct,
+          },
+        };
 
-      const options = { new: true };
-      if (session) options.session = session;
+        const options = { new: true };
+        if (sessionToUse) options.session = sessionToUse;
 
-      const updated = await Product.findOneAndUpdate(filter, update, options);
-      if (!updated) {
-        throw new Error(
-          `Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`
+        const updated = await Product.findOneAndUpdate(filter, update, options);
+        if (!updated) {
+          throw new Error(
+            `Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`
+          );
+        }
+
+        // Safeguard against negative field values if fields were out of sync
+        const clampUpdates = {};
+        if (typeof updated.stock === "number" && updated.stock < 0) clampUpdates.stock = 0;
+        if (typeof updated.stockLevel === "number" && updated.stockLevel < 0) clampUpdates.stockLevel = 0;
+        if (typeof updated.quantity === "number" && updated.quantity < 0) clampUpdates.quantity = 0;
+        if (Object.keys(clampUpdates).length > 0) {
+          const updateOpts = sessionToUse ? { session: sessionToUse } : {};
+          await Product.updateOne({ _id: updated._id }, { $set: clampUpdates }, updateOpts);
+        }
+
+        const remainingStock = Math.max(
+          0,
+          Number(updated.stockLevel !== undefined && updated.stockLevel >= 0 ? updated.stockLevel : updated.stock) || 0
         );
+
+        updatedProducts.push({
+          pItem,
+          remainingStock,
+          qtyDeducted: qtyToDeduct,
+        });
       }
-
-      // Safeguard against negative field values if fields were out of sync
-      const clampUpdates = {};
-      if (typeof updated.stock === "number" && updated.stock < 0) clampUpdates.stock = 0;
-      if (typeof updated.stockLevel === "number" && updated.stockLevel < 0) clampUpdates.stockLevel = 0;
-      if (typeof updated.quantity === "number" && updated.quantity < 0) clampUpdates.quantity = 0;
-      if (Object.keys(clampUpdates).length > 0) {
-        await Product.updateOne({ _id: updated._id }, { $set: clampUpdates });
+    } catch (deductErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (compErr) {
+            console.error(`[checkoutPOS] Stock compensation error for product ${up.pItem.productId}:`, compErr.message);
+          }
+        }
       }
-
-      const remainingStock = Math.max(
-        0,
-        Number(updated.stockLevel !== undefined && updated.stockLevel >= 0 ? updated.stockLevel : updated.stock) || 0
-      );
-
-      updatedProducts.push({
-        pItem,
-        remainingStock,
-      });
+      throw deductErr;
     }
 
     // 4. Create and persist Order in MongoDB
@@ -484,11 +551,31 @@ const checkoutPOS = async (req, res) => {
     };
 
     let order = null;
-    if (session) {
-      const created = await Order.create([orderPayload], { session });
-      order = created[0];
-    } else {
-      order = await Order.create(orderPayload);
+    try {
+      if (sessionToUse) {
+        const created = await Order.create([orderPayload], { session: sessionToUse });
+        order = created[0];
+      } else {
+        order = await Order.create(orderPayload);
+      }
+    } catch (orderErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (compErr) {}
+        }
+      }
+      throw orderErr;
     }
 
     // 5. Create InventoryLedger entries if ledger collection exists
@@ -502,8 +589,8 @@ const checkoutPOS = async (req, res) => {
         referenceOrderId: order._id,
       }));
 
-      if (session) {
-        await InventoryLedger.insertMany(ledgerEntries, { session });
+      if (sessionToUse) {
+        await InventoryLedger.insertMany(ledgerEntries, { session: sessionToUse });
       } else {
         await InventoryLedger.insertMany(ledgerEntries);
       }
@@ -513,14 +600,13 @@ const checkoutPOS = async (req, res) => {
 
     // 6. Create & sync Invoice document in MongoDB
     try {
-      await syncInvoiceFromOrder(order, session);
+      await syncInvoiceFromOrder(order, sessionToUse);
     } catch (invErr) {
       console.warn("[posController] Invoice sync warning:", invErr.message);
     }
 
-    if (session && useTransaction) {
-      await session.commitTransaction();
-      session.endSession();
+    if (sessionToUse) {
+      await sessionToUse.commitTransaction();
     }
 
     const populatedInvoice = await Order.findById(order._id).populate({
@@ -528,20 +614,62 @@ const checkoutPOS = async (req, res) => {
       select: "companyName shopName email storeName address phone",
     });
 
-    return res.status(201).json({
+    return {
       success: true,
       message: "Order processed and invoice generated successfully",
       invoiceNumber,
       invoice: populatedInvoice || order,
       order: populatedInvoice || order,
-    });
-  } catch (error) {
-    if (session && useTransaction) {
-      try {
-        await session.abortTransaction();
-        session.endSession();
-      } catch (abortErr) {}
+    };
+  };
+
+  // If known standalone / non-replica set, execute sequentially without transaction
+  if (isTransactionSupported() === false) {
+    try {
+      const result = await executeCheckout(null);
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[checkoutPOS] Sequential execution error:", error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Failed to process checkout",
+      });
     }
+  }
+
+  // Attempt with transaction session first
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    const result = await executeCheckout(session);
+    try { session.endSession(); } catch (_) {}
+    return res.status(201).json(result);
+  } catch (error) {
+    if (session) {
+      try { await session.abortTransaction(); } catch (_) {}
+      try { session.endSession(); } catch (_) {}
+      session = null;
+    }
+
+    // Catch standalone MongoDB or non-replica set errors and execute sequentially
+    if (isTransactionUnsupportedError(error)) {
+      console.warn(
+        `[checkoutPOS] MongoDB standalone detected (${error.message}). Executing checkout sequentially without transaction session.`
+      );
+      global._mongoTransactionsSupported = false;
+      try {
+        const result = await executeCheckout(null);
+        return res.status(201).json(result);
+      } catch (seqError) {
+        console.error("[checkoutPOS] Sequential retry error:", seqError);
+        return res.status(400).json({
+          success: false,
+          message: seqError.message || "Failed to process checkout",
+        });
+      }
+    }
+
     console.error("[checkoutPOS] Error:", error);
     return res.status(400).json({
       success: false,
@@ -590,17 +718,7 @@ const createWhatsAppPaymentLink = async (req, res) => {
   const rand4 = Math.floor(1000 + Math.random() * 9000);
   const invoiceNumber = `INV-${yy}${mm}${dd}-${rand4}`;
 
-  let session = null;
-  let useTransaction = true;
-  try {
-    session = await mongoose.startSession();
-    session.startTransaction();
-  } catch (sessErr) {
-    useTransaction = false;
-    session = null;
-  }
-
-  try {
+  const executeWhatsAppLink = async (sessionToUse) => {
     // 1. Validate items and verify live database stock
     const preparedItems = [];
     let calculatedSubtotal = 0;
@@ -616,8 +734,8 @@ const createWhatsAppPaymentLink = async (req, res) => {
 
       let productDoc = null;
       if (isValidObjectId(pId)) {
-        productDoc = session
-          ? await Product.findById(pId).session(session)
+        productDoc = sessionToUse
+          ? await Product.findById(pId).session(sessionToUse)
           : await Product.findById(pId);
       } else {
         const query = {
@@ -627,8 +745,8 @@ const createWhatsAppPaymentLink = async (req, res) => {
             { _id: isValidObjectId(pId) ? pId : new mongoose.Types.ObjectId() },
           ],
         };
-        productDoc = session
-          ? await Product.findOne(query).session(session)
+        productDoc = sessionToUse
+          ? await Product.findOne(query).session(sessionToUse)
           : await Product.findOne(query);
       }
 
@@ -792,7 +910,6 @@ const createWhatsAppPaymentLink = async (req, res) => {
         }
       } catch (rzpLinkErr) {
         console.warn("[createWhatsAppPaymentLink] Razorpay API link warning:", rzpLinkErr.message);
-        // Clean fallback payment link
       }
     }
 
@@ -811,46 +928,69 @@ const createWhatsAppPaymentLink = async (req, res) => {
 
     // 4. Atomically deduct inventory stock in MongoDB using $inc: { stock: -quantity }
     const updatedProducts = [];
-    for (const pItem of preparedItems) {
-      const qtyToDeduct = Math.max(1, Math.floor(Number(pItem.quantity) || 1));
+    try {
+      for (const pItem of preparedItems) {
+        const qtyToDeduct = Math.max(1, Math.floor(Number(pItem.quantity) || 1));
 
-      const filter = {
-        _id: pItem.productDoc._id,
-        $or: [
-          { stock: { $gte: qtyToDeduct } },
-          { stockLevel: { $gte: qtyToDeduct } },
-          { quantity: { $gte: qtyToDeduct } },
-          { currentStock: { $gte: qtyToDeduct } },
-        ],
-      };
+        const filter = {
+          _id: pItem.productDoc._id,
+          $or: [
+            { stock: { $gte: qtyToDeduct } },
+            { stockLevel: { $gte: qtyToDeduct } },
+            { quantity: { $gte: qtyToDeduct } },
+            { currentStock: { $gte: qtyToDeduct } },
+          ],
+        };
 
-      const update = {
-        $inc: {
-          stock: -qtyToDeduct,
-          stockLevel: -qtyToDeduct,
-          quantity: -qtyToDeduct,
-        },
-      };
+        const update = {
+          $inc: {
+            stock: -qtyToDeduct,
+            stockLevel: -qtyToDeduct,
+            quantity: -qtyToDeduct,
+          },
+        };
 
-      const options = { new: true };
-      if (session) options.session = session;
+        const options = { new: true };
+        if (sessionToUse) options.session = sessionToUse;
 
-      const updated = await Product.findOneAndUpdate(filter, update, options);
-      if (!updated) {
-        throw new Error(
-          `Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`
+        const updated = await Product.findOneAndUpdate(filter, update, options);
+        if (!updated) {
+          throw new Error(
+            `Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`
+          );
+        }
+
+        const remainingStock = Math.max(
+          0,
+          Number(updated.stockLevel !== undefined && updated.stockLevel >= 0 ? updated.stockLevel : updated.stock) || 0
         );
+
+        updatedProducts.push({
+          pItem,
+          remainingStock,
+          qtyDeducted: qtyToDeduct,
+        });
       }
-
-      const remainingStock = Math.max(
-        0,
-        Number(updated.stockLevel !== undefined && updated.stockLevel >= 0 ? updated.stockLevel : updated.stock) || 0
-      );
-
-      updatedProducts.push({
-        pItem,
-        remainingStock,
-      });
+    } catch (deductErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (compErr) {
+            console.error(`[createWhatsAppPaymentLink] Stock compensation error for product ${up.pItem.productId}:`, compErr.message);
+          }
+        }
+      }
+      throw deductErr;
     }
 
     // 5. Create and persist Order in MongoDB
@@ -904,11 +1044,31 @@ const createWhatsAppPaymentLink = async (req, res) => {
     };
 
     let order = null;
-    if (session) {
-      const created = await Order.create([orderPayload], { session });
-      order = created[0];
-    } else {
-      order = await Order.create(orderPayload);
+    try {
+      if (sessionToUse) {
+        const created = await Order.create([orderPayload], { session: sessionToUse });
+        order = created[0];
+      } else {
+        order = await Order.create(orderPayload);
+      }
+    } catch (orderErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (rollErr) {}
+        }
+      }
+      throw orderErr;
     }
 
     // 6. Create InventoryLedger entries
@@ -922,8 +1082,8 @@ const createWhatsAppPaymentLink = async (req, res) => {
         referenceOrderId: order._id,
       }));
 
-      if (session) {
-        await InventoryLedger.insertMany(ledgerEntries, { session });
+      if (sessionToUse) {
+        await InventoryLedger.insertMany(ledgerEntries, { session: sessionToUse });
       } else {
         await InventoryLedger.insertMany(ledgerEntries);
       }
@@ -931,16 +1091,15 @@ const createWhatsAppPaymentLink = async (req, res) => {
       console.warn("[createWhatsAppPaymentLink] Ledger warning:", ledgerErr.message);
     }
 
-    // 6. Create & sync Invoice document in MongoDB
+    // 7. Create & sync Invoice document in MongoDB
     try {
-      await syncInvoiceFromOrder(order, session);
+      await syncInvoiceFromOrder(order, sessionToUse);
     } catch (invErr) {
       console.warn("[posController] Invoice sync warning:", invErr.message);
     }
 
-    if (session && useTransaction) {
-      await session.commitTransaction();
-      session.endSession();
+    if (sessionToUse) {
+      await sessionToUse.commitTransaction();
     }
 
     const populatedInvoice = await Order.findById(order._id).populate({
@@ -948,7 +1107,7 @@ const createWhatsAppPaymentLink = async (req, res) => {
       select: "companyName shopName email storeName address phone",
     });
 
-    return res.status(201).json({
+    return {
       success: true,
       message: "Razorpay payment link generated and WhatsApp details prepared successfully",
       invoiceNumber,
@@ -959,14 +1118,56 @@ const createWhatsAppPaymentLink = async (req, res) => {
       grandTotal,
       order: populatedInvoice || order,
       invoice: populatedInvoice || order,
-    });
-  } catch (error) {
-    if (session && useTransaction) {
-      try {
-        await session.abortTransaction();
-        session.endSession();
-      } catch (abortErr) {}
+    };
+  };
+
+  // If known standalone / non-replica set, execute sequentially without transaction
+  if (isTransactionSupported() === false) {
+    try {
+      const result = await executeWhatsAppLink(null);
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[createWhatsAppPaymentLink] Sequential execution error:", error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Failed to generate WhatsApp payment link",
+      });
     }
+  }
+
+  // Attempt with transaction session first
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    const result = await executeWhatsAppLink(session);
+    try { session.endSession(); } catch (_) {}
+    return res.status(201).json(result);
+  } catch (error) {
+    if (session) {
+      try { await session.abortTransaction(); } catch (_) {}
+      try { session.endSession(); } catch (_) {}
+      session = null;
+    }
+
+    // Catch standalone MongoDB or non-replica set errors and execute sequentially
+    if (isTransactionUnsupportedError(error)) {
+      console.warn(
+        `[createWhatsAppPaymentLink] MongoDB standalone detected (${error.message}). Retrying WhatsApp link creation sequentially without transaction session.`
+      );
+      global._mongoTransactionsSupported = false;
+      try {
+        const result = await executeWhatsAppLink(null);
+        return res.status(201).json(result);
+      } catch (seqError) {
+        console.error("[createWhatsAppPaymentLink] Sequential retry error:", seqError);
+        return res.status(400).json({
+          success: false,
+          message: seqError.message || "Failed to generate WhatsApp payment link",
+        });
+      }
+    }
+
     console.error("[createWhatsAppPaymentLink] Error:", error);
     return res.status(400).json({
       success: false,

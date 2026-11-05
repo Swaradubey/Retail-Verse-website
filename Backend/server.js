@@ -196,7 +196,7 @@ app.use(cors({
   credentials: true,
   maxAge: 86400, // 24 hours: browser caches preflight OPTIONS result
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-client-id", "x-client-domain", "x-client-origin"]
+  allowedHeaders: ["Content-Type", "Authorization", "x-client-id", "x-client-domain", "x-client-origin", "Cache-Control", "Pragma", "Expires", "cache-control", "pragma", "expires"]
 }));
 
 app.options("*", cors());

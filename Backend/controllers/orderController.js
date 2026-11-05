@@ -2195,6 +2195,60 @@ const getUserDashboardOverview = async (req, res) => {
 };
 
 /**
+ * Detects if the connected MongoDB instance supports multi-document transactions (replica set or mongos).
+ * Standalone mongod instances do NOT support transactions and will throw:
+ * "Transaction numbers are only allowed on a replica set member or mongos"
+ */
+function isTransactionSupported() {
+  if (typeof global._mongoTransactionsSupported === "boolean") {
+    return global._mongoTransactionsSupported;
+  }
+  try {
+    const topology = mongoose.connection?.client?.topology;
+    if (!topology || !topology.description) {
+      return null;
+    }
+    const type = topology.description.type;
+    if (type === "Single") {
+      const servers = topology.description.servers;
+      if (servers) {
+        for (const s of servers.values()) {
+          if (s.type === "Standalone") {
+            global._mongoTransactionsSupported = false;
+            return false;
+          }
+        }
+      }
+      global._mongoTransactionsSupported = false;
+      return false;
+    }
+    if (type === "ReplicaSetWithPrimary" || type === "Sharded" || type === "LoadBalanced") {
+      global._mongoTransactionsSupported = true;
+      return true;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * Checks if an error is due to MongoDB running in standalone mode without replica set transaction support.
+ */
+function isTransactionUnsupportedError(err) {
+  if (!err) return false;
+  const msg = err.message || "";
+  return (
+    /Transaction numbers/i.test(msg) ||
+    /replica set/i.test(msg) ||
+    /not a replica set/i.test(msg) ||
+    /transactions are not supported/i.test(msg) ||
+    /Standalone/i.test(msg) ||
+    /retryable writes/i.test(msg) ||
+    err.code === 20 ||
+    err.code === 263
+  );
+}
+
+/**
  * @desc    Process POS checkout with atomic stock deduction, ledger recording, and MongoDB session/transaction
  * @route   POST /api/orders/checkout
  * @access  Public / Optional Protect
@@ -2220,19 +2274,7 @@ const checkoutOrder = async (req, res) => {
   const rand4 = Math.floor(1000 + Math.random() * 9000);
   const invoiceNumber = `INV-${yy}${mm}${dd}-${rand4}`;
 
-  // Start MongoDB session
-  let session = null;
-  let useTransaction = true;
-  try {
-    session = await mongoose.startSession();
-    session.startTransaction();
-  } catch (sessErr) {
-    console.warn("[checkoutOrder] Standalone MongoDB detected. Falling back to atomic execution without transaction session:", sessErr.message);
-    useTransaction = false;
-    session = null;
-  }
-
-  try {
+  const executeCheckoutOrder = async (sessionToUse) => {
     // 1. Verify all items exist and have enough stockLevel
     const preparedItems = [];
     let calculatedSubtotal = 0;
@@ -2248,12 +2290,12 @@ const checkoutOrder = async (req, res) => {
 
       let productDoc = null;
       if (isValidObjectId(pId)) {
-        productDoc = session
-          ? await Product.findById(pId).session(session)
+        productDoc = sessionToUse
+          ? await Product.findById(pId).session(sessionToUse)
           : await Product.findById(pId);
       } else {
-        productDoc = session
-          ? await Product.findOne({ $or: [{ barcode: item.barcode || pId }, { sku: pId }] }).session(session)
+        productDoc = sessionToUse
+          ? await Product.findOne({ $or: [{ barcode: item.barcode || pId }, { sku: pId }] }).session(sessionToUse)
           : await Product.findOne({ $or: [{ barcode: item.barcode || pId }, { sku: pId }] });
       }
 
@@ -2330,44 +2372,67 @@ const checkoutOrder = async (req, res) => {
 
     // 2. Atomically deduct stock using $inc: { stock: -quantity, stockLevel: -quantity } where stock >= quantity
     const updatedProducts = [];
-    for (const pItem of preparedItems) {
-      const filter = {
-        _id: pItem.productDoc._id,
-        $or: [
-          { stock: { $gte: pItem.quantity } },
-          { stockLevel: { $gte: pItem.quantity } },
-        ],
-      };
+    try {
+      for (const pItem of preparedItems) {
+        const filter = {
+          _id: pItem.productDoc._id,
+          $or: [
+            { stock: { $gte: pItem.quantity } },
+            { stockLevel: { $gte: pItem.quantity } },
+          ],
+        };
 
-      const update = {
-        $inc: {
-          stock: -pItem.quantity,
-          stockLevel: -pItem.quantity,
-          quantity: -pItem.quantity,
-        },
-      };
+        const update = {
+          $inc: {
+            stock: -pItem.quantity,
+            stockLevel: -pItem.quantity,
+            quantity: -pItem.quantity,
+          },
+        };
 
-      const options = { new: true };
-      if (session) options.session = session;
+        const options = { new: true };
+        if (sessionToUse) options.session = sessionToUse;
 
-      const updated = await Product.findOneAndUpdate(filter, update, options);
-      if (!updated) {
-        throw new Error(`Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`);
-      }
-      updatedProducts.push({
-        pItem,
-        remainingStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
-      });
-
-      // Non-blocking automated low stock check
-      try {
-        const { emitStockChanged } = require('../services/lowStockEventBus');
-        emitStockChanged({
-          productId: updated._id,
-          newStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
-          tenantId: updated.clientId
+        const updated = await Product.findOneAndUpdate(filter, update, options);
+        if (!updated) {
+          throw new Error(`Stock deduction failed for "${pItem.name}". Insufficient stock during concurrent checkout.`);
+        }
+        updatedProducts.push({
+          pItem,
+          remainingStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
+          qtyDeducted: pItem.quantity,
         });
-      } catch (evErr) {}
+
+        // Non-blocking automated low stock check
+        try {
+          const { emitStockChanged } = require('../services/lowStockEventBus');
+          emitStockChanged({
+            productId: updated._id,
+            newStock: updated.stockLevel !== undefined ? updated.stockLevel : updated.stock,
+            tenantId: updated.clientId
+          });
+        } catch (evErr) {}
+      }
+    } catch (deductErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (rollErr) {
+            console.error(`[checkoutOrder] Stock rollback compensation error for product ${up.pItem.productId}:`, rollErr.message);
+          }
+        }
+      }
+      throw deductErr;
     }
 
     // 3. Create Order document
@@ -2411,11 +2476,31 @@ const checkoutOrder = async (req, res) => {
     };
 
     let order = null;
-    if (session) {
-      const created = await Order.create([orderPayload], { session });
-      order = created[0];
-    } else {
-      order = await Order.create(orderPayload);
+    try {
+      if (sessionToUse) {
+        const created = await Order.create([orderPayload], { session: sessionToUse });
+        order = created[0];
+      } else {
+        order = await Order.create(orderPayload);
+      }
+    } catch (orderErr) {
+      if (!sessionToUse && updatedProducts.length > 0) {
+        for (const up of updatedProducts) {
+          try {
+            await Product.updateOne(
+              { _id: up.pItem.productDoc._id },
+              {
+                $inc: {
+                  stock: up.qtyDeducted,
+                  stockLevel: up.qtyDeducted,
+                  quantity: up.qtyDeducted,
+                },
+              }
+            );
+          } catch (rollErr) {}
+        }
+      }
+      throw orderErr;
     }
 
     // 4. Create entries in InventoryLedger with type 'SALE'
@@ -2428,10 +2513,9 @@ const checkoutOrder = async (req, res) => {
       referenceOrderId: order._id,
     }));
 
-    if (session) {
-      await InventoryLedger.insertMany(ledgerEntries, { session });
-      await session.commitTransaction();
-      session.endSession();
+    if (sessionToUse) {
+      await InventoryLedger.insertMany(ledgerEntries, { session: sessionToUse });
+      await sessionToUse.commitTransaction();
     } else {
       await InventoryLedger.insertMany(ledgerEntries);
     }
@@ -2441,20 +2525,62 @@ const checkoutOrder = async (req, res) => {
       select: "companyName shopName email storeName address phone",
     });
 
-    return res.status(201).json({
+    return {
       success: true,
       message: "Order processed and invoice generated successfully",
       invoiceNumber,
       invoice: populatedInvoice || order,
       order: populatedInvoice || order,
-    });
-  } catch (error) {
-    if (session && useTransaction) {
-      try {
-        await session.abortTransaction();
-        session.endSession();
-      } catch (abortErr) {}
+    };
+  };
+
+  // If known standalone / non-replica set, execute sequentially without transaction
+  if (isTransactionSupported() === false) {
+    try {
+      const result = await executeCheckoutOrder(null);
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[checkoutOrder] Sequential execution error:", error);
+      return res.status(400).json({
+        success: false,
+        message: error.message || "Failed to process checkout",
+      });
     }
+  }
+
+  // Attempt with transaction session first
+  let session = null;
+  try {
+    session = await mongoose.startSession();
+    session.startTransaction();
+    const result = await executeCheckoutOrder(session);
+    try { session.endSession(); } catch (_) {}
+    return res.status(201).json(result);
+  } catch (error) {
+    if (session) {
+      try { await session.abortTransaction(); } catch (_) {}
+      try { session.endSession(); } catch (_) {}
+      session = null;
+    }
+
+    // Catch standalone MongoDB or non-replica set errors and execute sequentially
+    if (isTransactionUnsupportedError(error)) {
+      console.warn(
+        `[checkoutOrder] MongoDB standalone detected (${error.message}). Executing checkout sequentially without transaction session.`
+      );
+      global._mongoTransactionsSupported = false;
+      try {
+        const result = await executeCheckoutOrder(null);
+        return res.status(201).json(result);
+      } catch (seqError) {
+        console.error("[checkoutOrder] Sequential retry error:", seqError);
+        return res.status(400).json({
+          success: false,
+          message: seqError.message || "Failed to process checkout",
+        });
+      }
+    }
+
     console.error("[checkoutOrder] Checkout failed:", error);
     return res.status(400).json({
       success: false,

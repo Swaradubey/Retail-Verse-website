@@ -132,12 +132,60 @@ export const inventoryApi = {
     const queryString = searchParams.toString();
     const key = `inventory_manage_${queryString || 'default'}`;
     const cached = memoryProductCache.get(key) || getFromSession(key);
-    const now = Date.now();
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
-    if (!forceRefresh && cached && (now - cached.timestamp < CLIENT_CACHE_TTL_MS)) {
+    // Network-first when online: fetch live database inventory and update local cache
+    let lastError: any = null;
+    if (isOnline) {
+      try {
+        const baseEndpoint = queryString ? `/api/inventory/manage?${queryString}` : '/api/inventory/manage';
+        const sep = baseEndpoint.includes('?') ? '&' : '?';
+        const freshUrl = `${baseEndpoint}${sep}_t=${Date.now()}`;
+        const res = await ApiService.get<any>(freshUrl);
+        if (res && res.success) {
+          setCachedProductData(key, res);
+          if (!queryString || params?.page === 1) {
+            setCachedProductData('inventory_manage', res);
+          }
+          return res;
+        }
+      } catch (netErr) {
+        lastError = netErr;
+        console.warn('[inventoryApi] Live inventory fetch failed, checking local cache:', netErr);
+      }
+    }
+
+    // Offline or network error fallback: return cached data
+    if (cached) {
       return cached.data;
     }
 
+    // Check localStorage fallback if memory/session is empty
+    if (typeof window !== 'undefined') {
+      try {
+        const localRaw = localStorage.getItem('inventory_products_cache');
+        if (localRaw) {
+          const items = JSON.parse(localRaw);
+          if (Array.isArray(items) && items.length > 0) {
+            return {
+              success: true,
+              data: items,
+              total: items.length,
+              totalPages: 1,
+              source: 'local_storage_cache'
+            };
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    // Fallback direct request if not cached
     const url = queryString ? `/api/inventory/manage?${queryString}` : '/api/inventory/manage';
     const res = await ApiService.get<any>(url);
     if (res && res.success) {
@@ -192,11 +240,7 @@ export const productApi = {
   getAll: async (clientId?: string, forceRefresh = false, page = 1, limit = 50) => {
     const cacheKey = `products_${clientId || 'global'}_p${page}_l${limit}`;
     const cached = memoryProductCache.get(cacheKey) || getFromSession(cacheKey);
-    const now = Date.now();
-
-    if (!forceRefresh && cached && (now - cached.timestamp < CLIENT_CACHE_TTL_MS)) {
-      return cached.data;
-    }
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
     const headers: Record<string, string> = {};
     if (clientId) {
@@ -205,8 +249,33 @@ export const productApi = {
     const params = new URLSearchParams();
     if (page) params.set("page", String(page));
     if (limit) params.set("limit", String(limit));
-    const url = `/api/products?${params.toString()}`;
 
+    // Network-first when online: fetch live catalog from database and update cache
+    let lastError: any = null;
+    if (isOnline) {
+      try {
+        const freshUrl = `/api/products?${params.toString()}&_t=${Date.now()}`;
+        const res = await ApiService.get<any>(freshUrl, { headers });
+        if (res && res.success) {
+          setCachedProductData(cacheKey, res);
+          return res;
+        }
+      } catch (netErr) {
+        lastError = netErr;
+        console.warn('[productApi] Live products fetch failed, using local cache:', netErr);
+      }
+    }
+
+    // Offline or network error fallback: return cached data
+    if (cached) {
+      return cached.data;
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    const url = `/api/products?${params.toString()}`;
     const res = await ApiService.get<any>(url, { headers });
     if (res && res.success) {
       setCachedProductData(cacheKey, res);
@@ -222,7 +291,7 @@ export const productApi = {
     try {
       const headers: Record<string, string> = {};
       if (clientId) headers["x-client-id"] = clientId;
-      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      const params = new URLSearchParams({ page: String(page), limit: String(limit), _t: String(Date.now()) });
       const res = await ApiService.get<any>(`/api/products?${params.toString()}`, { headers });
       if (res && res.success) {
         setCachedProductData(cacheKey, res);
@@ -233,25 +302,45 @@ export const productApi = {
   },
 
   /** Scoped inventory list for dashboard (populates `client`; Super Admin sees all). */
-  getManage: () => inventoryApi.getManage(),
+  getManage: () => inventoryApi.getManage(true),
   
   getOne: (id: string) => {
-    return ApiService.get(`/api/products/${id}`);
+    return ApiService.get(`/api/products/${id}?_t=${Date.now()}`);
   },
 
   getFeatured: async (clientId?: string, forceRefresh = false) => {
     const cacheKey = `featured_${clientId || 'global'}`;
     const cached = memoryProductCache.get(cacheKey) || getFromSession(cacheKey);
-    const now = Date.now();
-
-    if (!forceRefresh && cached && (now - cached.timestamp < CLIENT_CACHE_TTL_MS)) {
-      return cached.data;
-    }
+    const isOnline = typeof navigator === 'undefined' || navigator.onLine;
 
     const headers: Record<string, string> = {};
     if (clientId) {
       headers["x-client-id"] = clientId;
     }
+
+    // Network-first when online: fetch live featured products
+    let lastError: any = null;
+    if (isOnline) {
+      try {
+        const res = await ApiService.get<any>(`/api/products/featured?_t=${Date.now()}`, { headers });
+        if (res && res.success) {
+          setCachedProductData(cacheKey, res);
+          return res;
+        }
+      } catch (netErr) {
+        lastError = netErr;
+        console.warn('[productApi] Live featured products fetch failed, using local cache:', netErr);
+      }
+    }
+
+    if (cached) {
+      return cached.data;
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
     const res = await ApiService.get<any>("/api/products/featured", { headers });
     if (res && res.success) {
       setCachedProductData(cacheKey, res);

@@ -14,6 +14,15 @@ const {
 const { protect, allowRoles, optionalProtect } = require("../middleware/authMiddleware");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 
+// Explicit cache-busting middleware: prevent HTTP caching on all inventory routes
+router.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
+
 // Public routes for fetching (Optional auth for scoping)
 router.get("/", optionalProtect, tenantMiddleware, getInventory);
 router.get(

@@ -454,6 +454,7 @@ export function POSBilling() {
         const queryParams = new URLSearchParams({
           limit: '250',
           pos: 'true',
+          _t: String(Date.now()),
           fields: '_id,name,title,sku,barcode,price,unitPrice,stock,stockLevel,quantity,currentStock,lowStockAlert,category,image,imageUrl,clientId,clientName,gst,gstRate'
         });
         if (clientId) {
@@ -479,18 +480,16 @@ export function POSBilling() {
             // ignore storage quota errors
           }
 
-          // Stale-While-Revalidate: smoothly update state and cache ONLY if there are differences
-          const hasChanges = haveProductsChanged(productsRef.current, scopedProducts);
-          if (hasChanges || productsRef.current.length === 0) {
-            setProducts(scopedProducts);
-            // Overwrite/update the local cache specifically for this authenticated client
-            if (scopedProducts.length > 0) {
-              await cacheProducts(scopedProducts, clientId);
-              await savePosProductsCache(scopedProducts, clientId);
-            } else if (clientId) {
-              // Clear stale cache if client has 0 inventory
-              await clearCachedProducts(clientId);
-            }
+          // Network-first: immediately update state and local cache with live database stock
+          setProducts(scopedProducts);
+          productsRef.current = scopedProducts;
+
+          if (scopedProducts.length > 0) {
+            await cacheProducts(scopedProducts, clientId);
+            await savePosProductsCache(scopedProducts, clientId);
+          } else if (clientId) {
+            // Clear stale cache if client has 0 inventory
+            await clearCachedProducts(clientId);
           }
           return;
         }
@@ -566,6 +565,7 @@ export function POSBilling() {
       setIsOnline(true);
       toast.success('Online mode restored. Cloud sync active.');
       triggerBackgroundSync();
+      fetchProducts(true);
     };
 
     const handleOffline = () => {
@@ -579,14 +579,22 @@ export function POSBilling() {
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (!document.hidden && navigator.onLine) {
+        fetchProducts(true);
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [triggerBackgroundSync, fetchProducts]);
 

@@ -22,6 +22,15 @@ const {
 const { protect, allowRoles, optionalProtect } = require("../middleware/authMiddleware");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 
+// Explicit cache-busting middleware: prevent HTTP caching on all product catalog and inventory routes
+router.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
+
 // Ensure upload directory exists for product images
 const productsUploadDir = path.resolve(__dirname, "../uploads/products");
 if (!fs.existsSync(productsUploadDir)) {

@@ -447,12 +447,9 @@ export function Pos() {
             try {
               localStorage.setItem('pos_products_cache', JSON.stringify(dbProducts));
             } catch {}
-            const changed = haveProductsChanged(products, dbProducts);
-            if (changed) {
-              setProducts(dbProducts);
-              setProductSource(dbProducts.length > 0 ? 'live' : 'none');
-              await savePosProductsCache(dbProducts, clientIdForCache);
-            }
+            setProducts(dbProducts);
+            setProductSource(dbProducts.length > 0 ? 'live' : 'none');
+            await savePosProductsCache(dbProducts, clientIdForCache);
             return;
           } else {
             // Try cache on unexpected response
@@ -598,14 +595,21 @@ export function Pos() {
         fetchProducts();
       }
     };
+    const onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden && typeof navigator !== 'undefined' && navigator.onLine) {
+        fetchProducts();
+      }
+    };
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     syncOnline();
     return () => {
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [fetchProducts, refreshPendingOfflineCount]);
 

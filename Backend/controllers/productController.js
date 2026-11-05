@@ -130,13 +130,23 @@ const normalizeSaleFields = (payload = {}) => {
 // @access  Public
 const getProducts = async (req, res) => {
   try {
-    // ── High Performance Memory Cache ──
+    // Ensure cache-busting headers are sent for all product catalog requests
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
+    const isPosRequest = req.query?.pos === "true" || req.query?.source === "pos";
+    const bypassCache = isPosRequest || req.query?.nocache === "true" || Boolean(req.query?._t);
+
+    // Bypass in-memory cache for POS, live revalidation, and fresh queries to prevent cross-environment stale stock
     const cacheKey = productCache.generateKey(req, "products");
-    const cached = productCache.get(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=45");
-      res.setHeader("X-Cache", "HIT");
-      return res.status(200).json(cached);
+    if (!bypassCache) {
+      const cached = productCache.get(cacheKey);
+      if (cached) {
+        res.setHeader("X-Cache", "HIT");
+        return res.status(200).json(cached);
+      }
     }
 
     const { category, search, minPrice, maxPrice, isActive } = req.query;
@@ -188,7 +198,6 @@ const getProducts = async (req, res) => {
     const limit = rawLimit === "0" || rawLimit === "all" ? 0 : (parseInt(rawLimit, 10) || 50); 
     const skip = limit > 0 ? (page - 1) * limit : 0;
 
-    const isPosRequest = req.query.pos === "true" || req.query.source === "pos";
     const requestedFields = req.query.fields;
 
     let dbQuery = Product.find(query);
@@ -308,9 +317,14 @@ const getProducts = async (req, res) => {
       totalPages: limit > 0 ? Math.ceil(totalProducts / limit) : 1
     };
 
-    // Cache catalog result for 60 seconds
-    productCache.set(cacheKey, responsePayload, 60 * 1000);
-    res.setHeader("Cache-Control", "public, max-age=15, stale-while-revalidate=45");
+    // Only cache storefront/public queries when not requested from POS or live revalidation
+    if (!bypassCache) {
+      productCache.set(cacheKey, responsePayload, 10 * 1000);
+    }
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
     res.setHeader("X-Cache", "MISS");
 
     res.status(200).json(responsePayload);
@@ -1310,16 +1324,10 @@ const lookupProduct = async (req, res) => {
       ]
     };
 
-    const cacheKey = `lookup:${code}:${clientId || "all"}`;
-    const cachedProduct = productCache.get(cacheKey);
-    if (cachedProduct) {
-      return res.status(200).json({
-        success: true,
-        product: cachedProduct,
-        data: cachedProduct,
-        cached: true,
-      });
-    }
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
 
     let product = await Product.findOne(query)
       .select(posLookupFields)
@@ -1343,7 +1351,6 @@ const lookupProduct = async (req, res) => {
     }
 
     const formatted = formatProductWithClient(product);
-    productCache.set(cacheKey, formatted, 60000);
 
     return res.status(200).json({
       success: true,

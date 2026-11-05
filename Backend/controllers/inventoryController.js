@@ -102,6 +102,11 @@ async function getCachedClient(clientId) {
 // @access  Private
 const getInventoryManage = async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const { category, search, stockStatus, minPrice, maxPrice } = req.query;
     
     // Use shared visibility filter
@@ -428,6 +433,11 @@ const createInventoryItem = async (req, res) => {
 // @access  Public
 const getInventory = async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const { category, search, minPrice, maxPrice, inStock } = req.query;
     const resolvedClientId = await resolveClientId(req);
     const role = normalizeRole(req.user?.role);

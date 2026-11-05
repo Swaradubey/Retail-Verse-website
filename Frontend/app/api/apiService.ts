@@ -133,6 +133,7 @@ class ApiService {
 
 
     const isFormData = options.body instanceof FormData;
+    const isInventoryOrProduct = url.includes("/products") || url.includes("/inventory");
 
     const headers: Record<string, string> = {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
@@ -149,6 +150,7 @@ class ApiService {
 
       const response = await fetch(url, {
         ...options,
+        cache: isInventoryOrProduct ? "no-store" : (options.cache || "default"),
         headers,
         credentials: options.credentials || "include",
       });
