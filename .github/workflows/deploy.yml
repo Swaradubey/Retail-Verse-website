@@ -17,4 +17,20 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            # 1. Ensure retailverse user exists
+            id -u retailverse >/dev/null 2>&1 || useradd -m -s /bin/bash retailverse
+            
+            # 2. Ensure repo is cloned & updated
+            if [ ! -d /home/retailverse/repo ]; then
+              sudo -u retailverse -H git clone https://github.com/Swaradubey/Retail-Verse-website.git /home/retailverse/repo
+            else
+              git -C /home/retailverse/repo fetch --prune origin main
+              git -C /home/retailverse/repo reset --hard origin/main
+            fi
+            
+            # 3. Install deploy.sh and ecosystem config from repo
+            install -o retailverse -g retailverse -m 755 /home/retailverse/repo/deploy/deploy.sh /home/retailverse/deploy.sh
+            install -o retailverse -g retailverse -m 644 /home/retailverse/repo/deploy/ecosystem.config.cjs /home/retailverse/ecosystem.config.cjs
+            
+            # 4. Trigger deployment
             sudo -u retailverse -H bash /home/retailverse/deploy.sh --git
