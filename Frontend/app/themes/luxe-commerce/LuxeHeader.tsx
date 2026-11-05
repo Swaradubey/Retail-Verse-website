@@ -9,8 +9,6 @@ import { getFullImageUrl } from '../../utils/imageUrl';
 const NAV_ITEMS = [
   { label: 'New In', href: '/shop' },
   { label: 'Collections', href: '/shop' },
-  { label: 'Women', href: '/shop' },
-  { label: 'Men', href: '/shop' },
   { label: 'Accessories', href: '/shop' },
   { label: 'Sale', href: '/shop' },
 ];

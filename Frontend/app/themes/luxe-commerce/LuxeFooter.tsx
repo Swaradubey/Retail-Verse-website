@@ -39,7 +39,7 @@ export function LuxeFooter() {
           <div>
             <h4 className="text-[#F8FAFC] text-sm font-bold uppercase tracking-widest mb-6">Shop</h4>
             <ul className="space-y-3">
-              {['New Arrivals', 'Collections', 'Women', 'Men', 'Accessories', 'Sale'].map((item) => (
+              {['New Arrivals', 'Collections', 'Accessories', 'Sale'].map((item) => (
                 <li key={item}>
                   <Link to="/shop" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">{item}</Link>
                 </li>
