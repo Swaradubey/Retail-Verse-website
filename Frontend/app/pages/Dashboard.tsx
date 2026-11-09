@@ -684,7 +684,7 @@ export function Dashboard() {
                 touchAction: 'pan-y',
               }}
             >
-              <div className={`w-full max-w-[1600px] mx-auto min-w-0 ${location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders') ? '' : 'space-y-8 sm:space-y-10'}`}>
+              <div className={`w-full max-w-[1600px] mx-auto min-w-0 ${location.pathname.startsWith('/dashboard/inventory') || location.pathname.startsWith('/inventory') || location.pathname.startsWith('/dashboard/invoices') || location.pathname.startsWith('/dashboard/users') || location.pathname.startsWith('/dashboard/add-employee') || location.pathname.startsWith('/dashboard/ai-voice-orders') ? '' : 'space-y-6 sm:space-y-8'}`}>
                 {/* Welcome Section */}
                 {location.pathname !== '/dashboard/products' && !location.pathname.startsWith('/dashboard/inventory') && !location.pathname.startsWith('/inventory') && !location.pathname.startsWith('/dashboard/invoices') && !location.pathname.startsWith('/dashboard/users') && !location.pathname.startsWith('/dashboard/add-employee') && !location.pathname.startsWith('/dashboard/ai-voice-orders') && !location.pathname.startsWith('/dashboard/marketplaces') && !location.pathname.startsWith('/admin/marketplaces') && (
                   <motion.div
@@ -694,13 +694,6 @@ export function Dashboard() {
                     className="flex flex-col md:flex-row md:items-center justify-between gap-5"
                   >
                     <div>
-                      <div className="flex items-center gap-2 text-[#2563EB] mb-3">
-                        <TrendingUp className="w-4 h-4 shrink-0 text-[#2563EB]" />
-                        <span className="text-xs sm:text-sm font-bold uppercase tracking-[0.2em] text-[#2563EB]">
-                          {location.pathname === '/dashboard' ? 'Performance Live' :
-                            location.pathname.split('/').pop()?.replace('-', ' ')}
-                        </span>
-                      </div>
                       <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-[#0B1F3A] capitalize leading-tight">
                         {location.pathname === '/dashboard' ? 'Dashboard Overview' :
                           location.pathname.split('/').pop()?.replace('-', ' ')}

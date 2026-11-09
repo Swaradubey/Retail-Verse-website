@@ -502,7 +502,7 @@ export function SmartDigitalBusinessSection() {
         </div>
 
         {/* Trust & Features Marquee */}
-        <div className="-mx-4 sm:-mx-6 lg:-mx-8 mb-24 sm:mb-32">
+        <div className="-mx-4 sm:-mx-6 lg:-mx-8 mb-10 sm:mb-14">
           <TrustMarquee />
         </div>
 

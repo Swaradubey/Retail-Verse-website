@@ -89,7 +89,6 @@ const { notFound, errorHandler } = require("./middleware/errorMiddleware");
 const tenantMiddleware = require("./middleware/tenantMiddleware");
 const passport = require("./config/passport");
 const generateToken = require("./utils/generateToken");
-const { startKeepAlive } = require("./utils/keepAlive");
 
 const app = express();
 
@@ -261,6 +260,7 @@ const shiprocketService = require("./services/shiprocketService");
 const customDomainRoutes = require("./routes/customDomainRoutes");
 const brandingRoutes = require("./routes/brandingRoutes");
 const themeRoutes = require("./routes/themeRoutes");
+const themeLayoutRoutes = require("./routes/themeLayoutRoutes");
 const voiceOrderRoutes = require("./routes/voiceOrderRoutes");
 const marketplaceRoutes = require("./routes/marketplace.routes");
 const marketplaceSyncJobRoutes = require("./routes/marketplaceSyncJobRoutes");
@@ -303,6 +303,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/public", brandingRoutes);
 app.use("/api/themes", themeRoutes);
+app.use("/api/theme-layout", themeLayoutRoutes);
 app.use("/api/voice-orders", voiceOrderRoutes);
 app.use("/api/marketplaces", marketplaceRoutes);
 app.use("/api/marketplace-sync/jobs", marketplaceSyncJobRoutes);
@@ -420,9 +421,6 @@ const PORT = process.env.PORT || 3000;
       console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
       console.log(`Health check: http://localhost:${PORT}/api/health`);
       console.log(`================================================\n`);
-
-      // Keep Render instance warm and prevent cold spin-downs
-      startKeepAlive();
 
       const sr = shiprocketService.getShiprocketEnvDiagnostics();
       if (sr.configuredForTracking) {

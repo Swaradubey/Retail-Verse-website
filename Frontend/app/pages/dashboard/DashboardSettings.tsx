@@ -18,6 +18,7 @@ import {
   Trash2,
   Image,
   ShoppingBag,
+  LayoutDashboard,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../components/ui/card';
@@ -39,6 +40,7 @@ import {
 import { getFullImageUrl } from '../../utils/imageUrl';
 import { SuperAdminThemeManagement } from './SuperAdminThemeManagement';
 import { ClientThemeManagement } from './ClientThemeManagement';
+import { ThemeLayoutManagement } from './ThemeLayoutManagement';
 import { BannerSettings } from '../../components/admin/BannerSettings';
 
 const COUNTRY_OPTIONS = [
@@ -917,9 +919,9 @@ export function DashboardSettings() {
     { id: 'billing', title: 'Billing & Plans', icon: CreditCard },
     { id: 'banners', title: 'Promotional Banners', icon: Image },
     ...(showThemeManagement ? [{ id: 'theme', title: 'Theme Management', icon: Palette }] : []),
+    ...(showThemeManagement ? [{ id: 'theme-layout', title: 'Theme & Layout', icon: LayoutDashboard }] : []),
     ...(showRazorpay ? [{ id: 'razorpay', title: 'Razorpay Integration', icon: CreditCard }] : []),
   ];
-
   const disabledForm = settingsLoading || !profile;
 
   return (
@@ -1734,6 +1736,12 @@ export function DashboardSettings() {
           {activeTab === 'theme' && showThemeManagement && (
             <div>
               {isSuperAdmin ? <SuperAdminThemeManagement /> : <ClientThemeManagement />}
+            </div>
+          )}
+
+          {activeTab === 'theme-layout' && showThemeManagement && (
+            <div>
+              <ThemeLayoutManagement />
             </div>
           )}
 
