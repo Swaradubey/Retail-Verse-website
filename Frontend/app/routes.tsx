@@ -69,7 +69,6 @@ const DashboardOrders = lazy(() => import('./pages/dashboard/DashboardOrders').t
 const DashboardInvoices = lazy(() => import('./pages/dashboard/DashboardInvoices').then(m => ({ default: m.DashboardInvoices })));
 const DashboardCustomers = lazy(() => import('./pages/dashboard/DashboardCustomers').then(m => ({ default: m.DashboardCustomers })));
 const DashboardAnalytics = lazy(() => import('./pages/dashboard/DashboardAnalytics').then(m => ({ default: m.DashboardAnalytics })));
-const DashboardInbox = lazy(() => import('./pages/dashboard/DashboardInbox').then(m => ({ default: m.DashboardInbox })));
 const DashboardSettings = lazy(() => import('./pages/dashboard/DashboardSettings').then(m => ({ default: m.DashboardSettings })));
 const DashboardHelpCenter = lazy(() => import('./pages/dashboard/DashboardHelpCenter').then(m => ({ default: m.DashboardHelpCenter })));
 const DashboardWishlistActivity = lazy(() => import('./pages/dashboard/DashboardWishlistActivity').then(m => ({ default: m.DashboardWishlistActivity })));
@@ -287,11 +286,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard/inbox',
-            element: withSuspense(
-              <AdminRoute>
-                <DashboardInbox />
-              </AdminRoute>
-            ),
+            element: <Navigate to="/dashboard" replace />,
           },
           {
             path: 'dashboard/contact-messages',

@@ -195,102 +195,99 @@ export function Header() {
     return pathname === href || (href.includes('?') && pathname + search === href);
   };
 
+  const isVendorDashboard = pathname.startsWith('/vendor');
+  const isVendorUser = String(user?.role || '').toLowerCase() === 'vendor';
+  const showPosOption = user && !isCustomerAccountRole(user.role) && !isVendorDashboard && !isVendorUser;
+
   return (
     <header ref={headerRef} className="sticky top-0 z-50 bg-white font-sans text-[#111827] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
       {/* ──────────────────────────────────────────────────────────────────
           1. TOP UTILITY BAR (eBay Classic Style)
       ────────────────────────────────────────────────────────────────── */}
-      <div className="border-b border-[#E5E7EB] bg-white text-[12px] text-[#555555]">
-        <div className="mx-auto flex h-9 max-w-[88rem] items-center justify-between px-3 sm:px-6 lg:px-8">
-          
-          {/* Left Side: Greeting & Sign in / Register + Quick Utility Links */}
-          {/* Left Side: Utility Links */}
-          <div className="flex items-center gap-3 sm:gap-4 truncate">
-            {/* Daily Deals */}
-            <Link
-              to="/shop?sale=true"
-              className="inline-flex items-center gap-1 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
-            >
-              Daily Deals
-            </Link>
-
-            <span className="text-[#D1D5DB]">|</span>
-
-            {/* Help & Contact */}
-            <Link
-              to="/contact"
-              className="inline-flex items-center gap-1 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
-            >
-              Help & Contact
-            </Link>
-          </div>
-
-          {/* Right Side: Sell | Watchlist | My Retailverse | Bell | Cart */}
-          <div className="flex items-center gap-3 sm:gap-5">
-            {/* Sell Link */}
-            <Link
-              to={user ? "/dashboard" : "/login"}
-              className="text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
-            >
-              Sell
-            </Link>
-
-            {/* Watchlist Dropdown */}
-            <div className="relative hidden min-[480px]:inline-block" ref={watchlistDropdownRef}>
+      {!isVendorDashboard && (
+        <div className="border-b border-[#E5E7EB] bg-white text-[12px] text-[#555555]">
+          <div className="mx-auto flex h-9 max-w-[88rem] items-center justify-between px-3 sm:px-6 lg:px-8">
+            
+            {/* Left Side: Greeting & Sign in / Register + Quick Utility Links */}
+            {/* Left Side: Utility Links */}
+            <div className="flex items-center gap-3 sm:gap-4 truncate">
+              {/* Daily Deals */}
               <Link
-                to="/account/wishlist"
-                onMouseEnter={() => setWatchlistDropdownOpen(true)}
-                className="flex items-center gap-0.5 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors py-1"
+                to="/shop?sale=true"
+                className="inline-flex items-center gap-1 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
               >
-                <span>Watchlist</span>
-                <ChevronDown className="h-3 w-3 text-[#707070]" />
+                Daily Deals
               </Link>
 
-              {watchlistDropdownOpen && (
-                <div
-                  onMouseLeave={() => setWatchlistDropdownOpen(false)}
-                  className="absolute right-0 mt-1 w-52 rounded-md border border-[#E5E7EB] bg-white p-3 shadow-lg z-50 text-xs"
-                >
-                  <p className="font-semibold text-gray-800 mb-1">Your Watchlist</p>
-                  <p className="text-[#707070] mb-2.5">Track products you love and get notified on price drops.</p>
-                  <Link
-                    to="/account/wishlist"
-                    onClick={() => setWatchlistDropdownOpen(false)}
-                    className="block text-center rounded bg-[#3665f3] py-1.5 font-bold text-white hover:bg-[#2b52cc] transition-colors"
-                  >
-                    View All Items
-                  </Link>
-                </div>
-              )}
+              <span className="text-[#D1D5DB]">|</span>
+
+              {/* Help & Contact */}
+              <Link
+                to="/contact"
+                className="inline-flex items-center gap-1 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
+              >
+                Help & Contact
+              </Link>
             </div>
 
+            {/* Right Side: Sell | Watchlist | My Retailverse | Bell | Cart */}
+            <div className="flex items-center gap-3 sm:gap-5">
+              {/* Sell Link */}
+              <Link
+                to={user ? "/dashboard" : "/login"}
+                className="text-[#555555] hover:text-[#0654ba] hover:underline transition-colors"
+              >
+                Sell
+              </Link>
+
+              {/* Watchlist Dropdown */}
+              <div className="relative hidden min-[480px]:inline-block" ref={watchlistDropdownRef}>
+                <Link
+                  to="/account/wishlist"
+                  onMouseEnter={() => setWatchlistDropdownOpen(true)}
+                  className="flex items-center gap-0.5 text-[#555555] hover:text-[#0654ba] hover:underline transition-colors py-1"
+                >
+                  <span>Watchlist</span>
+                  <ChevronDown className="h-3 w-3 text-[#707070]" />
+                </Link>
+
+                {watchlistDropdownOpen && (
+                  <div
+                    onMouseLeave={() => setWatchlistDropdownOpen(false)}
+                    className="absolute right-0 mt-1 w-52 rounded-md border border-[#E5E7EB] bg-white p-3 shadow-lg z-50 text-xs"
+                  >
+                    <p className="font-semibold text-gray-800 mb-1">Your Watchlist</p>
+                    <p className="text-[#707070] mb-2.5">Track products you love and get notified on price drops.</p>
+                    <Link
+                      to="/account/wishlist"
+                      onClick={() => setWatchlistDropdownOpen(false)}
+                      className="block text-center rounded bg-[#3665f3] py-1.5 font-bold text-white hover:bg-[#2b52cc] transition-colors"
+                    >
+                      View All Items
+                    </Link>
+                  </div>
+                )}
+              </div>
 
 
-            {/* Notification Bell */}
-            <Link
-              to={user ? "/dashboard/inbox" : "/login"}
-              className="relative p-1 text-[#555555] hover:text-[#0654ba] transition-colors"
-              aria-label="Notifications"
-            >
-              <Bell className="h-4 w-4" />
-            </Link>
 
-            {/* Cart Icon with Counter */}
-            <Link
-              to="/cart"
-              className="relative flex items-center p-1 text-[#555555] hover:text-[#0654ba] transition-colors"
-              aria-label={`Cart with ${cartCount} items`}
-            >
-              <ShoppingCart className="h-4.5 w-4.5" />
-              {cartCount > 0 && (
-                <span className="absolute -right-2 -top-1.5 flex h-4 min-w-[17px] items-center justify-center rounded-full bg-[#E53238] px-1 text-[10px] font-bold text-white ring-1 ring-white">
-                  {cartCount}
-                </span>
-              )}
-            </Link>
+              {/* Cart Icon with Counter */}
+              <Link
+                to="/cart"
+                className="relative flex items-center p-1 text-[#555555] hover:text-[#0654ba] transition-colors"
+                aria-label={`Cart with ${cartCount} items`}
+              >
+                <ShoppingCart className="h-4.5 w-4.5" />
+                {cartCount > 0 && (
+                  <span className="absolute -right-2 -top-1.5 flex h-4 min-w-[17px] items-center justify-center rounded-full bg-[#E53238] px-1 text-[10px] font-bold text-white ring-1 ring-white">
+                    {cartCount}
+                  </span>
+                )}
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ──────────────────────────────────────────────────────────────────
           2. MAIN HEADER BAR (eBay Brand & Search Row)
@@ -465,7 +462,7 @@ export function Header() {
                           Inventory Editor
                         </Link>
                       )}
-                      {user && !isCustomerAccountRole(user.role) && (
+                      {showPosOption && (
                         <Link
                           to="/pos"
                           state={{ fromDashboard: pathname }}
@@ -544,7 +541,7 @@ export function Header() {
                     Inventory
                   </Link>
                 )}
-                {user && !isCustomerAccountRole(user.role) && (
+                {showPosOption && (
                   <Link
                     to="/pos"
                     state={{ fromDashboard: pathname }}
@@ -715,7 +712,7 @@ export function Header() {
                     Inventory Management
                   </Link>
                 )}
-                {user && !isCustomerAccountRole(user.role) && (
+                {showPosOption && (
                   <Link
                     to="/pos"
                     state={{ fromDashboard: pathname }}

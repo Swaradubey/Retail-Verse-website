@@ -57,8 +57,8 @@ export function VendorLowStockAlertModal({
                   </h2>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     {lowStock.length > 0
-                      ? `You have ${lowStock.length} assigned item${lowStock.length === 1 ? '' : 's'} running low on stock (less than 5 units left). Fulfill stock now to avoid disruption.`
-                      : 'All assigned products are adequately stocked.'}
+                      ? `You have ${lowStock.length} item(s) running low on stock (less than 5 units left). Consider replenishing soon.`
+                      : 'All products are adequately stocked.'}
                   </p>
                 </div>
               </div>
@@ -69,7 +69,7 @@ export function VendorLowStockAlertModal({
                     <CheckCircle2 className="h-8 w-8" />
                   </div>
                   <p className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                    All assigned items fully stocked!
+                    All items fully stocked!
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-400">
                     No immediate replenishment actions required.

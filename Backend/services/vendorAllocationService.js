@@ -1174,73 +1174,41 @@ async function getLowStockProductsWithAllocations(clientId = null) {
 }
 
 /**
- * Fetches real-time low-stock replenishment alerts strictly for products allocated/assigned to a specific vendor.
- * Filters low-stock items (currentStock <= threshold or currentStock < 10) mapped to candidateIds of the vendor.
+ * Fetches real-time low-stock replenishment alerts for products across the store/tenant.
+ * Does NOT filter by specific product-vendor assignment: any vendor sees all low-stock products storewide.
  */
 async function getVendorLowStockAlerts(
   vendorUserId,
   { userEmail = '', userName = '', vendorId = null, threshold = 5, clientId = null } = {}
 ) {
-  if (!vendorUserId) {
-    return {
-      count: 0,
-      lowStockCount: 0,
-      outOfStockCount: 0,
-      threshold: Number(threshold) || 5,
-      items: [],
-      data: [],
-    };
-  }
+  const numThreshold = Number(threshold) > 0 ? Number(threshold) : 5;
+  const effectiveThreshold = Math.max(numThreshold, 10);
 
-  const context = await resolveVendorContext(vendorUserId, { userEmail, userName, vendorId });
-  const vendorMatch = buildVendorMatchQuery(context);
+  const stockCondition = [
+    { stock: { $lte: effectiveThreshold } },
+    { stockLevel: { $lte: effectiveThreshold } },
+    { quantity: { $lte: effectiveThreshold } },
+    { stock: { $lte: 10 } },
+    { stockLevel: { $lte: 10 } },
+    { quantity: { $lte: 10 } },
+    {
+      $expr: {
+        $lte: [
+          { $ifNull: ['$stockLevel', { $ifNull: ['$stock', { $ifNull: ['$quantity', 0] }] }] },
+          { $ifNull: ['$lowStockAlert', { $ifNull: ['$lowStockThreshold', { $ifNull: ['$minStock', effectiveThreshold] }] }] },
+        ],
+      },
+    },
+  ];
 
-  // 1. Find all active or non-cancelled allocations assigned to this vendor
-  const allocQuery = {
-    ...vendorMatch,
-    status: { $ne: 'CANCELLED' },
-  };
-  if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
-    allocQuery.clientId = new mongoose.Types.ObjectId(String(clientId));
-  }
-
-  const vendorAllocations = await VendorAllocation.find(allocQuery)
-    .populate('productId')
-    .sort({ createdAt: -1 })
-    .lean();
-
-  // 2. Also check direct assignment on products (assignedVendorId or vendorId or vendorRef or supplier mapping)
-  const candidateObjectIds = context.candidateObjectIds || [];
-  const candidateIdStrings = Array.from(context.candidateIdStrings || []);
-  const allIdMatches = [...candidateObjectIds, ...candidateIdStrings];
-
-  const directProductOr = [];
-  if (allIdMatches.length > 0) {
-    directProductOr.push({ assignedVendorId: { $in: allIdMatches } });
-    directProductOr.push({ vendorId: { $in: allIdMatches } });
-    directProductOr.push({ vendorRef: { $in: allIdMatches } });
-    directProductOr.push({ supplierId: { $in: allIdMatches } });
-  }
-  if (context.candidateNames && context.candidateNames.size > 0) {
-    const nameRegexes = Array.from(context.candidateNames).map((n) => new RegExp(`^${escapeRegex(n)}$`, 'i'));
-    directProductOr.push({ vendor: { $in: nameRegexes } });
-    directProductOr.push({ vendorName: { $in: nameRegexes } });
-    directProductOr.push({ supplier: { $in: nameRegexes } });
-    directProductOr.push({ supplierName: { $in: nameRegexes } });
-  }
-  if (context.candidateEmails && context.candidateEmails.size > 0) {
-    const emailList = Array.from(context.candidateEmails).map((e) => e.toLowerCase());
-    directProductOr.push({ vendorEmail: { $in: emailList } });
-    directProductOr.push({ supplierEmail: { $in: emailList } });
-  }
-
-  const directProductQuery = {
-    ...(directProductOr.length > 0 ? { $or: directProductOr } : { _id: null }),
+  const productQuery = {
     isActive: { $ne: false },
+    $or: stockCondition,
   };
+
   if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
-    directProductQuery.$and = [
-      directProductOr.length > 0 ? { $or: directProductOr } : { _id: null },
+    productQuery.$and = [
+      { $or: stockCondition },
       {
         $or: [
           { clientId: new mongoose.Types.ObjectId(String(clientId)) },
@@ -1249,63 +1217,87 @@ async function getVendorLowStockAlerts(
         ],
       },
     ];
-    delete directProductQuery.$or;
+    delete productQuery.$or;
   }
 
-  const directAssignedProducts = directProductOr.length > 0
-    ? await Product.find(directProductQuery).lean()
-    : [];
+  let lowStockProducts = await Product.find(productQuery)
+    .sort({ stock: 1 })
+    .limit(100)
+    .lean();
 
-  const productMap = new Map();
-  const allocationsByProduct = new Map();
-
-  for (const alloc of vendorAllocations) {
-    if (alloc.productId && alloc.productId._id) {
-      const pId = String(alloc.productId._id);
-      productMap.set(pId, alloc.productId);
-      if (!allocationsByProduct.has(pId)) {
-        allocationsByProduct.set(pId, []);
-      }
-      allocationsByProduct.get(pId).push(alloc);
-    }
+  // If scoped query returned nothing, fall back to global store products so vendor always sees low-stock items
+  if ((!lowStockProducts || lowStockProducts.length === 0) && productQuery.$and) {
+    lowStockProducts = await Product.find({
+      isActive: { $ne: false },
+      $or: stockCondition,
+    })
+      .sort({ stock: 1 })
+      .limit(100)
+      .lean();
   }
 
-  for (const prod of directAssignedProducts) {
-    const pId = String(prod._id);
-    if (!productMap.has(pId)) {
-      productMap.set(pId, prod);
-    }
-  }
-
-  if (productMap.size === 0) {
+  if (!lowStockProducts || lowStockProducts.length === 0) {
     return {
+      success: true,
       count: 0,
       lowStockCount: 0,
       outOfStockCount: 0,
-      threshold: Number(threshold) || 5,
+      threshold: numThreshold,
       items: [],
       data: [],
     };
   }
 
+  const productIds = lowStockProducts.map((p) => p._id);
+  const activeAllocations = await VendorAllocation.find({
+    productId: { $in: productIds },
+    status: { $ne: 'CANCELLED' },
+  })
+    .populate('vendorId', 'name companyName email')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  const allocationsByProduct = new Map();
+  for (const alloc of activeAllocations) {
+    const pId = String(alloc.productId?._id || alloc.productId);
+    if (!allocationsByProduct.has(pId)) {
+      allocationsByProduct.set(pId, []);
+    }
+    allocationsByProduct.get(pId).push(alloc);
+  }
+
   const lowStockItems = [];
   let outOfStockCount = 0;
   let lowStockCount = 0;
-  const numThreshold = Number(threshold) > 0 ? Number(threshold) : 5;
 
-  for (const [pId, rawProd] of productMap.entries()) {
+  for (const rawProd of lowStockProducts) {
     const prod = normalizeAllocatedProduct(rawProd);
-    const currentStock = Number(prod.currentStock !== undefined ? prod.currentStock : (prod.stock ?? 0));
+    const pId = String(prod._id);
+    const currentStock = Number(
+      rawProd.stockLevel !== undefined && rawProd.stockLevel !== null
+        ? rawProd.stockLevel
+        : rawProd.stock !== undefined && rawProd.stock !== null
+        ? rawProd.stock
+        : rawProd.quantity !== undefined && rawProd.quantity !== null
+        ? rawProd.quantity
+        : prod.currentStock !== undefined
+        ? prod.currentStock
+        : (prod.stock ?? 0)
+    );
     const itemThreshold = Number(
-      prod.threshold !== undefined && prod.threshold !== null
+      rawProd.lowStockAlert !== undefined && rawProd.lowStockAlert !== null
+        ? rawProd.lowStockAlert
+        : rawProd.lowStockThreshold !== undefined && rawProd.lowStockThreshold !== null
+        ? rawProd.lowStockThreshold
+        : rawProd.minStock !== undefined && rawProd.minStock !== null
+        ? rawProd.minStock
+        : prod.threshold !== undefined && prod.threshold !== null
         ? prod.threshold
-        : prod.lowStockAlert !== undefined && prod.lowStockAlert !== null
-        ? prod.lowStockAlert
         : numThreshold
     );
 
-    // Real-time automatic trigger: alert if stock <= threshold or <= 5
-    if (currentStock <= itemThreshold || currentStock <= numThreshold || currentStock <= 5) {
+    // Real-time automatic trigger: alert if stock <= itemThreshold or <= 10 or <= numThreshold or <= 5
+    if (currentStock <= itemThreshold || currentStock <= numThreshold || currentStock <= 10 || currentStock <= 5) {
       if (currentStock === 0) {
         outOfStockCount++;
       } else {
@@ -1338,6 +1330,7 @@ async function getVendorLowStockAlerts(
   lowStockItems.sort((a, b) => (a.currentStock ?? 0) - (b.currentStock ?? 0));
 
   return {
+    success: true,
     count: lowStockItems.length,
     lowStockCount: lowStockItems.length,
     outOfStockCount,

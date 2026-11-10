@@ -71,16 +71,29 @@ export function useVendorAlerts(
     return () => clearInterval(interval);
   }, [fetchAlerts, options?.refreshInterval]);
 
-  const totalCount = data.count ?? (data.items?.length || 0);
+  const itemsList: VendorLowStockAlertItem[] = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+    ? data.items
+    : Array.isArray(data?.data)
+    ? data.data
+    : [];
+
+  const totalCount =
+    typeof (data as any)?.count === 'number'
+      ? (data as any).count
+      : typeof (data as any)?.lowStockCount === 'number'
+      ? (data as any).lowStockCount
+      : itemsList.length;
 
   return {
-    alerts: data.items || [],
-    items: data.items || [],
-    lowStockCount: data.lowStockCount ?? (data.items?.length || 0),
-    outOfStockCount: data.outOfStockCount ?? 0,
+    alerts: itemsList,
+    items: itemsList,
+    lowStockCount: totalCount,
+    outOfStockCount: (data as any)?.outOfStockCount ?? 0,
     totalAlertsCount: totalCount,
     automaticLowStockCount: totalCount,
-    threshold: data.threshold ?? 5,
+    threshold: (data as any)?.threshold ?? 5,
     loading,
     error,
     refresh: fetchAlerts,

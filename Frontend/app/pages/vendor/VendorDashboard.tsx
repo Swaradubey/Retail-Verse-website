@@ -90,23 +90,45 @@ export function VendorDashboard() {
   const [availableVendors, setAvailableVendors] = useState<VendorItem[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
 
-  // Real-time Low-Stock Action Alerts strictly assigned to this vendor (stock <= threshold / <= 5)
-  const effectiveVendorId = isPrivileged && selectedVendorId ? selectedVendorId : undefined;
+  // Real-time Low-Stock Alerts across the store (stock <= threshold / <= 5)
+  // Low-stock products are not filtered by vendor-product assignment so all vendors see storewide low-stock items
   const {
     alerts: lowStockAlerts,
     lowStockCount,
     outOfStockCount,
-    automaticLowStockCount: hookLowStockCount,
-    threshold: alertThreshold,
+    threshold: alertThreshold = 5,
     refresh: refreshVendorAlerts,
-  } = useVendorAlerts(effectiveVendorId, { threshold: 5, refreshInterval: 15000 });
+  } = useVendorAlerts(undefined, { threshold: 5, refreshInterval: 15000 });
   const [isLowStockAlertsOpen, setIsLowStockAlertsOpen] = useState(false);
 
-  // Real-time automatic low stock count reading directly from inventory stock level
-  const automaticLowStockCount =
-    hookLowStockCount ??
-    lowStockAlerts.length ??
-    (lowStockCount + outOfStockCount);
+  // Combined real-time low-stock products across the store
+  const lowStockProducts = useMemo(() => {
+    if (lowStockAlerts && lowStockAlerts.length > 0) return lowStockAlerts;
+    // Fallback: extract any low-stock items from loaded allocations
+    const fromAllocations = allocations
+      .filter((a) => {
+        const s = a.productId?.currentStock ?? a.productId?.stock ?? a.currentStockAtTrigger ?? 0;
+        const t = a.productId?.lowStockAlert ?? a.productId?.threshold ?? 5;
+        return s <= t || s <= 5;
+      })
+      .map((a) => ({
+        ...a.productId,
+        currentStock: a.productId?.currentStock ?? a.productId?.stock ?? a.currentStockAtTrigger ?? 0,
+        stock: a.productId?.stock ?? 0,
+        threshold: a.productId?.lowStockAlert ?? a.productId?.threshold ?? 5,
+        latestAllocation: a,
+        allocations: [a],
+      })) as VendorLowStockAlertItem[];
+
+    const unique = new Map<string, VendorLowStockAlertItem>();
+    fromAllocations.forEach((item) => {
+      const id = String(item._id || item.sku);
+      if (!unique.has(id)) unique.set(id, item);
+    });
+    return Array.from(unique.values());
+  }, [lowStockAlerts, allocations]);
+
+  const count = lowStockProducts.length > 0 ? lowStockProducts.length : (lowStockCount || outOfStockCount || 0);
 
   const handleReplenishBannerAction = () => {
     if (lowStockAlerts.length > 0) {
@@ -533,7 +555,7 @@ export function VendorDashboard() {
 
         {/* ── Low-Stock Replenishment Action Required Alert Banner ───────── */}
         <AnimatePresence>
-          {automaticLowStockCount > 0 && (
+          {(lowStockProducts.length > 0 || count > 0) && (
             <motion.div
               initial={{ opacity: 0, y: -16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -549,14 +571,14 @@ export function VendorDashboard() {
                   </div>
                   <div className="space-y-1">
                     <h3 className="text-[15px] font-bold text-orange-950 dark:text-orange-100">
-                      Attention: Low Stock Alert
+                      Attention: Inventory Action Required
                     </h3>
                     <p className="text-sm text-orange-900/90 dark:text-orange-300/90 leading-relaxed max-w-[720px]">
-                      Attention: Low Stock Alert - You have{' '}
+                      You have{' '}
                       <span className="font-semibold text-orange-600 dark:text-orange-400">
-                        {automaticLowStockCount} assigned product{automaticLowStockCount === 1 ? '' : 's'}
+                        {count} item(s)
                       </span>{' '}
-                      running low on stock (less than 5 units left).
+                      running low on stock (less than 5 units left). Consider replenishing soon.
                     </p>
                   </div>
                 </div>
@@ -568,7 +590,7 @@ export function VendorDashboard() {
                     onClick={() => setIsLowStockAlertsOpen(true)}
                     className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 cursor-pointer dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
                   >
-                    View Low-Stock Products
+                    View Low-Stock Products ({count})
                   </Button>
                   <Button
                     type="button"
@@ -1377,7 +1399,7 @@ export function VendorDashboard() {
         {/* ── Low-Stock Replenishment Alerts Modal ──────────────────────── */}
         <VendorLowStockAlertModal
           isOpen={isLowStockAlertsOpen}
-          items={lowStockAlerts}
+          items={lowStockProducts}
           threshold={alertThreshold}
           onClose={() => setIsLowStockAlertsOpen(false)}
           onFulfillReplenishment={handleModalFulfillAction}

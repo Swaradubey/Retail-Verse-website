@@ -514,24 +514,47 @@ export const vendorAllocationsApi = {
     if (threshold) params.append('threshold', String(threshold));
     const query = params.toString() ? `?${params.toString()}` : '';
 
+    let raw: any;
     try {
-      const res = await ApiService.get<VendorLowStockAlertsResponse>(
-        `/vendor/low-stock-products${query}`
-      );
-      return (res.data || res) as VendorLowStockAlertsResponse;
+      raw = await ApiService.get(`/vendor/low-stock-products${query}`);
     } catch {
       try {
-        const resAlerts = await ApiService.get<VendorLowStockAlertsResponse>(
-          `/vendor/low-stock-alerts${query}`
-        );
-        return (resAlerts.data || resAlerts) as VendorLowStockAlertsResponse;
+        raw = await ApiService.get(`/vendor/low-stock-alerts${query}`);
       } catch {
-        const resFallback = await ApiService.get<VendorLowStockAlertsResponse>(
-          `/vendor-allocations/low-stock-alerts${query}`
-        );
-        return (resFallback.data || resFallback) as VendorLowStockAlertsResponse;
+        try {
+          raw = await ApiService.get(`/vendor-allocations/low-stock-alerts${query}`);
+        } catch {
+          raw = null;
+        }
       }
     }
+
+    const items: VendorLowStockAlertItem[] = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.items)
+      ? raw.items
+      : Array.isArray(raw?.data)
+      ? raw.data
+      : Array.isArray(raw?.products)
+      ? raw.products
+      : [];
+
+    const totalCount =
+      typeof raw?.count === 'number'
+        ? raw.count
+        : typeof raw?.lowStockCount === 'number'
+        ? raw.lowStockCount
+        : items.length;
+
+    return {
+      success: true,
+      count: totalCount,
+      lowStockCount: totalCount,
+      outOfStockCount: typeof raw?.outOfStockCount === 'number' ? raw.outOfStockCount : 0,
+      threshold: typeof raw?.threshold === 'number' ? raw.threshold : threshold,
+      items,
+      data: items,
+    };
   },
 
   /** Fetch real-time low-stock products mapped to authenticated vendor */
