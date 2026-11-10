@@ -15,20 +15,33 @@ const VendorAllocationSchema = new mongoose.Schema(
       index: true,
     },
     vendorId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.Mixed,
       refPath: 'vendorModel',
       required: true,
       index: true,
     },
     vendorModel: {
       type: String,
-      enum: ['Vendor', 'User'],
+      enum: ['Vendor', 'User', 'Employee'],
       default: 'Vendor',
     },
     vendorUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
+      index: true,
+    },
+    vendorName: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+    },
+    vendorEmail: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: '',
       index: true,
     },
     allocatedQuantity: {
@@ -46,7 +59,7 @@ const VendorAllocationSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'ACCEPTED', 'DISPATCHED', 'RECEIVED', 'CANCELLED'],
+      enum: ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED', 'ACCEPTED', 'DISPATCHED', 'RECEIVED', 'CANCELLED'],
       default: 'PENDING',
       index: true,
     },
@@ -97,6 +110,8 @@ const VendorAllocationSchema = new mongoose.Schema(
 // Compound indexes for fast vendor queries and admin lookup (High Performance & Scalability)
 VendorAllocationSchema.index({ vendorId: 1, status: 1 });
 VendorAllocationSchema.index({ vendorUserId: 1, status: 1 });
+VendorAllocationSchema.index({ vendorName: 1, status: 1 });
+VendorAllocationSchema.index({ vendorEmail: 1, status: 1 });
 VendorAllocationSchema.index({ vendorId: 1, status: 1, isSeen: 1 });
 VendorAllocationSchema.index({ vendorId: 1, createdAt: -1 });
 VendorAllocationSchema.index({ vendorUserId: 1, createdAt: -1 });

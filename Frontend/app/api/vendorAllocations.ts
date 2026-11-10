@@ -12,7 +12,14 @@ export interface VendorItem {
   isActive: boolean;
 }
 
-export type AllocationStatus = 'PENDING' | 'ACCEPTED' | 'DISPATCHED' | 'RECEIVED' | 'CANCELLED';
+export type AllocationStatus =
+  | 'PENDING'
+  | 'PENDING_ACCEPTANCE'
+  | 'PUBLISHED'
+  | 'ACCEPTED'
+  | 'DISPATCHED'
+  | 'RECEIVED'
+  | 'CANCELLED';
 
 export interface AllocatedProduct {
   _id: string;
@@ -118,6 +125,23 @@ export interface LowStockSummaryItem extends AllocatedProduct {
   allocations: VendorAllocationItem[];
 }
 
+export interface VendorLowStockAlertItem extends AllocatedProduct {
+  totalUnitsAllocated?: number;
+  activeAllocationCount?: number;
+  allocations?: VendorAllocationItem[];
+  latestAllocation?: VendorAllocationItem | null;
+}
+
+export interface VendorLowStockAlertsResponse {
+  success: boolean;
+  count: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  threshold: number;
+  items: VendorLowStockAlertItem[];
+  data?: VendorLowStockAlertItem[];
+}
+
 export interface VendorStats {
   totalAllocations: number;
   pending: number;
@@ -213,7 +237,12 @@ function extractVendorMetrics(res: any): VendorStats {
   return {
     totalAllocations: list.length,
     totalUnits: list.reduce((sum, a) => sum + (Number(a.allocatedQuantity) || 0), 0),
-    pending: list.filter((a) => a.status === 'PENDING').length,
+    pending: list.filter(
+      (a) =>
+        a.status === 'PENDING' ||
+        a.status === 'PENDING_ACCEPTANCE' ||
+        a.status === 'PUBLISHED'
+    ).length,
     accepted: list.filter((a) => a.status === 'ACCEPTED').length,
     dispatched: list.filter((a) => a.status === 'DISPATCHED').length,
     received: list.filter((a) => a.status === 'RECEIVED').length,
@@ -473,6 +502,44 @@ export const vendorAllocationsApi = {
       },
       vendor: res.data?.vendor || null,
     };
+  },
+
+  /** Fetch real-time low-stock alerts strictly for products allocated/assigned to this vendor */
+  async getVendorLowStockAlerts(
+    vendorId?: string,
+    threshold: number = 5
+  ): Promise<VendorLowStockAlertsResponse> {
+    const params = new URLSearchParams();
+    if (vendorId) params.append('vendorId', vendorId);
+    if (threshold) params.append('threshold', String(threshold));
+    const query = params.toString() ? `?${params.toString()}` : '';
+
+    try {
+      const res = await ApiService.get<VendorLowStockAlertsResponse>(
+        `/vendor/low-stock-products${query}`
+      );
+      return (res.data || res) as VendorLowStockAlertsResponse;
+    } catch {
+      try {
+        const resAlerts = await ApiService.get<VendorLowStockAlertsResponse>(
+          `/vendor/low-stock-alerts${query}`
+        );
+        return (resAlerts.data || resAlerts) as VendorLowStockAlertsResponse;
+      } catch {
+        const resFallback = await ApiService.get<VendorLowStockAlertsResponse>(
+          `/vendor-allocations/low-stock-alerts${query}`
+        );
+        return (resFallback.data || resFallback) as VendorLowStockAlertsResponse;
+      }
+    }
+  },
+
+  /** Fetch real-time low-stock products mapped to authenticated vendor */
+  async getVendorLowStockProducts(
+    vendorId?: string,
+    threshold: number = 5
+  ): Promise<VendorLowStockAlertsResponse> {
+    return this.getVendorLowStockAlerts(vendorId, threshold);
   },
 };
 

@@ -89,6 +89,60 @@ const productSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    assignedVendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      default: null,
+      index: true,
+    },
+    vendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Vendor",
+      default: null,
+      index: true,
+    },
+    vendorRef: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
+    vendor: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    vendorName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    vendorEmail: {
+      type: String,
+      default: "",
+      trim: true,
+      lowercase: true,
+    },
+    supplierId: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    supplier: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    supplierEmail: {
+      type: String,
+      default: "",
+      trim: true,
+      lowercase: true,
+    },
+    threshold: {
+      type: Number,
+      default: 5,
+      min: [0, "Threshold cannot be negative"],
+    },
     barcode: {
       type: String,
       default: "",

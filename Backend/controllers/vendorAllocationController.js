@@ -14,21 +14,104 @@ async function resolveVendorForUser(user, explicitVendorId = null) {
   const isPrivileged = role === 'admin' || role === 'super_admin' || role === 'client';
 
   // If privileged and explicitly provided a vendorId query/param, honor it
-  if (isPrivileged && explicitVendorId && mongoose.Types.ObjectId.isValid(explicitVendorId)) {
-    const v = await Vendor.findById(explicitVendorId).lean();
-    if (v) return v;
+  if (isPrivileged && explicitVendorId) {
+    const vIdStr = String(explicitVendorId).trim();
+    if (mongoose.Types.ObjectId.isValid(vIdStr)) {
+      const v = await Vendor.findById(vIdStr).lean();
+      if (v) return v;
 
-    const u = await User.findById(explicitVendorId).lean();
-    if (u) {
-      return {
-        _id: u._id,
-        name: u.name,
-        companyName: `${u.name} Supplies`,
-        email: u.email,
-        phone: u.phone || '',
-        userId: u._id,
-        isActive: true,
-      };
+      const u = await User.findById(vIdStr).lean();
+      if (u) {
+        let shopName = '';
+        try {
+          const emp = await Employee.findOne({ $or: [{ userId: u._id }, { email: u.email }] }).lean();
+          if (emp?.shopName) shopName = emp.shopName;
+        } catch {}
+
+        return {
+          _id: u._id,
+          name: u.name,
+          companyName: shopName || `${u.name} Supplies`,
+          email: u.email,
+          phone: u.phone || '',
+          userId: u._id,
+          isActive: true,
+        };
+      }
+
+      try {
+        const emp = await Employee.findById(vIdStr).lean();
+        if (emp) {
+          return {
+            _id: emp.userId || emp._id,
+            employeeId: emp._id,
+            name: emp.name,
+            companyName: emp.shopName || `${emp.name} Supplies`,
+            email: emp.email,
+            phone: emp.phone || '',
+            userId: emp.userId || emp._id,
+            isActive: emp.status !== 'inactive',
+          };
+        }
+      } catch {}
+    } else {
+      // Lookup by string name or email
+      const escaped = vIdStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const baseName = vIdStr.replace(/\s+Supplies$/i, '').trim();
+      const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const namePatterns = [
+        new RegExp(`^${escaped}$`, 'i'),
+        new RegExp(`^${escapedBase}$`, 'i'),
+      ];
+
+      const v = await Vendor.findOne({
+        $or: [
+          { name: { $in: namePatterns } },
+          { companyName: { $in: namePatterns } },
+          { email: vIdStr.toLowerCase() },
+        ],
+      }).lean();
+      if (v) return v;
+
+      const u = await User.findOne({
+        $or: [
+          { name: { $in: namePatterns } },
+          { email: vIdStr.toLowerCase() },
+        ],
+      }).lean();
+      if (u) {
+        return {
+          _id: u._id,
+          name: u.name,
+          companyName: `${u.name} Supplies`,
+          email: u.email,
+          phone: u.phone || '',
+          userId: u._id,
+          isActive: true,
+        };
+      }
+
+      try {
+        const emp = await Employee.findOne({
+          $or: [
+            { name: { $in: namePatterns } },
+            { shopName: { $in: namePatterns } },
+            { email: vIdStr.toLowerCase() },
+          ],
+        }).lean();
+        if (emp) {
+          return {
+            _id: emp.userId || emp._id,
+            employeeId: emp._id,
+            name: emp.name,
+            companyName: emp.shopName || `${emp.name} Supplies`,
+            email: emp.email,
+            phone: emp.phone || '',
+            userId: emp.userId || emp._id,
+            isActive: emp.status !== 'inactive',
+          };
+        }
+      } catch {}
     }
   }
 
@@ -46,6 +129,31 @@ async function resolveVendorForUser(user, explicitVendorId = null) {
 
   if (vendor) return vendor;
 
+  // 2b. Look up Employee to obtain accurate name and shopName (e.g. "shreya Supplies")
+  try {
+    const emp = await Employee.findOne({
+      $or: [
+        { userId: userOid },
+        { _id: userOid },
+        ...(user?.email ? [{ email: user.email.toLowerCase().trim() }] : []),
+        ...(user?.name ? [{ name: new RegExp(`^${user.name.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }] : []),
+      ],
+    }).lean();
+
+    if (emp) {
+      return {
+        _id: emp.userId || emp._id,
+        employeeId: emp._id,
+        name: emp.name,
+        companyName: emp.shopName || `${emp.name} Supplies`,
+        email: emp.email,
+        phone: emp.phone || '',
+        userId: emp.userId || emp._id,
+        isActive: emp.status !== 'inactive',
+      };
+    }
+  } catch {}
+
   // 3. If user has role VENDOR, auto-provision and link a Vendor record
   if (role === 'vendor' || role === 'vendor_manager') {
     const newVendor = await Vendor.create({
@@ -59,6 +167,19 @@ async function resolveVendorForUser(user, explicitVendorId = null) {
     });
     await User.updateOne({ _id: user._id }, { $set: { vendorRef: newVendor._id } });
     return newVendor.toObject ? newVendor.toObject() : newVendor;
+  }
+
+  // If user has a name, return structured profile
+  if (user?.name) {
+    return {
+      _id: user._id,
+      name: user.name,
+      companyName: `${user.name} Supplies`,
+      email: user.email || '',
+      phone: user.phone || '',
+      userId: user._id,
+      isActive: true,
+    };
   }
 
   // Fallback: return default vendor for testing
@@ -132,14 +253,24 @@ exports.getVendors = async (req, res) => {
       mergedList.push(item);
     };
 
+    // Pre-index Employee metadata by userId and lowercase email for rich shop/company name merging
+    const empByUserId = new Map();
+    const empByEmail = new Map();
+    for (const emp of employeesWithVendorRole) {
+      if (emp.userId) empByUserId.set(String(emp.userId), emp);
+      if (emp.email) empByEmail.set(String(emp.email).toLowerCase().trim(), emp);
+    }
+
     // First: Register User accounts so their exact user._id is selected for split allocations
     for (const u of usersWithVendorRole) {
+      const linkedEmp = empByUserId.get(String(u._id)) || empByEmail.get(String(u.email).toLowerCase().trim());
+      const comp = linkedEmp?.shopName || u.companyName || (u.name ? `${u.name} Supplies` : '');
       registerVendor({
         _id: u._id,
         name: u.name || u.email,
-        companyName: u.companyName || u.shopName || '',
+        companyName: comp,
         email: u.email,
-        phone: u.phone || '',
+        phone: u.phone || linkedEmp?.phone || '',
         userId: u._id,
         role: u.role,
         isUserAccount: true,
@@ -150,10 +281,11 @@ exports.getVendors = async (req, res) => {
     // Second: Register Employee staff with VENDOR role
     for (const emp of employeesWithVendorRole) {
       const targetId = emp.userId || emp._id;
+      const comp = emp.shopName || (emp.name ? `${emp.name} Supplies` : '');
       registerVendor({
         _id: targetId,
         name: emp.name || emp.email,
-        companyName: emp.shopName || '',
+        companyName: comp,
         email: emp.email,
         phone: emp.phone || '',
         userId: emp.userId || emp._id,
@@ -177,7 +309,7 @@ exports.getVendors = async (req, res) => {
       registerVendor({
         _id: v._id,
         name: v.name || v.companyName || v.email,
-        companyName: v.companyName && v.companyName !== v.name ? v.companyName : '',
+        companyName: v.companyName || (v.name ? `${v.name} Supplies` : ''),
         email: v.email,
         phone: v.phone || '',
         userId: v.userId || null,
@@ -334,6 +466,47 @@ exports.getLowStockSummary = async (req, res) => {
 };
 
 /**
+ * GET /api/vendor/low-stock-alerts & /api/vendor/low-stock-products & /api/vendor-allocations/low-stock-alerts
+ * Fetches real-time low-stock items strictly allocated or assigned to the logged-in vendor.
+ * Supports threshold query param (default 5) and vendorId query param for privileged testers.
+ */
+exports.getVendorLowStockAlerts = async (req, res) => {
+  try {
+    const role = String(req.user?.role || '').toLowerCase();
+    const isPrivileged = role === 'admin' || role === 'super_admin' || role === 'client';
+
+    let targetId = req.user._id;
+    if (isPrivileged && req.query.vendorId) {
+      targetId = req.query.vendorId;
+    }
+
+    const clientId = await resolveClientId(req);
+    const threshold = req.query.threshold ? parseInt(req.query.threshold, 10) : 5;
+
+    const resolvedVendor = await resolveVendorForUser(req.user, req.query.vendorId);
+    const vendorEmail = resolvedVendor?.email || req.user?.email || '';
+    const vendorName = resolvedVendor?.name || req.user?.name || '';
+    const vendorId = resolvedVendor?._id || req.user?.vendorRef || req.user?.vendorId || targetId;
+
+    const result = await vendorAllocationService.getVendorLowStockAlerts(targetId, {
+      userEmail: vendorEmail,
+      userName: vendorName,
+      vendorId: vendorId,
+      threshold,
+      clientId,
+    });
+
+    res.json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error('[vendorAllocationController] getVendorLowStockAlerts error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * GET /api/vendor/allocations & /api/vendor/requirements & /api/vendor-allocations/vendor
  * Fetches allocations directly assigned to this logged-in vendor user.
  * Supports server-side pagination (limit=10), search, status filters, and metrics aggregation.
@@ -345,30 +518,34 @@ exports.getVendorAllocations = async (req, res) => {
 
     // Target user ID to lookup: either explicit vendorId for privileged tester, or req.user._id
     let targetId = req.user._id;
-    if (isPrivileged && req.query.vendorId && mongoose.Types.ObjectId.isValid(req.query.vendorId)) {
+    if (isPrivileged && req.query.vendorId) {
       targetId = req.query.vendorId;
     }
 
     const { page, limit, status, search, isSeen } = req.query;
 
-    const [result, vendor] = await Promise.all([
-      vendorAllocationService.getVendorAllocations(targetId, {
-        page,
-        limit,
-        status,
-        search,
-        isSeen,
-        userEmail: req.user.email,
-      }),
-      resolveVendorForUser(req.user, req.query.vendorId),
-    ]);
+    const resolvedVendor = await resolveVendorForUser(req.user, req.query.vendorId);
+    const vendorEmail = resolvedVendor?.email || req.user?.email || '';
+    const vendorName = resolvedVendor?.name || req.user?.name || '';
+    const vendorId = resolvedVendor?._id || req.user?.vendorRef || req.user?.vendorId || targetId;
 
-    const resolvedVendor =
-      vendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role };
+    const result = await vendorAllocationService.getVendorAllocations(targetId, {
+      page,
+      limit,
+      status,
+      search,
+      isSeen,
+      userEmail: vendorEmail,
+      userName: vendorName,
+      vendorId: vendorId,
+    });
+
+    const vendorProfile =
+      resolvedVendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role };
 
     res.json({
       success: true,
-      vendor: resolvedVendor,
+      vendor: vendorProfile,
       data: result.data,
       allocations: result.allocations,
       count: result.pagination.total,
@@ -559,18 +736,24 @@ exports.getVendorStats = async (req, res) => {
     const isPrivileged = role === 'admin' || role === 'super_admin' || role === 'client';
 
     let targetId = req.user._id;
-    if (isPrivileged && req.query.vendorId && mongoose.Types.ObjectId.isValid(req.query.vendorId)) {
+    if (isPrivileged && req.query.vendorId) {
       targetId = req.query.vendorId;
     }
 
-    const [stats, vendor] = await Promise.all([
-      vendorAllocationService.getVendorMetrics(targetId, req.user.email),
-      resolveVendorForUser(req.user, req.query.vendorId),
-    ]);
+    const resolvedVendor = await resolveVendorForUser(req.user, req.query.vendorId);
+    const vendorEmail = resolvedVendor?.email || req.user?.email || '';
+    const vendorName = resolvedVendor?.name || req.user?.name || '';
+    const vendorId = resolvedVendor?._id || req.user?.vendorRef || req.user?.vendorId || targetId;
+
+    const stats = await vendorAllocationService.getVendorMetrics(targetId, {
+      userEmail: vendorEmail,
+      userName: vendorName,
+      vendorId: vendorId,
+    });
 
     res.json({
       success: true,
-      vendor: vendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role },
+      vendor: resolvedVendor || { _id: req.user._id, name: req.user.name, email: req.user.email, role: req.user.role },
       stats,
       data: stats,
       metrics: stats,

@@ -37,6 +37,14 @@ function normalizeAllocation(allocDoc) {
   if (alloc.productId) {
     alloc.productId = normalizeAllocatedProduct(alloc.productId);
   }
+  if (!alloc.vendorId || typeof alloc.vendorId !== 'object') {
+    alloc.vendorId = {
+      _id: alloc.vendorId || alloc.vendorUserId || '',
+      name: alloc.vendorName || (typeof alloc.vendorId === 'string' ? alloc.vendorId : 'Assigned Vendor'),
+      companyName: alloc.vendorName ? `${alloc.vendorName} Supplies` : 'Vendor Partner',
+      email: alloc.vendorEmail || '',
+    };
+  }
   return alloc;
 }
 
@@ -97,42 +105,104 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
 
   for (const item of allocations) {
     const vIdStr = String(item.vendorId || '').trim();
-    if (!vIdStr || !mongoose.Types.ObjectId.isValid(vIdStr)) {
-      throw new Error(`Invalid vendor ID provided: ${item.vendorId}`);
+    if (!vIdStr) {
+      throw new Error(`A valid vendor ID or name is required.`);
     }
 
-    const targetOid = new mongoose.Types.ObjectId(vIdStr);
+    const isValidOid = mongoose.Types.ObjectId.isValid(vIdStr);
+    const targetOid = isValidOid ? new mongoose.Types.ObjectId(vIdStr) : null;
 
-    // 1. Check if target is a User with role VENDOR (from Users & Roles)
-    let userDoc = await User.findOne({
-      _id: targetOid,
-      role: { $in: ['vendor', 'VENDOR', 'Vendor', 'vendor_manager'] },
-    })
-      .select('_id name email role clientId vendorRef')
-      .lean();
-
-    // 2. Check if target is an Employee staff record
+    let userDoc = null;
     let employeeDoc = null;
-    try {
-      const Employee = require('../models/Employee');
-      employeeDoc = await Employee.findById(targetOid).lean();
-      if (employeeDoc && !userDoc && employeeDoc.userId) {
-        userDoc = await User.findById(employeeDoc.userId)
-          .select('_id name email role clientId vendorRef')
-          .lean();
+    let vendorDoc = null;
+
+    if (isValidOid) {
+      // 1. Check if target is a User with role VENDOR (from Users & Roles)
+      userDoc = await User.findOne({
+        _id: targetOid,
+        role: { $in: ['vendor', 'VENDOR', 'Vendor', 'vendor_manager'] },
+      })
+        .select('_id name email role clientId vendorRef')
+        .lean();
+
+      // 2. Check if target is an Employee staff record
+      try {
+        const Employee = require('../models/Employee');
+        employeeDoc = await Employee.findById(targetOid).lean();
+        if (employeeDoc && !userDoc && employeeDoc.userId) {
+          userDoc = await User.findById(employeeDoc.userId)
+            .select('_id name email role clientId vendorRef')
+            .lean();
+        }
+      } catch {
+        // Ignore if Employee model not found
       }
-    } catch {
-      // Ignore if Employee model not found
+
+      // 3. Check if target is a Vendor document
+      vendorDoc = await Vendor.findById(targetOid).lean();
     }
 
-    // 3. Check if target is a Vendor document
-    let vendorDoc = await Vendor.findById(targetOid).lean();
+    // If not resolved by ObjectId, or if vIdStr is a string name (e.g. "shreya" or "shreya Supplies")
+    if (!userDoc && !employeeDoc && !vendorDoc) {
+      const escaped = vIdStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const baseName = vIdStr.replace(/\s+Supplies$/i, '').trim();
+      const escapedBase = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const namePatterns = [
+        new RegExp(`^${escaped}$`, 'i'),
+        new RegExp(`^${escapedBase}$`, 'i'),
+      ];
+
+      userDoc = await User.findOne({
+        $or: [
+          { name: { $in: namePatterns } },
+          { email: vIdStr.toLowerCase() },
+        ],
+        role: { $in: ['vendor', 'VENDOR', 'Vendor', 'vendor_manager'] },
+      })
+        .select('_id name email role clientId vendorRef')
+        .lean();
+
+      try {
+        const Employee = require('../models/Employee');
+        employeeDoc = await Employee.findOne({
+          $or: [
+            { name: { $in: namePatterns } },
+            { shopName: { $in: namePatterns } },
+            { email: vIdStr.toLowerCase() },
+          ],
+        }).lean();
+        if (employeeDoc && !userDoc && employeeDoc.userId) {
+          userDoc = await User.findById(employeeDoc.userId)
+            .select('_id name email role clientId vendorRef')
+            .lean();
+        }
+      } catch {}
+
+      vendorDoc = await Vendor.findOne({
+        $or: [
+          { name: { $in: namePatterns } },
+          { companyName: { $in: namePatterns } },
+          { email: vIdStr.toLowerCase() },
+        ],
+      }).lean();
+    }
 
     // If target matched a Vendor document, resolve its linked user if present
     if (vendorDoc && !userDoc && vendorDoc.userId) {
       userDoc = await User.findById(vendorDoc.userId)
         .select('_id name email role clientId vendorRef')
         .lean();
+    }
+
+    // If target matched an Employee document, resolve its linked vendor if present
+    if (employeeDoc && !vendorDoc) {
+      vendorDoc = await Vendor.findOne({
+        $or: [
+          ...(employeeDoc.userId ? [{ userId: employeeDoc.userId }] : []),
+          ...(employeeDoc.vendorRef ? [{ _id: employeeDoc.vendorRef }] : []),
+          ...(employeeDoc.email ? [{ email: employeeDoc.email.toLowerCase().trim() }] : []),
+        ],
+      }).lean();
     }
 
     // If target matched a User, find or auto-link their Vendor profile
@@ -159,11 +229,20 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
     }
 
     // Fallback: check if target is any User doc
-    if (!userDoc && !vendorDoc) {
+    if (!userDoc && !vendorDoc && isValidOid) {
       userDoc = await User.findById(targetOid).select('_id name email role clientId vendorRef').lean();
     }
 
-    if (!userDoc && !vendorDoc) {
+    if (!userDoc && !vendorDoc && !employeeDoc && !isValidOid) {
+      vendorDoc = await Vendor.create({
+        name: vIdStr,
+        companyName: `${vIdStr} Supplies`,
+        email: `vendor_${Date.now()}@retailverse.in`,
+        isActive: true,
+      });
+    }
+
+    if (!userDoc && !vendorDoc && !employeeDoc) {
       throw new Error(`Vendor not found or inactive: ${item.vendorId}`);
     }
 
@@ -174,21 +253,54 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
       );
     }
 
-    // Determine correct refPath model matching targetOid
-    const isVendorCollectionDoc = vendorDoc && String(vendorDoc._id) === String(targetOid);
-    const resolvedVendorModel = isVendorCollectionDoc ? 'Vendor' : 'User';
+    const resolvedName =
+      vendorDoc?.name ||
+      vendorDoc?.companyName ||
+      employeeDoc?.name ||
+      employeeDoc?.shopName ||
+      userDoc?.name ||
+      vIdStr;
+
+    const resolvedEmail =
+      vendorDoc?.email ||
+      employeeDoc?.email ||
+      userDoc?.email ||
+      '';
+
+    const resolvedVendorId =
+      targetOid ||
+      vendorDoc?._id ||
+      employeeDoc?._id ||
+      userDoc?._id ||
+      vIdStr;
+
+    const resolvedVendorUserId =
+      userDoc?._id ||
+      employeeDoc?.userId ||
+      vendorDoc?.userId ||
+      (isValidOid ? targetOid : null);
+
+    let resolvedVendorModel = 'Vendor';
+    if (vendorDoc && String(vendorDoc._id) === String(resolvedVendorId)) {
+      resolvedVendorModel = 'Vendor';
+    } else if (employeeDoc && String(employeeDoc._id) === String(resolvedVendorId)) {
+      resolvedVendorModel = 'Employee';
+    } else if (userDoc && String(userDoc._id) === String(resolvedVendorId)) {
+      resolvedVendorModel = 'User';
+    }
 
     documentsToInsert.push({
       productId: product._id,
       adminId,
-      // Store exact ObjectId of split.vendorId as instructed
-      vendorId: targetOid,
-      vendorUserId: userDoc ? userDoc._id : (vendorDoc?.userId || (employeeDoc?.userId || null)),
+      vendorId: resolvedVendorId,
+      vendorUserId: resolvedVendorUserId,
+      vendorName: resolvedName,
+      vendorEmail: resolvedEmail,
       vendorModel: resolvedVendorModel,
       allocatedQuantity: Math.floor(qty),
       currentStockAtTrigger: currentStock,
       targetDeliveryDate: item.targetDeliveryDate ? new Date(item.targetDeliveryDate) : null,
-      status: 'PENDING',
+      status: item.status || 'PENDING',
       isSeen: false,
       seenAt: null,
       vendorNotes: item.notes ? String(item.notes).trim() : '',
@@ -211,63 +323,213 @@ async function createSplitAllocation({ productId, adminId, allocations, clientId
   return normalizeAllocations(populated);
 }
 
+function escapeRegex(str) {
+  return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Resolves candidate ObjectIds, string IDs, candidate names, and candidate emails
+ * associated with a vendor user across User, Employee, and Vendor collections.
+ */
+async function resolveVendorContext(vendorUserId, { userEmail = '', userName = '', vendorId = null } = {}) {
+  const candidateObjectIds = [];
+  const candidateIdStrings = new Set();
+  const candidateNames = new Set();
+  const candidateEmails = new Set();
+
+  const addId = (id) => {
+    if (!id) return;
+    const str = String(id).trim();
+    if (!str) return;
+    if (mongoose.Types.ObjectId.isValid(str)) {
+      const oid = new mongoose.Types.ObjectId(str);
+      if (!candidateObjectIds.some((existing) => existing.equals(oid))) {
+        candidateObjectIds.push(oid);
+      }
+      candidateIdStrings.add(str);
+    } else {
+      candidateNames.add(str);
+    }
+  };
+
+  const addName = (name) => {
+    if (!name) return;
+    const str = String(name).trim();
+    if (str) {
+      candidateNames.add(str);
+      if (/\s+Supplies$/i.test(str)) {
+        candidateNames.add(str.replace(/\s+Supplies$/i, '').trim());
+      } else {
+        candidateNames.add(`${str} Supplies`);
+      }
+    }
+  };
+
+  const addEmail = (email) => {
+    if (!email) return;
+    const str = String(email).trim().toLowerCase();
+    if (str) {
+      candidateEmails.add(str);
+    }
+  };
+
+  addId(vendorUserId);
+  addId(vendorId);
+  addName(userName);
+  addEmail(userEmail);
+
+  const initialIds = [...candidateObjectIds];
+  const initialEmails = [...candidateEmails];
+  const initialNames = [...candidateNames];
+
+  // 1. Find matching Users
+  const userOr = [];
+  if (initialIds.length > 0) {
+    userOr.push({ _id: { $in: initialIds } });
+    userOr.push({ vendorRef: { $in: initialIds } });
+  }
+  if (initialEmails.length > 0) {
+    userOr.push({ email: { $in: initialEmails } });
+  }
+  for (const name of initialNames) {
+    userOr.push({ name: new RegExp(`^${escapeRegex(name)}$`, 'i') });
+  }
+
+  if (userOr.length > 0) {
+    try {
+      const matchedUsers = await User.find({ $or: userOr })
+        .select('_id name email role vendorRef clientId')
+        .lean();
+      for (const u of matchedUsers) {
+        addId(u._id);
+        addId(u.vendorRef);
+        addName(u.name);
+        addEmail(u.email);
+      }
+    } catch {}
+  }
+
+  // 2. Find matching Vendors
+  const vendorOr = [];
+  if (candidateObjectIds.length > 0) {
+    vendorOr.push({ _id: { $in: candidateObjectIds } });
+    vendorOr.push({ userId: { $in: candidateObjectIds } });
+  }
+  if (candidateEmails.size > 0) {
+    vendorOr.push({ email: { $in: [...candidateEmails] } });
+  }
+  for (const name of [...candidateNames]) {
+    const escaped = escapeRegex(name);
+    vendorOr.push({ name: new RegExp(`^${escaped}$`, 'i') });
+    vendorOr.push({ companyName: new RegExp(`^${escaped}$`, 'i') });
+  }
+
+  if (vendorOr.length > 0) {
+    try {
+      const matchedVendors = await Vendor.find({ $or: vendorOr })
+        .select('_id userId name companyName email phone')
+        .lean();
+      for (const v of matchedVendors) {
+        addId(v._id);
+        addId(v.userId);
+        addName(v.name);
+        addName(v.companyName);
+        addEmail(v.email);
+      }
+    } catch {}
+  }
+
+  // 3. Find matching Employees
+  try {
+    const Employee = require('../models/Employee');
+    const empOr = [];
+    if (candidateObjectIds.length > 0) {
+      empOr.push({ _id: { $in: candidateObjectIds } });
+      empOr.push({ userId: { $in: candidateObjectIds } });
+      empOr.push({ vendorRef: { $in: candidateObjectIds } });
+    }
+    if (candidateEmails.size > 0) {
+      empOr.push({ email: { $in: [...candidateEmails] } });
+    }
+    for (const name of [...candidateNames]) {
+      const escaped = escapeRegex(name);
+      empOr.push({ name: new RegExp(`^${escaped}$`, 'i') });
+      empOr.push({ shopName: new RegExp(`^${escaped}$`, 'i') });
+    }
+
+    if (empOr.length > 0) {
+      const matchedEmployees = await Employee.find({ $or: empOr })
+        .select('_id userId vendorRef name shopName email phone')
+        .lean();
+      for (const emp of matchedEmployees) {
+        addId(emp._id);
+        addId(emp.userId);
+        addId(emp.vendorRef);
+        addName(emp.name);
+        addName(emp.shopName);
+        addEmail(emp.email);
+      }
+    }
+  } catch {}
+
+  return {
+    candidateObjectIds,
+    candidateIdStrings: [...candidateIdStrings],
+    candidateNames: [...candidateNames],
+    candidateEmails: [...candidateEmails],
+  };
+}
+
+/**
+ * Constructs MongoDB match query for vendor allocations matching EITHER:
+ * - vendorId === currentUser._id
+ * - vendorId === currentUser.vendorId / vendorRef
+ * - vendorUserId === currentUser._id
+ * - vendorId === "shreya" (string ID or name)
+ * - case-insensitive vendorName === currentUser.name or vendorEmail match
+ */
+function buildVendorMatchQuery(context) {
+  const { candidateObjectIds, candidateIdStrings, candidateNames, candidateEmails } = context;
+  const matchOr = [];
+
+  if (candidateObjectIds.length > 0) {
+    matchOr.push({ vendorId: { $in: candidateObjectIds } });
+    matchOr.push({ vendorUserId: { $in: candidateObjectIds } });
+    matchOr.push({ 'vendorId.userId': { $in: candidateObjectIds } });
+  }
+
+  if (candidateIdStrings.length > 0) {
+    matchOr.push({ vendorId: { $in: candidateIdStrings } });
+    matchOr.push({ vendorUserId: { $in: candidateIdStrings } });
+  }
+
+  if (candidateNames.length > 0) {
+    const nameRegexes = candidateNames.map((n) => new RegExp(`^${escapeRegex(n)}$`, 'i'));
+    matchOr.push({ vendorName: { $in: nameRegexes } });
+    matchOr.push({ vendorId: { $in: nameRegexes } });
+  }
+
+  if (candidateEmails.length > 0) {
+    matchOr.push({ vendorEmail: { $in: candidateEmails } });
+  }
+
+  return matchOr.length > 0 ? { $or: matchOr } : { _id: null };
+}
+
 /**
  * Resolves candidate ObjectIds associated with a vendor user (User._id, Vendor._id, Employee._id, linked IDs)
  */
 async function resolveVendorCandidateIds(vendorUserId, userEmail = '') {
-  const userOid = new mongoose.Types.ObjectId(String(vendorUserId));
-  const candidateIds = [userOid];
-
-  const linkedVendor = await Vendor.findOne({
-    $or: [
-      { userId: userOid },
-      { _id: userOid },
-      ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
-    ],
-  })
-    .select('_id userId')
-    .lean();
-
-  if (linkedVendor) {
-    if (linkedVendor._id && !candidateIds.some((id) => String(id) === String(linkedVendor._id))) {
-      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor._id)));
-    }
-    if (linkedVendor.userId && !candidateIds.some((id) => String(id) === String(linkedVendor.userId))) {
-      candidateIds.push(new mongoose.Types.ObjectId(String(linkedVendor.userId)));
-    }
-  }
-
-  try {
-    const Employee = require('../models/Employee');
-    const linkedEmployee = await Employee.findOne({
-      $or: [
-        { userId: userOid },
-        { _id: userOid },
-        ...(userEmail ? [{ email: userEmail.toLowerCase().trim() }] : []),
-      ],
-    })
-      .select('_id userId')
-      .lean();
-    if (linkedEmployee) {
-      if (linkedEmployee._id && !candidateIds.some((id) => String(id) === String(linkedEmployee._id))) {
-        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee._id)));
-      }
-      if (linkedEmployee.userId && !candidateIds.some((id) => String(id) === String(linkedEmployee.userId))) {
-        candidateIds.push(new mongoose.Types.ObjectId(String(linkedEmployee.userId)));
-      }
-    }
-  } catch {
-    // Ignore if employee lookup is unavailable
-  }
-
-  return candidateIds;
+  const context = await resolveVendorContext(vendorUserId, { userEmail });
+  return context.candidateObjectIds;
 }
 
 /**
  * Retrieves summary metrics for Vendor portal via a single optimized aggregation query
  */
-async function getVendorMetrics(vendorUserId, userEmail = '') {
-  if (!vendorUserId || !mongoose.Types.ObjectId.isValid(vendorUserId)) {
+async function getVendorMetrics(vendorUserId, options = {}) {
+  const opts = typeof options === 'string' ? { userEmail: options } : (options || {});
+  if (!vendorUserId) {
     return {
       totalAllocations: 0,
       totalUnits: 0,
@@ -279,24 +541,29 @@ async function getVendorMetrics(vendorUserId, userEmail = '') {
     };
   }
 
-  const candidateIds = await resolveVendorCandidateIds(vendorUserId, userEmail);
-  const vendorMatch = {
-    $or: [
-      { vendorId: { $in: candidateIds } },
-      { vendorUserId: { $in: candidateIds } },
-    ],
-    status: { $ne: 'CANCELLED' },
-  };
+  const context = await resolveVendorContext(vendorUserId, opts);
+  const vendorMatch = buildVendorMatchQuery(context);
 
   const [agg] = await VendorAllocation.aggregate([
-    { $match: vendorMatch },
+    {
+      $match: {
+        ...vendorMatch,
+        status: { $ne: 'CANCELLED' },
+      },
+    },
     {
       $group: {
         _id: null,
         totalAllocations: { $sum: 1 },
         totalUnits: { $sum: { $ifNull: ['$allocatedQuantity', 0] } },
         pending: {
-          $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0] },
+          $sum: {
+            $cond: [
+              { $in: ['$status', ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED']] },
+              1,
+              0,
+            ],
+          },
         },
         accepted: {
           $sum: { $cond: [{ $eq: ['$status', 'ACCEPTED'] }, 1, 0] },
@@ -361,7 +628,9 @@ async function getAdminAllocations({
   }
 
   if (status && status !== 'ALL') {
-    if (Array.isArray(status)) {
+    if (status === 'PENDING' || status === 'PENDING_ACCEPTANCE' || status === 'PUBLISHED') {
+      query.status = { $in: ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED'] };
+    } else if (Array.isArray(status)) {
       query.status = { $in: status };
     } else {
       query.status = status;
@@ -498,10 +767,10 @@ async function getAdminAllocations({
  */
 async function getVendorAllocations(
   vendorUserId,
-  { page = 1, limit = 10, status = null, search = '', isSeen = null, userEmail = '' } = {}
+  { page = 1, limit = 10, status = null, search = '', isSeen = null, userEmail = '', userName = '', vendorId = null } = {}
 ) {
-  if (!vendorUserId || !mongoose.Types.ObjectId.isValid(vendorUserId)) {
-    throw new Error('Valid vendorUserId is required.');
+  if (!vendorUserId) {
+    throw new Error('Valid vendor identifier is required.');
   }
 
   const parsedPage = Math.max(1, parseInt(page, 10) || 1);
@@ -520,18 +789,21 @@ async function getVendorAllocations(
     return cached;
   }
 
-  const candidateIds = await resolveVendorCandidateIds(vendorUserId, userEmail);
+  const context = await resolveVendorContext(vendorUserId, { userEmail, userName, vendorId });
+  const vendorMatch = buildVendorMatchQuery(context);
 
   const query = {
-    $or: [
-      { vendorId: { $in: candidateIds } },
-      { vendorUserId: { $in: candidateIds } },
-      { 'vendorId.userId': { $in: candidateIds } },
-    ],
+    ...vendorMatch,
   };
 
   if (status && status !== 'ALL') {
-    query.status = status;
+    if (status === 'PENDING' || status === 'PENDING_ACCEPTANCE' || status === 'PUBLISHED') {
+      query.status = { $in: ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED'] };
+    } else if (Array.isArray(status)) {
+      query.status = { $in: status };
+    } else {
+      query.status = status;
+    }
   } else {
     // Default: exclude cancelled items
     query.status = { $ne: 'CANCELLED' };
@@ -567,17 +839,14 @@ async function getVendorAllocations(
   const skip = (parsedPage - 1) * parsedLimit;
 
   const allocationFields =
-    'productId vendorId adminId vendorModel vendorUserId allocatedQuantity currentStockAtTrigger targetDeliveryDate status isSeen seenAt vendorNotes fulfilledQuantity stockUpdatedToInventory stockUpdatedAt dispatchedAt receivedAt clientId createdAt updatedAt';
+    'productId vendorId adminId vendorModel vendorUserId vendorName vendorEmail allocatedQuantity currentStockAtTrigger targetDeliveryDate status isSeen seenAt vendorNotes fulfilledQuantity stockUpdatedToInventory stockUpdatedAt dispatchedAt receivedAt clientId createdAt updatedAt';
   const productFields =
     'name sku category image imageUrl images price currentStock stock stockLevel lowStockAlert lowStockThreshold minStock';
   const vendorFields = 'name companyName email phone address';
   const adminFields = 'name email';
 
   const vendorMetricsMatch = {
-    $or: [
-      { vendorId: { $in: candidateIds } },
-      { vendorUserId: { $in: candidateIds } },
-    ],
+    ...vendorMatch,
     status: { $ne: 'CANCELLED' },
   };
 
@@ -602,7 +871,13 @@ async function getVendorAllocations(
         totalAllocations: { $sum: 1 },
         totalUnits: { $sum: { $ifNull: ['$allocatedQuantity', 0] } },
         pending: {
-          $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0] },
+          $sum: {
+            $cond: [
+              { $in: ['$status', ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED']] },
+              1,
+              0,
+            ],
+          },
         },
         accepted: {
           $sum: { $cond: [{ $eq: ['$status', 'ACCEPTED'] }, 1, 0] },
@@ -865,7 +1140,7 @@ async function getLowStockProductsWithAllocations(clientId = null) {
   const productIds = products.map((p) => p._id);
   const activeAllocations = await VendorAllocation.find({
     productId: { $in: productIds },
-    status: { $in: ['PENDING', 'ACCEPTED', 'DISPATCHED'] },
+    status: { $in: ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED', 'ACCEPTED', 'DISPATCHED'] },
   })
     .populate('vendorId', 'name companyName email')
     .lean();
@@ -896,6 +1171,180 @@ async function getLowStockProductsWithAllocations(clientId = null) {
       suggestedReplenishment: Math.max(10, threshold * 3 - (prod.stock || 0)),
     });
   });
+}
+
+/**
+ * Fetches real-time low-stock replenishment alerts strictly for products allocated/assigned to a specific vendor.
+ * Filters low-stock items (currentStock <= threshold or currentStock < 10) mapped to candidateIds of the vendor.
+ */
+async function getVendorLowStockAlerts(
+  vendorUserId,
+  { userEmail = '', userName = '', vendorId = null, threshold = 5, clientId = null } = {}
+) {
+  if (!vendorUserId) {
+    return {
+      count: 0,
+      lowStockCount: 0,
+      outOfStockCount: 0,
+      threshold: Number(threshold) || 5,
+      items: [],
+      data: [],
+    };
+  }
+
+  const context = await resolveVendorContext(vendorUserId, { userEmail, userName, vendorId });
+  const vendorMatch = buildVendorMatchQuery(context);
+
+  // 1. Find all active or non-cancelled allocations assigned to this vendor
+  const allocQuery = {
+    ...vendorMatch,
+    status: { $ne: 'CANCELLED' },
+  };
+  if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
+    allocQuery.clientId = new mongoose.Types.ObjectId(String(clientId));
+  }
+
+  const vendorAllocations = await VendorAllocation.find(allocQuery)
+    .populate('productId')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  // 2. Also check direct assignment on products (assignedVendorId or vendorId or vendorRef or supplier mapping)
+  const candidateObjectIds = context.candidateObjectIds || [];
+  const candidateIdStrings = Array.from(context.candidateIdStrings || []);
+  const allIdMatches = [...candidateObjectIds, ...candidateIdStrings];
+
+  const directProductOr = [];
+  if (allIdMatches.length > 0) {
+    directProductOr.push({ assignedVendorId: { $in: allIdMatches } });
+    directProductOr.push({ vendorId: { $in: allIdMatches } });
+    directProductOr.push({ vendorRef: { $in: allIdMatches } });
+    directProductOr.push({ supplierId: { $in: allIdMatches } });
+  }
+  if (context.candidateNames && context.candidateNames.size > 0) {
+    const nameRegexes = Array.from(context.candidateNames).map((n) => new RegExp(`^${escapeRegex(n)}$`, 'i'));
+    directProductOr.push({ vendor: { $in: nameRegexes } });
+    directProductOr.push({ vendorName: { $in: nameRegexes } });
+    directProductOr.push({ supplier: { $in: nameRegexes } });
+    directProductOr.push({ supplierName: { $in: nameRegexes } });
+  }
+  if (context.candidateEmails && context.candidateEmails.size > 0) {
+    const emailList = Array.from(context.candidateEmails).map((e) => e.toLowerCase());
+    directProductOr.push({ vendorEmail: { $in: emailList } });
+    directProductOr.push({ supplierEmail: { $in: emailList } });
+  }
+
+  const directProductQuery = {
+    ...(directProductOr.length > 0 ? { $or: directProductOr } : { _id: null }),
+    isActive: { $ne: false },
+  };
+  if (clientId && mongoose.Types.ObjectId.isValid(clientId)) {
+    directProductQuery.$and = [
+      directProductOr.length > 0 ? { $or: directProductOr } : { _id: null },
+      {
+        $or: [
+          { clientId: new mongoose.Types.ObjectId(String(clientId)) },
+          { clientId: null },
+          { clientId: { $exists: false } },
+        ],
+      },
+    ];
+    delete directProductQuery.$or;
+  }
+
+  const directAssignedProducts = directProductOr.length > 0
+    ? await Product.find(directProductQuery).lean()
+    : [];
+
+  const productMap = new Map();
+  const allocationsByProduct = new Map();
+
+  for (const alloc of vendorAllocations) {
+    if (alloc.productId && alloc.productId._id) {
+      const pId = String(alloc.productId._id);
+      productMap.set(pId, alloc.productId);
+      if (!allocationsByProduct.has(pId)) {
+        allocationsByProduct.set(pId, []);
+      }
+      allocationsByProduct.get(pId).push(alloc);
+    }
+  }
+
+  for (const prod of directAssignedProducts) {
+    const pId = String(prod._id);
+    if (!productMap.has(pId)) {
+      productMap.set(pId, prod);
+    }
+  }
+
+  if (productMap.size === 0) {
+    return {
+      count: 0,
+      lowStockCount: 0,
+      outOfStockCount: 0,
+      threshold: Number(threshold) || 5,
+      items: [],
+      data: [],
+    };
+  }
+
+  const lowStockItems = [];
+  let outOfStockCount = 0;
+  let lowStockCount = 0;
+  const numThreshold = Number(threshold) > 0 ? Number(threshold) : 5;
+
+  for (const [pId, rawProd] of productMap.entries()) {
+    const prod = normalizeAllocatedProduct(rawProd);
+    const currentStock = Number(prod.currentStock !== undefined ? prod.currentStock : (prod.stock ?? 0));
+    const itemThreshold = Number(
+      prod.threshold !== undefined && prod.threshold !== null
+        ? prod.threshold
+        : prod.lowStockAlert !== undefined && prod.lowStockAlert !== null
+        ? prod.lowStockAlert
+        : numThreshold
+    );
+
+    // Real-time automatic trigger: alert if stock <= threshold or <= 5
+    if (currentStock <= itemThreshold || currentStock <= numThreshold || currentStock <= 5) {
+      if (currentStock === 0) {
+        outOfStockCount++;
+      } else {
+        lowStockCount++;
+      }
+
+      const relatedAllocations = allocationsByProduct.get(pId) || [];
+      const totalUnitsAllocated = relatedAllocations.reduce(
+        (sum, item) => sum + (Number(item.allocatedQuantity) || 0),
+        0
+      );
+
+      lowStockItems.push({
+        ...prod,
+        currentStock,
+        stock: currentStock,
+        threshold: itemThreshold,
+        totalUnitsAllocated,
+        activeAllocationCount: relatedAllocations.filter((a) =>
+          ['PENDING', 'PENDING_ACCEPTANCE', 'PUBLISHED', 'ACCEPTED', 'DISPATCHED'].includes(a.status)
+        ).length,
+        allocations: normalizeAllocations(relatedAllocations),
+        latestAllocation:
+          relatedAllocations.length > 0 ? normalizeAllocation(relatedAllocations[0]) : null,
+      });
+    }
+  }
+
+  // Sort lowest stock first
+  lowStockItems.sort((a, b) => (a.currentStock ?? 0) - (b.currentStock ?? 0));
+
+  return {
+    count: lowStockItems.length,
+    lowStockCount: lowStockItems.length,
+    outOfStockCount,
+    threshold: numThreshold,
+    items: lowStockItems,
+    data: lowStockItems,
+  };
 }
 
 /**
@@ -1037,6 +1486,7 @@ module.exports = {
   receiveAllocation,
   cancelAllocation,
   getLowStockProductsWithAllocations,
+  getVendorLowStockAlerts,
   vendorUpdateStock,
   deleteAllocation,
 };

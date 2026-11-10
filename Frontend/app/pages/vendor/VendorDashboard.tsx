@@ -6,6 +6,7 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Truck,
   Eye,
   EyeOff,
@@ -36,7 +37,10 @@ import {
   AllocationStatus,
   PaginationInfo,
   VendorStats,
+  VendorLowStockAlertItem,
 } from '../../api/vendorAllocations';
+import { useVendorAlerts } from '../../hooks/useVendorAlerts';
+import { VendorLowStockAlertModal } from '../../components/inventory/VendorLowStockAlertModal';
 import { formatINR } from '../../utils/formatINR';
 import { getProductImageUrl, getFullImageUrl, PRODUCT_PLACEHOLDER } from '../../utils/imageUrl';
 import { toast } from 'sonner';
@@ -85,6 +89,70 @@ export function VendorDashboard() {
     user?.role === 'admin' || user?.role === 'super_admin' || user?.role === 'client';
   const [availableVendors, setAvailableVendors] = useState<VendorItem[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
+
+  // Real-time Low-Stock Action Alerts strictly assigned to this vendor (stock <= threshold / <= 5)
+  const effectiveVendorId = isPrivileged && selectedVendorId ? selectedVendorId : undefined;
+  const {
+    alerts: lowStockAlerts,
+    lowStockCount,
+    outOfStockCount,
+    automaticLowStockCount: hookLowStockCount,
+    threshold: alertThreshold,
+    refresh: refreshVendorAlerts,
+  } = useVendorAlerts(effectiveVendorId, { threshold: 5, refreshInterval: 15000 });
+  const [isLowStockAlertsOpen, setIsLowStockAlertsOpen] = useState(false);
+
+  // Real-time automatic low stock count reading directly from inventory stock level
+  const automaticLowStockCount =
+    hookLowStockCount ??
+    lowStockAlerts.length ??
+    (lowStockCount + outOfStockCount);
+
+  const handleReplenishBannerAction = () => {
+    if (lowStockAlerts.length > 0) {
+      const firstWithAlloc = lowStockAlerts.find(
+        (a) => a.latestAllocation || (a.allocations && a.allocations.length > 0)
+      );
+      if (firstWithAlloc?.latestAllocation) {
+        void handleOpenDetailModal(firstWithAlloc.latestAllocation as VendorAllocationItem);
+        return;
+      }
+      if (firstWithAlloc?.allocations && firstWithAlloc.allocations.length > 0) {
+        void handleOpenDetailModal(firstWithAlloc.allocations[0]);
+        return;
+      }
+      const matchingAlloc = allocations.find((a) =>
+        lowStockAlerts.some((alert) => String(alert._id) === String(a.productId?._id))
+      );
+      if (matchingAlloc) {
+        void handleOpenDetailModal(matchingAlloc);
+        return;
+      }
+    }
+    setActiveTab('requirements');
+    toast.info('Review allocated requirements below to fulfill replenishment stock.');
+  };
+
+  const handleModalFulfillAction = (item: VendorLowStockAlertItem) => {
+    setIsLowStockAlertsOpen(false);
+    if (item.latestAllocation) {
+      void handleOpenDetailModal(item.latestAllocation as VendorAllocationItem);
+      return;
+    }
+    if (item.allocations && item.allocations.length > 0) {
+      void handleOpenDetailModal(item.allocations[0]);
+      return;
+    }
+    const matchingAlloc = allocations.find(
+      (a) => String(a.productId?._id) === String(item._id)
+    );
+    if (matchingAlloc) {
+      void handleOpenDetailModal(matchingAlloc);
+      return;
+    }
+    setActiveTab('requirements');
+    toast.info(`Fulfill requirements for "${item.name}" from the Allocations list.`);
+  };
 
   const handleLogout = () => {
     logout();
@@ -144,6 +212,9 @@ export function VendorDashboard() {
         }
         if (res.metrics || res.stats) {
           setStats(res.metrics || res.stats);
+        }
+        if (isManualRefresh) {
+          void refreshVendorAlerts();
         }
       } catch (err: any) {
         console.error('Failed to load vendor allocations:', err);
@@ -294,6 +365,7 @@ export function VendorDashboard() {
 
       // Refresh server metrics and paginated records
       void loadVendorData(true);
+      void refreshVendorAlerts();
     } catch (err: any) {
       toast.error(err.message || 'Failed to update inventory stock');
     } finally {
@@ -458,6 +530,59 @@ export function VendorDashboard() {
             </Button>
           </div>
         </div>
+
+        {/* ── Low-Stock Replenishment Action Required Alert Banner ───────── */}
+        <AnimatePresence>
+          {automaticLowStockCount > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -16 }}
+              className="relative overflow-hidden rounded-[1.25rem] border border-orange-200/80 bg-gradient-to-r from-orange-50/80 via-amber-50/50 to-orange-50/30 p-5 shadow-[0_4px_20px_-4px_rgba(249,115,22,0.12)] backdrop-blur-md dark:border-orange-500/20 dark:from-orange-950/20 dark:via-amber-950/10 dark:to-orange-950/5 dark:shadow-none sm:p-6"
+            >
+              <div className="absolute right-[-4%] top-[-30%] h-36 w-36 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 opacity-[0.06] blur-2xl" />
+
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-400 shadow-sm">
+                    <AlertTriangle className="h-5 w-5 animate-pulse text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="text-[15px] font-bold text-orange-950 dark:text-orange-100">
+                      Attention: Low Stock Alert
+                    </h3>
+                    <p className="text-sm text-orange-900/90 dark:text-orange-300/90 leading-relaxed max-w-[720px]">
+                      Attention: Low Stock Alert - You have{' '}
+                      <span className="font-semibold text-orange-600 dark:text-orange-400">
+                        {automaticLowStockCount} assigned product{automaticLowStockCount === 1 ? '' : 's'}
+                      </span>{' '}
+                      running low on stock (less than 5 units left).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2.5 sm:justify-end">
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => setIsLowStockAlertsOpen(true)}
+                    className="h-10 rounded-xl border-orange-200 bg-white/95 px-4 text-xs font-bold text-orange-800 shadow-[0_2px_8px_-2px_rgba(249,115,22,0.1)] transition-all duration-300 hover:bg-orange-50 hover:border-orange-300 cursor-pointer dark:border-orange-500/20 dark:bg-orange-950/40 dark:text-orange-200 dark:hover:bg-orange-950/60"
+                  >
+                    View Low-Stock Products
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleReplenishBannerAction}
+                    className="h-10 rounded-xl bg-orange-600 hover:bg-orange-700 px-4 text-xs font-bold text-white shadow-sm transition-all duration-300 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Truck className="w-3.5 h-3.5" />
+                    Prepare Replenishment
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ── Tab 1: Overview ─────────────────────────────────────────────── */}
         {activeTab === 'overview' && (
@@ -653,7 +778,13 @@ export function VendorDashboard() {
                                     : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                                 }`}
                               >
-                                {req.status === 'DISPATCHED' ? 'In Transit' : req.status}
+                                {req.status === 'DISPATCHED'
+                                  ? 'In Transit'
+                                  : req.status === 'PENDING_ACCEPTANCE'
+                                  ? 'Pending Acceptance'
+                                  : req.status === 'PUBLISHED'
+                                  ? 'Published'
+                                  : req.status}
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">
@@ -834,7 +965,13 @@ export function VendorDashboard() {
                                 : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
                             }`}
                           >
-                            {req.status === 'DISPATCHED' ? 'In Transit' : req.status}
+                            {req.status === 'DISPATCHED'
+                              ? 'In Transit'
+                              : req.status === 'PENDING_ACCEPTANCE'
+                              ? 'Pending Acceptance'
+                              : req.status === 'PUBLISHED'
+                              ? 'Published'
+                              : req.status}
                           </span>
                         </div>
                       </div>
@@ -1236,6 +1373,15 @@ export function VendorDashboard() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* ── Low-Stock Replenishment Alerts Modal ──────────────────────── */}
+        <VendorLowStockAlertModal
+          isOpen={isLowStockAlertsOpen}
+          items={lowStockAlerts}
+          threshold={alertThreshold}
+          onClose={() => setIsLowStockAlertsOpen(false)}
+          onFulfillReplenishment={handleModalFulfillAction}
+        />
       </main>
     </div>
   );

@@ -32,6 +32,10 @@ router.get('/vendor/allocations', vendorAllocationController.getVendorAllocation
 router.get('/vendor/requirements', vendorAllocationController.getVendorAllocations);
 router.get('/vendor/stats', vendorAllocationController.getVendorStats);
 router.get('/stats', vendorAllocationController.getVendorStats);
+router.get('/low-stock-alerts', vendorAllocationController.getVendorLowStockAlerts);
+router.get('/vendor/low-stock-alerts', vendorAllocationController.getVendorLowStockAlerts);
+router.get('/low-stock-products', vendorAllocationController.getVendorLowStockAlerts);
+router.get('/vendor/low-stock-products', vendorAllocationController.getVendorLowStockAlerts);
 
 // Read-Receipt ("Seen" feature): PATCH & POST routes
 router.patch('/allocations/:id/seen', vendorAllocationController.markAllocationSeen);
