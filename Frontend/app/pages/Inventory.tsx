@@ -857,6 +857,12 @@ export function Inventory() {
         isOpen={isDetailModalOpen}
         product={selectedProduct}
         onClose={() => setIsDetailModalOpen(false)}
+        onEdit={(prod) => {
+          setIsDetailModalOpen(false);
+          setProductModalMode('edit');
+          setSelectedProduct(prod);
+          setIsProductModalOpen(true);
+        }}
       />
 
       <DeleteConfirmModal

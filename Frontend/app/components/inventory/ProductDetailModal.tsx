@@ -10,9 +10,10 @@ interface ProductDetailModalProps {
   isOpen: boolean;
   product: Product | null;
   onClose: () => void;
+  onEdit?: (product: Product) => void;
 }
 
-export function ProductDetailModal({ isOpen, product, onClose }: ProductDetailModalProps) {
+export function ProductDetailModal({ isOpen, product, onClose, onEdit }: ProductDetailModalProps) {
   if (!product) return null;
 
   return (
@@ -184,7 +185,12 @@ export function ProductDetailModal({ isOpen, product, onClose }: ProductDetailMo
                   Close View
                 </Button>
                 <Button 
-                  className="flex-1 h-14 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-sm uppercase tracking-widest shadow-2xl shadow-slate-900/20 dark:shadow-white/10 hover:-translate-y-1 transition-all active:scale-[0.98]"
+                  onClick={() => {
+                    if (onEdit && product) {
+                      onEdit(product);
+                    }
+                  }}
+                  className="flex-1 h-14 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black text-sm uppercase tracking-widest shadow-2xl shadow-slate-900/20 dark:shadow-white/10 hover:-translate-y-1 transition-all active:scale-[0.98] cursor-pointer"
                 >
                   Manage Stock
                 </Button>
