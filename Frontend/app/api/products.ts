@@ -237,7 +237,7 @@ export const productApi = {
     return getCachedProductData(cacheKey);
   },
 
-  getAll: async (clientId?: string, forceRefresh = false, page = 1, limit = 50) => {
+  getAll: async (clientId?: string, forceRefresh = false, page = 1, limit = 200) => {
     const cacheKey = `products_${clientId || 'global'}_p${page}_l${limit}`;
     const cached = memoryProductCache.get(cacheKey) || getFromSession(cacheKey);
     const isOnline = typeof navigator === 'undefined' || navigator.onLine;

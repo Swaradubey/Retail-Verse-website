@@ -132,7 +132,7 @@ export function Shop() {
         console.log("Logged in user:", user);
         console.log("clientId sent:", clientId);
 
-        const response = await productApi.getAll(clientId || undefined);
+        const response = await productApi.getAll(clientId || undefined, false, 1, 200);
         if (cancelled) return; // Ignore stale responses from previous auth state
 
         if (response.success && Array.isArray(response.data)) {
@@ -208,7 +208,10 @@ export function Shop() {
 
     if (selectedCategory !== 'All Products') {
       const target = selectedCategory.trim().toLowerCase();
-      result = result.filter((p) => (p.category || '').trim().toLowerCase() === target);
+      result = result.filter((p) => {
+        const cat = (Array.isArray(p.category) ? p.category.join(' ') : String(p.category || '')).trim().toLowerCase();
+        return cat === target || cat.split(/[,/|]/).map((s) => s.trim()).includes(target);
+      });
     }
 
     if (showSaleOnly) {
@@ -224,11 +227,12 @@ export function Shop() {
       const query = searchQuery.toLowerCase();
       result = result.filter((p) => {
         const product = p as ShopProduct & { sku?: string };
+        const catStr = (product.category ? String(product.category) : '').toLowerCase();
         return (
           product.name.toLowerCase().includes(query) ||
           product.description.toLowerCase().includes(query) ||
           (product.sku && product.sku.toLowerCase().includes(query)) ||
-          product.category.toLowerCase().includes(query)
+          catStr.includes(query)
         );
       });
     }

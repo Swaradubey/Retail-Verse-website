@@ -90,7 +90,7 @@ export function Header() {
     const params = new URLSearchParams(search);
     const q = params.get('q') || params.get('search') || '';
     const cat = params.get('category') || '';
-    if (q) setSearchQuery(q);
+    setSearchQuery(q);
     if (!cat || cat === 'All' || cat === 'All Categories' || cat === 'All Products') {
       setSelectedCategory('');
     } else {
@@ -165,6 +165,26 @@ export function Header() {
       selectedCategory.trim() !== ''
     ) {
       params.set('category', selectedCategory);
+    }
+    const queryStr = params.toString();
+    navigate(queryStr ? `/shop?${queryStr}` : '/shop');
+  };
+
+  // Immediate category selection handler - updates URL and displays category products instantly
+  const handleCategorySelectChange = (newCategory: string) => {
+    setSelectedCategory(newCategory);
+    const params = new URLSearchParams();
+    if (searchQuery.trim()) {
+      params.set('q', searchQuery.trim());
+    }
+    if (
+      newCategory &&
+      newCategory !== 'All Categories' &&
+      newCategory !== 'All' &&
+      newCategory !== 'All Products' &&
+      newCategory.trim() !== ''
+    ) {
+      params.set('category', newCategory);
     }
     const queryStr = params.toString();
     navigate(queryStr ? `/shop?${queryStr}` : '/shop');
@@ -363,8 +383,8 @@ export function Header() {
               </nav>
               <div className="flex-1" />
             </>
-          ) : user ? (
-            /* Center: Prominent eBay-Style Search Bar (Only shown on non-home pages when user is logged in) */
+          ) : (user || pathname.startsWith('/shop')) ? (
+            /* Center: Prominent eBay-Style Search Bar (Shown on non-home pages when logged in, or on shop pages) */
             <div className="flex-1 min-w-0 max-w-4xl">
               <form onSubmit={handleSearchSubmit} className="flex items-center w-full">
                 <div className="flex flex-1 items-center rounded-l-[4px] sm:rounded-l-[4px] border-2 border-r-0 border-[#111827] focus-within:border-[#3665f3] bg-white h-10 sm:h-11 transition-colors">
@@ -388,7 +408,7 @@ export function Header() {
                   <div className="relative hidden md:flex items-center border-l border-gray-200 h-full pr-2 shrink-0">
                     <select
                       value={selectedCategory}
-                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      onChange={(e) => handleCategorySelectChange(e.target.value)}
                       className="h-full pl-2.5 pr-6 text-[13px] font-normal text-[#555555] bg-transparent outline-none cursor-pointer appearance-none hover:text-[#111827]"
                       aria-label="Select search category"
                     >
