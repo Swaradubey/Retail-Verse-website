@@ -1,5 +1,9 @@
 const fetch = globalThis.fetch;
 
+const isConfigured = () => {
+  return Boolean(process.env.VERCEL_TOKEN && process.env.VERCEL_PROJECT_ID);
+};
+
 const getVercelConfig = () => {
   const {
     VERCEL_TOKEN,
@@ -8,7 +12,6 @@ const getVercelConfig = () => {
   } = process.env;
 
   if (!VERCEL_TOKEN || !VERCEL_PROJECT_ID) {
-    console.warn("[Vercel] Missing VERCEL_TOKEN or VERCEL_PROJECT_ID");
     return null;
   }
 
@@ -28,7 +31,9 @@ const getVercelConfig = () => {
  */
 const addDomain = async (domainName) => {
   const config = getVercelConfig();
-  if (!config) throw new Error("Vercel configuration missing");
+  if (!config) {
+    return { skipped: true, message: "Vercel not configured (VPS mode)" };
+  }
 
   const url = `https://api.vercel.com/v9/projects/${config.projectId}/domains${config.teamId ? `?teamId=${config.teamId}` : ''}`;
   
@@ -58,7 +63,9 @@ const addDomain = async (domainName) => {
  */
 const removeDomain = async (domainName) => {
   const config = getVercelConfig();
-  if (!config) throw new Error("Vercel configuration missing");
+  if (!config) {
+    return { skipped: true, message: "Vercel not configured (VPS mode)" };
+  }
 
   const url = `https://api.vercel.com/v9/projects/${config.projectId}/domains/${domainName}${config.teamId ? `?teamId=${config.teamId}` : ''}`;
 
@@ -87,7 +94,9 @@ const removeDomain = async (domainName) => {
  */
 const checkDomainStatus = async (domainName) => {
   const config = getVercelConfig();
-  if (!config) throw new Error("Vercel configuration missing");
+  if (!config) {
+    return { status: 'Pending', message: "Vercel not configured (VPS mode)" };
+  }
 
   const baseUrl = `https://api.vercel.com/v9/projects/${config.projectId}/domains/${domainName}`;
   const teamParam = config.teamId ? `?teamId=${config.teamId}` : '';
@@ -122,6 +131,7 @@ const checkDomainStatus = async (domainName) => {
 };
 
 module.exports = {
+  isConfigured,
   addDomain,
   removeDomain,
   checkDomainStatus,

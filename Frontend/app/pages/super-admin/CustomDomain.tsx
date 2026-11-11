@@ -57,7 +57,7 @@ export function CustomDomain() {
       }, { pageName: 'Custom Domain' });
       
       if (response.success) {
-        toast.success(response.message || 'Domain added successfully and sent to Vercel');
+        toast.success(response.message || 'Domain added successfully');
         setDomainInput('');
         if (isSuper) setSelectedClientId('');
         // Optimistic update: immediately show the new domain from API response
@@ -390,25 +390,25 @@ export function CustomDomain() {
                   <div className="space-y-4">
                     <h4 className="font-bold text-slate-800 flex items-center gap-2">
                       <div className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center text-amber-700 text-xs">1</div>
-                      Root Domain
+                      Root Domain (A Record)
                     </h4>
-                    <p className="text-sm text-slate-500">Add an A record to your domain registrar's DNS settings.</p>
+                    <p className="text-sm text-slate-500">Add an A record pointing your root domain (@) to your server IP.</p>
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-sm space-y-2">
                       <div className="flex justify-between"><span className="text-slate-400">Type:</span> <span className="font-bold">A</span></div>
                       <div className="flex justify-between"><span className="text-slate-400">Name:</span> <span className="font-bold">@</span></div>
-                      <div className="flex justify-between"><span className="text-slate-400">Value:</span> <span className="font-bold">76.76.21.21</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Value:</span> <span className="font-bold">{domains.find(d => d._id === showInstructions)?.dnsInstructions?.root?.value || 'Server IP'}</span></div>
                     </div>
                   </div>
                   <div className="space-y-4">
                     <h4 className="font-bold text-slate-800 flex items-center gap-2">
                       <div className="w-6 h-6 rounded-md bg-amber-100 flex items-center justify-center text-amber-700 text-xs">2</div>
-                      WWW Subdomain
+                      WWW Subdomain (CNAME)
                     </h4>
-                    <p className="text-sm text-slate-500">Add a CNAME record to point your www traffic to Vercel.</p>
+                    <p className="text-sm text-slate-500">Add a CNAME record to point your www subdomain to your root domain.</p>
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-sm space-y-2">
                       <div className="flex justify-between"><span className="text-slate-400">Type:</span> <span className="font-bold">CNAME</span></div>
                       <div className="flex justify-between"><span className="text-slate-400">Name:</span> <span className="font-bold">www</span></div>
-                      <div className="flex justify-between"><span className="text-slate-400">Value:</span> <span className="font-bold">cname.vercel-dns.com</span></div>
+                      <div className="flex justify-between"><span className="text-slate-400">Value:</span> <span className="font-bold">{domains.find(d => d._id === showInstructions)?.dnsInstructions?.subdomain?.value || domains.find(d => d._id === showInstructions)?.domainName || '@'}</span></div>
                     </div>
                   </div>
                 </div>

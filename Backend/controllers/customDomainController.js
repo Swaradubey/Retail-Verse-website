@@ -2,6 +2,7 @@ const CustomDomain = require("../models/CustomDomain");
 const Client = require("../models/Client");
 const vercelService = require("../services/vercelService");
 const { isValidObjectId } = require("../utils/tenantResolver");
+const dns = require("dns").promises;
 
 // @desc    Resolve a custom domain
 // @route   GET /api/custom-domains/resolve
@@ -104,8 +105,26 @@ const createCustomDomain = async (req, res) => {
       clientId = req.user.clientId;
     }
 
+    // Fallback: If clientId is still not populated, look up client by userId / email
+    if (!clientId && req.user?._id) {
+      const foundClient = await Client.findOne({
+        $or: [{ userId: req.user._id }, { email: req.user.email }]
+      });
+      if (foundClient) {
+        clientId = foundClient._id;
+      }
+    }
+
+    // Fallback for Super Admin if no clientId was provided: link to default first client
+    if (!clientId && isSuperAdmin) {
+      const firstClient = await Client.findOne({}).sort({ createdAt: 1 });
+      if (firstClient) {
+        clientId = firstClient._id;
+      }
+    }
+
     if (!clientId) {
-      return res.status(400).json({ message: "Client ID is required" });
+      return res.status(400).json({ message: "Client ID is required to link domain" });
     }
 
     console.log("Incoming domain:", domainName);
@@ -113,67 +132,68 @@ const createCustomDomain = async (req, res) => {
     let formattedDomain = domainName.trim().toLowerCase();
     formattedDomain = formattedDomain.replace(/^https?:\/\//, ""); // Remove http:// or https://
     formattedDomain = formattedDomain.replace(/\/$/, ""); // Remove trailing slash
+    formattedDomain = formattedDomain.replace(/^www\./, ""); // Remove www. prefix for root record
     
     console.log("Normalized incoming domain:", formattedDomain);
 
     // Fetch client to get name
     const client = await Client.findById(clientId);
-    if (!client) {
-      return res.status(404).json({ message: "Client not found" });
-    }
+    const clientName = client ? (client.companyName || client.shopName || "Client") : "Client";
 
-    let alreadyInVercel = false;
-    let successMessage = "Custom domain created successfully and sent to Vercel";
+    let successMessage = "Custom domain created successfully";
 
-    // Add to Vercel
-    try {
-      await vercelService.addDomain(formattedDomain);
-    } catch (vercelError) {
-      const errorMsg = vercelError.message || "";
-      // Requirement 3 & 4: If Vercel returns an error that the domain is already in use, do not completely fail.
-      if (
-        errorMsg.includes("already in use") || 
-        errorMsg.includes("already_exists") || 
-        errorMsg.includes("already exists")
-      ) {
-        console.log(`[Vercel] Domain ${formattedDomain} already exists or is in use in Vercel.`);
-        alreadyInVercel = true;
-        // Requirement 7: Add proper response message
-        successMessage = "Domain already exists in Vercel and has been linked to this client.";
-      } else {
-        console.error(`[Vercel] Error adding domain: ${errorMsg}`);
-        return res.status(500).json({ message: `Vercel Error: ${errorMsg}` });
+    // Optional Vercel sync (only if configured; never crash or block on VPS)
+    if (vercelService.isConfigured && vercelService.isConfigured()) {
+      try {
+        await vercelService.addDomain(formattedDomain);
+        successMessage = "Custom domain created successfully and synced to Vercel";
+      } catch (vercelError) {
+        const errorMsg = vercelError.message || "";
+        if (
+          errorMsg.includes("already in use") || 
+          errorMsg.includes("already_exists") || 
+          errorMsg.includes("already exists")
+        ) {
+          console.log(`[Vercel] Domain ${formattedDomain} already exists in Vercel.`);
+        } else {
+          console.warn(`[Vercel Warning] Could not sync domain to Vercel: ${errorMsg}. Proceeding with VPS registration.`);
+        }
       }
+    } else {
+      console.log(`[VPS Mode] Domain ${formattedDomain} registered directly on VPS.`);
     }
 
-    // DNS Instructions
+    // DNS Instructions: use configured VPS/Server IP if available
+    const serverIp = process.env.SERVER_IP || process.env.VPS_IP || process.env.HOST_IP || "76.76.21.21";
     const dnsInstructions = {
-      root: { type: "A", name: "@", value: "76.76.21.21" },
-      subdomain: { type: "CNAME", name: "www", value: "cname.vercel-dns.com" }
+      root: { type: "A", name: "@", value: serverIp },
+      subdomain: { type: "CNAME", name: "www", value: formattedDomain }
     };
 
-    // Requirement 6: Avoid duplicate MongoDB entries for the same domain.
     // Check if domain exists in DB
     let customDomain = await CustomDomain.findOne({ 
-      $or: [{ domainName: formattedDomain }, { domain: formattedDomain }] 
+      $or: [
+        { domainName: formattedDomain },
+        { domainName: `www.${formattedDomain}` },
+        { domain: formattedDomain },
+        { domain: `www.${formattedDomain}` }
+      ] 
     });
 
     if (customDomain) {
-      // Requirement 5: If domain is already configured, save/update it in MongoDB for the selected client.
       customDomain.clientId = clientId;
-      customDomain.clientName = client.companyName || client.shopName || "Client";
+      customDomain.clientName = clientName;
       customDomain.dnsInstructions = dnsInstructions;
       customDomain.status = "Pending";
       customDomain.sslStatus = "Pending";
       await customDomain.save();
       return res.status(200).json({ success: true, data: customDomain, message: successMessage });
     } else {
-      // Create new record
       customDomain = await CustomDomain.create({
         domainName: formattedDomain,
         domain: formattedDomain,
         clientId,
-        clientName: client.companyName || client.shopName || "Client",
+        clientName,
         status: "Pending",
         sslStatus: "Pending",
         dnsInstructions
@@ -207,21 +227,63 @@ const checkDomainStatus = async (req, res) => {
       return res.status(403).json({ success: false, message: "You are not allowed to access this domain" });
     }
 
-    const vStatus = await vercelService.checkDomainStatus(customDomain.domainName);
+    let status = customDomain.status || "Pending";
+    let sslStatus = customDomain.sslStatus || "Pending";
+    let message = "Domain is configured.";
+
+    // 1. If Vercel is configured, check Vercel status first
+    if (vercelService.isConfigured && vercelService.isConfigured()) {
+      try {
+        const vStatus = await vercelService.checkDomainStatus(customDomain.domainName);
+        if (vStatus && vStatus.status) {
+          status = vStatus.status;
+          sslStatus = vStatus.status === 'Verified' ? 'Active' : (vStatus.status === 'Error' ? 'Error' : 'Pending');
+          message = vStatus.message || message;
+        }
+      } catch (err) {
+        console.warn("[Vercel status check error, falling back to DNS lookup]:", err.message);
+      }
+    }
+
+    // 2. Fallback / VPS DNS verification using Node's dns resolver
+    if (status !== "Verified") {
+      try {
+        const expectedIp = process.env.SERVER_IP || process.env.VPS_IP;
+        const addresses = await dns.resolve4(customDomain.domainName);
+        console.log(`[DNS Check] Resolved IP for ${customDomain.domainName}:`, addresses);
+        
+        if (addresses && addresses.length > 0) {
+          if (expectedIp) {
+            if (addresses.includes(expectedIp)) {
+              status = "Verified";
+              sslStatus = "Active";
+              message = `Domain verified pointing to VPS IP (${expectedIp})`;
+            } else {
+              message = `Domain resolves to ${addresses.join(', ')}. Please update A record to point to ${expectedIp}`;
+            }
+          } else {
+            status = "Verified";
+            sslStatus = "Active";
+            message = `Domain DNS active (resolving to ${addresses[0]})`;
+          }
+        }
+      } catch (dnsErr) {
+        console.log(`[DNS Check] DNS not detected yet for ${customDomain.domainName}:`, dnsErr.code);
+        status = "Pending";
+        sslStatus = "Pending";
+        message = "DNS records not yet detected. Please check your domain DNS settings.";
+      }
+    }
     
-    customDomain.status = vStatus.status;
-    // If domain is Verified, we assume SSL is active or soon will be. 
-    // In a real Vercel API check, we could check certs specifically, 
-    // but mapping Verified to Active is a common pattern for these integrations.
-    customDomain.sslStatus = vStatus.status === 'Verified' ? 'Active' : (vStatus.status === 'Error' ? 'Error' : 'Pending');
-    
+    customDomain.status = status;
+    customDomain.sslStatus = sslStatus;
     await customDomain.save();
 
     res.status(200).json({ 
       success: true, 
-      status: vStatus.status, 
+      status: customDomain.status, 
       sslStatus: customDomain.sslStatus,
-      message: vStatus.message,
+      message,
       data: customDomain 
     });
   } catch (error) {
@@ -246,12 +308,13 @@ const deleteCustomDomain = async (req, res) => {
       return res.status(403).json({ success: false, message: "You are not allowed to delete this domain" });
     }
 
-    // Remove from Vercel
-    try {
-      await vercelService.removeDomain(customDomain.domainName);
-    } catch (vercelError) {
-      console.error("Failed to remove domain from Vercel:", vercelError.message);
-      // We continue to delete from DB even if Vercel fails (maybe it was already deleted there)
+    // Remove from Vercel if configured
+    if (vercelService.isConfigured && vercelService.isConfigured()) {
+      try {
+        await vercelService.removeDomain(customDomain.domainName);
+      } catch (vercelError) {
+        console.warn("Could not remove domain from Vercel (continuing):", vercelError.message);
+      }
     }
 
     await customDomain.deleteOne();
