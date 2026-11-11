@@ -118,6 +118,7 @@ export const router = createBrowserRouter([
       { index: true, element: <RootRoute /> },
       { path: 'landing', Component: Home },
       { path: 'shop', element: withSuspense(<Shop />) },
+      { path: 'collections', element: withSuspense(<Shop />) },
       { path: 'products', element: withSuspense(<ProductsPreview />) },
       { path: 'products/all', element: withSuspense(<Shop />) },
       { path: 'product/:slug', element: withSuspense(<ProductDetail />) },

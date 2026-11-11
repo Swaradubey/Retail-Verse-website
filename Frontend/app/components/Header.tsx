@@ -179,18 +179,18 @@ export function Header() {
       return [
         ...dynamicNav,
         { name: 'Deals', href: '/shop?sale=true', isBadge: true },
-        { name: 'Stores', href: '/products' },
       ];
     }
     return [
       { name: 'Deals', href: '/shop?sale=true', isBadge: true },
-      { name: 'Stores', href: '/products' },
     ];
   }, [categoryOptions]);
 
+  const isHomePage = pathname === '/' || pathname === '/landing';
+
   const isNavActive = (href: string) => {
     if (href === '/') {
-      return pathname === '/' || pathname === '/landing';
+      return isHomePage;
     }
     return pathname === href || (href.includes('?') && pathname + search === href);
   };
@@ -338,63 +338,84 @@ export function Header() {
             </div>
           </Link>
 
-          {/* Center: Prominent eBay-Style Search Bar */}
-          <div className="flex-1 min-w-0 max-w-4xl">
-            <form onSubmit={handleSearchSubmit} className="flex items-center w-full">
-              <div className="flex flex-1 items-center rounded-l-[4px] sm:rounded-l-[4px] border-2 border-r-0 border-[#111827] focus-within:border-[#3665f3] bg-white h-10 sm:h-11 transition-colors">
-                
-                {/* Search icon */}
-                <div className="pl-3 pr-2 text-[#707070] hidden sm:flex items-center pointer-events-none">
-                  <Search className="h-4.5 w-4.5" />
+          {/* On Home Page: Shift Category Nav right next to Retail Verse */}
+          {isHomePage ? (
+            <>
+              <nav className="hidden md:flex items-center gap-1 sm:gap-2 lg:gap-4 ml-2 sm:ml-4 lg:ml-6 text-[13px] sm:text-[14px]">
+                {primaryNavCategories.map((cat) => {
+                  const active = isNavActive(cat.href);
+                  return (
+                    <Link
+                      key={cat.name}
+                      to={cat.href}
+                      className={`whitespace-nowrap px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+                        active
+                          ? 'text-[#111827] font-bold bg-gray-100'
+                          : cat.isBadge
+                            ? 'text-[#E53238] font-bold hover:bg-red-50'
+                            : 'text-[#4B5563] hover:text-[#111827] hover:bg-gray-100'
+                      }`}
+                    >
+                      {cat.name}
+                    </Link>
+                  );
+                })}
+              </nav>
+              <div className="flex-1" />
+            </>
+          ) : user ? (
+            /* Center: Prominent eBay-Style Search Bar (Only shown on non-home pages when user is logged in) */
+            <div className="flex-1 min-w-0 max-w-4xl">
+              <form onSubmit={handleSearchSubmit} className="flex items-center w-full">
+                <div className="flex flex-1 items-center rounded-l-[4px] sm:rounded-l-[4px] border-2 border-r-0 border-[#111827] focus-within:border-[#3665f3] bg-white h-10 sm:h-11 transition-colors">
+                  
+                  {/* Search icon */}
+                  <div className="pl-3 pr-2 text-[#707070] hidden sm:flex items-center pointer-events-none">
+                    <Search className="h-4.5 w-4.5" />
+                  </div>
+
+                  {/* Input text */}
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search for anything..."
+                    className="w-full h-full px-3 text-[14px] sm:text-[15px] text-[#111827] placeholder-[#707070] bg-transparent outline-none border-none"
+                    aria-label="Search for products, brands, and categories"
+                  />
+
+                  {/* Category Dropdown Selector (eBay Style) */}
+                  <div className="relative hidden md:flex items-center border-l border-gray-200 h-full pr-2 shrink-0">
+                    <select
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="h-full pl-2.5 pr-6 text-[13px] font-normal text-[#555555] bg-transparent outline-none cursor-pointer appearance-none hover:text-[#111827]"
+                      aria-label="Select search category"
+                    >
+                      <option value="">All Categories</option>
+                      {categoryOptions.map((cat) => (
+                        <option key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="h-3.5 w-3.5 text-[#707070] absolute right-2 pointer-events-none" />
+                  </div>
                 </div>
 
-                {/* Input text */}
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for anything..."
-                  className="w-full h-full px-3 text-[14px] sm:text-[15px] text-[#111827] placeholder-[#707070] bg-transparent outline-none border-none"
-                  aria-label="Search for products, brands, and categories"
-                />
-
-                {/* Category Dropdown Selector (eBay Style) */}
-                <div className="relative hidden md:flex items-center border-l border-gray-200 h-full pr-2 shrink-0">
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="h-full pl-2.5 pr-6 text-[13px] font-normal text-[#555555] bg-transparent outline-none cursor-pointer appearance-none hover:text-[#111827]"
-                    aria-label="Select search category"
-                  >
-                    <option value="">All Categories</option>
-                    {categoryOptions.map((cat) => (
-                      <option key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="h-3.5 w-3.5 text-[#707070] absolute right-2 pointer-events-none" />
-                </div>
-              </div>
-
-              {/* Bold eBay High-Contrast Blue Search Button */}
-              <button
-                type="submit"
-                className="h-10 sm:h-11 px-5 sm:px-8 bg-[#3665F3] hover:bg-[#2B52CC] active:bg-[#2042A8] text-white font-bold text-[14px] sm:text-[15px] rounded-r-[4px] transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                <Search className="h-4 w-4 sm:hidden" />
-                <span>Search</span>
-              </button>
-
-              {/* Right: "Advanced" search text link */}
-              <Link
-                to="/shop"
-                className="hidden xl:inline-block ml-3 text-[12px] font-normal text-[#555555] hover:text-[#0654ba] hover:underline whitespace-nowrap"
-              >
-                Advanced
-              </Link>
-            </form>
-          </div>
+                {/* Bold eBay High-Contrast Blue Search Button */}
+                <button
+                  type="submit"
+                  className="h-10 sm:h-11 px-5 sm:px-8 bg-[#3665F3] hover:bg-[#2B52CC] active:bg-[#2042A8] text-white font-bold text-[14px] sm:text-[15px] rounded-r-[4px] transition-colors shrink-0 flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Search className="h-4 w-4 sm:hidden" />
+                  <span>Search</span>
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
 
           {/* Right: Sign In Option right next to Search */}
           <div className="shrink-0 flex items-center">
@@ -503,7 +524,7 @@ export function Header() {
       {/* ──────────────────────────────────────────────────────────────────
           3. BOTTOM CATEGORY NAVIGATION BAR (eBay Clean Horizontal Bar)
       ────────────────────────────────────────────────────────────────── */}
-      {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && (
+      {!hideStorefrontNavForSuperAdmin && !shouldHideHeaderNav && !isHomePage && (
         <div className="border-t border-b border-[#E5E7EB] bg-white">
           <div className="mx-auto max-w-[88rem] px-3 sm:px-6 lg:px-8">
             <nav className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none py-1.5 sm:py-2 text-[13px]">

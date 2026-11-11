@@ -1,5 +1,6 @@
 import { TrustMarquee } from './TrustMarquee';
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router';
 import { motion, useInView } from 'framer-motion';
 import {
   CreditCard,
@@ -27,7 +28,8 @@ import {
   Activity,
   Server,
   Headphones,
-  Award
+  Award,
+  LogIn
 } from 'lucide-react';
 
 interface AnimatedCounterProps {
@@ -252,12 +254,6 @@ export function SmartDigitalBusinessSection() {
                     <p className="text-sm text-[#0B1F3A]/80 leading-relaxed">
                       {card.description}
                     </p>
-                  </div>
-
-                  {/* Card Bottom Indicator */}
-                  <div className="mt-4 pt-3 border-t border-[#0B1F3A]/10 flex items-center text-xs font-semibold text-[#2563EB] opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <span>Learn more</span>
-                    <ArrowRight className="w-3.5 h-3.5 ml-1 transition-transform group-hover:translate-x-1" />
                   </div>
                 </motion.div>
               );
@@ -569,20 +565,14 @@ export function SmartDigitalBusinessSection() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button
-                type="button"
+              <Link
+                to="/login"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-full bg-[#FF6B00] hover:bg-[#2563EB] text-[#F8FAFC] text-base font-bold shadow-xl transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
               >
-                <span>Get Started Today</span>
+                <LogIn className="w-5 h-5" />
+                <span>Sign In</span>
                 <ArrowRight className="w-5 h-5" />
-              </button>
-
-              <button
-                type="button"
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-full bg-[#0B1F3A] hover:bg-[#2563EB] text-[#F8FAFC] text-base font-bold border border-[#F8FAFC] hover:border-[#2563EB] transition-all duration-300 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
-              >
-                <span>Book Free Demo</span>
-              </button>
+              </Link>
             </div>
 
             <p className="mt-6 text-xs text-[#F8FAFC]/70">

@@ -39,11 +39,9 @@ export function LuxeFooter() {
           <div>
             <h4 className="text-[#F8FAFC] text-sm font-bold uppercase tracking-widest mb-6">Shop</h4>
             <ul className="space-y-3">
-              {['New Arrivals', 'Collections', 'Accessories', 'Sale'].map((item) => (
-                <li key={item}>
-                  <Link to="/shop" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">{item}</Link>
-                </li>
-              ))}
+              <li>
+                <Link to="/shop" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">Collections</Link>
+              </li>
             </ul>
           </div>
 
@@ -56,11 +54,6 @@ export function LuxeFooter() {
               <li>
                 <Link to="/delete-account" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">Delete Account</Link>
               </li>
-              {['Shipping & Returns', 'Size Guide', 'FAQ', 'Care Guide'].map((item) => (
-                <li key={item}>
-                  <Link to="/contact" className="text-[#F8FAFC] hover:text-[#FF6B00] transition-colors text-sm">{item}</Link>
-                </li>
-              ))}
             </ul>
           </div>
         </div>

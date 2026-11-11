@@ -32,19 +32,15 @@ export function NovaFooter() {
           <div>
             <h4 className="text-[#F8FAFC] text-sm font-bold uppercase mb-4">Shop</h4>
             <ul className="space-y-2">
-              {['Electronics', 'Fashion', 'Home & Kitchen', 'Beauty', 'Sports', 'Groceries'].map((item) => (
-                <li key={item}><Link to="/shop" className="text-sm text-[#F8FAFC] hover:text-[#FF6B00] transition-colors">{item}</Link></li>
-              ))}
+              <li><Link to="/shop" className="text-sm text-[#F8FAFC] hover:text-[#FF6B00] transition-colors">Collections</Link></li>
             </ul>
           </div>
 
           <div>
-            <h4 className="text-[#F8FAFC] text-sm font-bold uppercase mb-4">Help</h4>
+            <h4 className="text-[#F8FAFC] text-sm font-bold uppercase mb-4">Support</h4>
             <ul className="space-y-2">
+              <li><Link to="/contact" className="text-sm text-[#F8FAFC] hover:text-[#FF6B00] transition-colors">Contact Us</Link></li>
               <li><Link to="/delete-account" className="text-sm text-[#F8FAFC] hover:text-[#FF6B00] transition-colors">Delete Account</Link></li>
-              {['Customer Service', 'Returns & Refunds', 'Shipping Info', 'FAQ', 'Track Order'].map((item) => (
-                <li key={item}><Link to="/contact" className="text-sm text-[#F8FAFC] hover:text-[#FF6B00] transition-colors">{item}</Link></li>
-              ))}
             </ul>
           </div>
 
